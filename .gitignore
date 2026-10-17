@@ -1,0 +1,11 @@
+/_build/
+/deps/
+/doc/
+/.fetch
+*.ez
+*.beam
+erl_crash.dump
+.DS_Store
+
+# ExUnit @tmp_dir output
+/tmp/

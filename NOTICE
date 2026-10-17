@@ -1,0 +1,38 @@
+bezalel_core includes code and text from third parties.
+
+studybible-mcp
+https://github.com/djayatillake/studybible-mcp (commit 38cef28dc2d7c1e834cbd5248edc0f65843e7819)
+
+The study tools (lib/bezalel/study/) are an Elixir port of its query
+layer, tool handlers and output formats (src/study_bible_mcp/database.py,
+tools.py, server.py), its tool descriptions, its hermeneutics guidance
+(hermeneutics.py) and its system prompt (prompts/system_prompt.md), adapted;
+priv/study/research_sources.json is its research-sources catalogue. Its
+licence:
+
+  MIT License
+
+  Copyright (c) 2024 Study Bible MCP Contributors
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+The study data (the test fixtures in test/fixtures/packs, cut from the
+packs by the phone app's data/scripts/make_fixtures.py) carry their own
+licences and attributions: see the phone app's data/SOURCES.md
+(https://github.com/GenericJam/bezalel).

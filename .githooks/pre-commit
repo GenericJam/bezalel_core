@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — bezalel_core's commit gate. Activate once per clone:
+# `git config core.hooksPath .githooks` (or `mix setup`).
+#
+#   - mix format --check-formatted on the staged Elixir files
+#   - no compile-time ~r regex literals in lib/ (a regex compiled into a module
+#     is tied to the OTP it was compiled under; phones run another)
+#   - no *.sqlite outside test/fixtures staged
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+ex=$(printf '%s\n' "$staged" | grep -E '\.(ex|exs)$' || true)
+if [ -n "$ex" ]; then
+    # shellcheck disable=SC2086
+    if ! mix format --check-formatted $ex >/dev/null 2>&1; then
+        echo "[pre-commit] not formatted; run: mix format" >&2
+        mix format --check-formatted $ex >&2 || true
+        exit 1
+    fi
+fi
+
+lib=$(printf '%s\n' "$staged" | grep -E '^lib/.*\.ex$' || true)
+if [ -n "$lib" ]; then
+    # shellcheck disable=SC2086
+    hits=$(git diff --cached -U0 -- $lib | grep -E '^\+.*~r[/|({"\[]' || true)
+    if [ -n "$hits" ]; then
+        echo "[pre-commit] compile-time ~r regex in lib/ (use Bezalel.Study.Patterns):" >&2
+        printf '%s\n' "$hits" >&2
+        exit 1
+    fi
+fi
+
+bad=$(printf '%s\n' "$staged" | grep -E '\.sqlite(\.zst)?$' | grep -v '^test/fixtures/' || true)
+if [ -n "$bad" ]; then
+    echo "[pre-commit] database files outside test/fixtures staged:" >&2
+    printf '%s\n' "$bad" >&2
+    exit 1
+fi
+
+all=$(git diff --cached --name-status)
+count=$(printf '%s\n' "$all" | wc -l | tr -d ' ')
+echo "[pre-commit] committing $count path(s):"
+printf '%s\n' "$all" | sed 's/^/[pre-commit]   /' | head -40
