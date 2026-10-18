@@ -21,6 +21,11 @@ defmodule Bezalel.Study.Tools do
   `withheld/1` names the tools a host should not offer the model under a
   user's preferences: those whose every source the user switched off
   (`Bezalel.Study.Sources.withheld_tools/1`).
+
+  `materials/0` are the tools that make materials rather than read the
+  packs: `draw_image` (`Bezalel.Study.Tools.DrawImage`). They have no
+  source to switch off; a host offers them beside `all/0` once it keeps
+  materials (`Bezalel.Materials.Store`).
   """
 
   alias Bezalel.Study.{Sources, Tools}
@@ -59,6 +64,10 @@ defmodule Bezalel.Study.Tools do
   @doc "Every study tool module."
   @spec all() :: [module()]
   def all, do: @tier1 ++ @tier2
+
+  @doc "The tools that make materials (`draw_image`), offered beside `all/0` by a host with a materials store."
+  @spec materials() :: [module()]
+  def materials, do: [Tools.DrawImage]
 
   @doc "The names of the tools to withhold from the model under `prefs`."
   @spec withheld(Bezalel.Study.Preferences.t()) :: [String.t()]

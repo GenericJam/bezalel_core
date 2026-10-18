@@ -12,13 +12,31 @@ defmodule Bezalel.Library.Message do
   (`passage`, scripted replies) or a card built from the study tools'
   results (`card`, `Bezalel.Agent.Card`, live replies), a requested
   drawing's subject (`image`, scripted), the `model` that answered (the
-  host app's model id, or `"storyboard"`). `images` are the pictures in
-  its entries (a tool's, a model's, a user's attachment), each
-  `%{key, entry, index, mime}`: the `index`th image part of entry `entry`,
-  `key` unique across sessions.
+  host app's model id, or `"storyboard"`).
+
+  Its files come two ways. `materials` are those sent or received by
+  reference (`Bezalel.Materials`: a user's attachment, a `draw_image`
+  drawing), each `%{id, kind, mime, name, about, entry}`: the material's
+  id (the host's store has it), its kind by its media type (`:image`,
+  `:audio`, `:video`, `:document`: what the chat draws; a transcript sent
+  on its own is a text document here, and the store has the material's
+  own kind), and the session entry it is in. `images`
+  are the pictures stored inline in its entries (a tool's, a model's, a
+  user's attachment from before materials), each `%{key, entry, index,
+  mime}`: the `index`th image part of entry `entry`, `key` unique across
+  sessions.
   """
 
   @type image :: %{key: String.t(), entry: String.t(), index: non_neg_integer(), mime: String.t()}
+
+  @type material :: %{
+          id: String.t(),
+          kind: :image | :audio | :video | :document,
+          mime: String.t(),
+          name: String.t(),
+          about: String.t() | nil,
+          entry: String.t() | nil
+        }
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -29,6 +47,7 @@ defmodule Bezalel.Library.Message do
           card: map() | nil,
           image: String.t() | nil,
           images: [image()],
+          materials: [material()],
           model: String.t() | nil,
           entries: [String.t()]
         }
@@ -43,6 +62,7 @@ defmodule Bezalel.Library.Message do
     :model,
     blocks: [],
     images: [],
+    materials: [],
     entries: []
   ]
 end

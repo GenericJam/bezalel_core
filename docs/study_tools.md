@@ -11,13 +11,16 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 
 | Module | What |
 |---|---|
-| `Bezalel.Study.Tools` | `all/0`, every tool module; `withheld/1`, the tool names to withhold under a user's preferences |
+| `Bezalel.Study.Tools` | `all/0`, every study tool module; `materials/0`, the tools that make materials (`draw_image`); `withheld/1`, the tool names to withhold under a user's preferences |
+| `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by OpenAI's gpt-image on the user's OpenAI API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
 | `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. `LookupVerse` and `WordStudy`'s `run/2` also hand `result/1` to rho as the result's details (`{:ok, {:details, markdown, result}}`): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card. The Mermaid diagrams of the graph tools stay in the Markdown only |
 | `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
 | `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB) with their labels, links and acknowledgements |
-| `Bezalel.Study.Reference` | Book names and reference forms ("Ex 31:2-3", "Exodus 31", "Jn 3:16", "Jude 3") |
+| `Bezalel.Study.Reference` | Book names and reference forms ("Ex 31:2-3", "Exodus 31", "Jn 3:16", "Jude 3"); `book_name/1`, a code's English name |
+| `Bezalel.Materials`, `Bezalel.Materials.Material`, `Bezalel.Materials.Store` | Materials: the record, content addressing and file layout, derivatives, what goes to the model, rho's attachment resolver, the host's store ([Materials](#materials-drawings-and-read-aloud)) |
+| `Bezalel.Speech` | A reply's summary as words for text-to-speech |
 | `Bezalel.Study.Verses`, `Bezalel.Study.Lexicon` | Verse and lexicon queries |
 | `Bezalel.Study.Format` | Shared Markdown (verses, lexicon entries) |
 | `Bezalel.Study.Hermeneutics` | Genres and their guidance (Fee & Stuart) |
@@ -350,6 +353,56 @@ Left out of the default: their sermon-prep and "connect to Christ" framing, the 
 Scripture in its ancient context" section (one school's framework, largely Heiser's),
 the genre table (the genre guidance stays in `lookup_verse`) and the evangelical
 interpretation-error list; a user who wants any of it can write it into their approach.
+
+## Materials, drawings and read-aloud
+
+Why and what Kevin decided: [decisions/2026-10-18-materials.md](../decisions/2026-10-18-materials.md).
+
+**Materials** (`Bezalel.Materials`) are the files sent to the agent and received
+from it, and what Bezalel makes from them. A material's id is the SHA-256 of its bytes
+(`id/1`); `new/2` reads its kind (image, audio, video, document) and media type from its
+name, phone formats included (HEIC, M4A, MOV); `derive/4` makes a transcript, an audio
+track, a still or a drawing that names what it came from (`derived_from`). Hosts keep
+them through `config :bezalel_core, :materials, MyApp.MaterialStore` (a
+`Bezalel.Materials.Store`: `put/3`, `fetch/2`, `read/2`, `derivatives/2`, optional
+`for_model/2`, each with a ctx carrying `:session_id`), and may lay the files out with
+`write_file/3` (`ab/<id>.<ext>` under a directory). Every callback answers only for the
+ctx's owner, and `put/3` of an id already kept keeps `merge/2` (the parents of both: two
+silent videos share one empty transcript). `to_map/1` and `from_map/1` are the
+JSON form for a host's table.
+
+`route/3` says how each goes to a model, by `Rho.Models.inputs/1`: pictures attach (by
+reference; rho fetches the bytes through `config :rho, :resolve_attachment,
+{Bezalel.Materials, :resolve, []}` when it builds a request; one the providers don't take,
+such as HEIC, only through a store with `for_model/2`, else by name), a PDF attaches to a model
+that takes PDFs and otherwise goes as its extracted text, audio and video go as their
+newest transcript (directly or through the audio track: rho sends no sound, and no model
+Bezalel runs watches a video), a text file as its text, other documents by name.
+`attachments/4` turns that into rho's attachments for `Rho.Session.user/2`, or returns
+`{:missing, materials}` for audio and video still to transcribe. `video_notice/0` is the
+text both apps show before a video is sent.
+
+**`draw_image`** is not a study tool (it reads no pack and has no source to switch off),
+so it is in `Tools.materials/0`, which a host offers beside `all/0` once it has a store.
+It takes `prompt`, `references` (one material id: req_llm's edits form carries one
+image) and `size` (`square`, `landscape`, `portrait`: 1024×1024, 1536×1024, 1024×1536),
+checks for a store, the reference and an OpenAI API key (`Rho.Auth.credential(:openai)`)
+before it spends anything, calls `ReqLLM.generate_image/3` (`openai:gpt-image-2`, JPEG;
+the edits endpoint with a reference), keeps the drawing (received, `:generated`,
+`derived_from` its reference) and answers rho with it by reference, so the chat draws
+it from the store and the model reads its ref. Tests replace the image call and the
+credential through `config :bezalel_core, :draw_image`.
+
+`Bezalel.Library.Message` and `Bezalel.Agent.Reply` list a message's materials by
+reference (`materials`, `%{id, kind, mime, name, about, entry}`) beside the pictures
+stored inline (`images`), which older sessions and model-made pictures still have.
+
+**Read-aloud.** `Bezalel.Speech.speakable/1` turns a reply's SUMMARY into text for a
+voice: Markdown read as a listener hears it (headings, list items and table rows as
+sentences, a row with its column names; no code blocks, URLs, images or footnote marks),
+Hebrew and Greek replaced by the transliteration the model put in parentheses after
+them or dropped, Strong's numbers in parentheses dropped, and references said aloud ("1
+Cor 13:4-7" is "First Corinthians 13 verses 4 to 7").
 
 ## Tests and fixtures
 

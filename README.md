@@ -64,6 +64,16 @@ messages (`Bezalel.Library.Message`) back off its rho session and plans the
 branch moves behind Delete and Undo. None of it reads or writes a file:
 the app keeps the state, draws it, and reads and writes the session file.
 
+And **materials**, the files sent to the agent and received from it (photos,
+audio, video, documents, and their transcripts, audio tracks, stills and
+drawings): `Bezalel.Materials` names each by the SHA-256 of its bytes, says
+what goes to a model (pictures and PDFs by reference, audio and video as
+their transcript), and resolves rho's attachment references through the
+app's store; the `draw_image` tool (`Bezalel.Study.Tools.materials/0`)
+draws with OpenAI's gpt-image on the user's API key; `Bezalel.Speech` turns
+a reply into words for text-to-speech. Where the files live stays the
+app's.
+
 ## Using it
 
 ```elixir
@@ -102,6 +112,28 @@ Rho.start_loop(
   withhold_tools: Bezalel.Study.Tools.withheld(prefs)
 )
 ```
+
+Keep materials: a `Bezalel.Materials.Store` of your own (every callback gets
+a ctx with `:session_id`, so a host with several users finds the owner), and
+rho's resolver pointed at it, then offer `draw_image` too:
+
+```elixir
+config :bezalel_core, :materials, MyApp.MaterialStore
+config :rho, :resolve_attachment, {Bezalel.Materials, :resolve, []}
+
+Rho.Supervisor.start_link(tools: Bezalel.Study.Tools.all() ++ Bezalel.Study.Tools.materials())
+
+# Sending a question with materials (Rho.Models.inputs/1: what the model takes):
+case Bezalel.Materials.attachments(materials, Rho.Models.inputs(model), %{session_id: id}) do
+  {:ok, attachments} -> Rho.Loop.prompt(loop, text, attachments)
+  {:missing, untranscribed} -> transcribe_then_retry(untranscribed)
+  {:error, reason} -> show_error(reason)
+end
+```
+
+Show `Bezalel.Materials.video_notice/0` before a video is sent, and read a
+reply aloud with `Bezalel.Speech.speakable(summary)`. How it all works:
+[docs/study_tools.md](docs/study_tools.md#materials-drawings-and-read-aloud).
 
 The NET Bible (the default translation) is quoted by permission for
 non-commercial use: show `Bezalel.Study.Translations.get("net").copyright`

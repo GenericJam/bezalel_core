@@ -20,15 +20,23 @@ too unless this file says otherwise.
   `Bezalel.Agent.Card`, `Bezalel.Agent.Patterns`) and a conversation's
   messages read off its rho session, with the branch moves behind Delete and
   Undo (`Bezalel.Library.Transcript`, `Bezalel.Library.Message`; no file I/O, the
-  app reads and writes the file). Anything every Bezalel app must answer the
-  same way.
+  app reads and writes the file); materials (`Bezalel.Materials`: the record,
+  content addressing, derivatives, what goes to the model, rho's attachment
+  resolver; the `draw_image` tool, `Bezalel.Study.Tools.materials/0`) and a
+  reply as words to read aloud (`Bezalel.Speech`). Anything every Bezalel app
+  must answer the same way.
 - **Not here:** UI, Mob, Phoenix, settings storage, where files live on a
-  device, pack downloads, platform formatting. The host app supplies those
+  device, pack downloads, platform formatting, recording, transcribing and
+  speaking. The host app supplies those
   through config (`config :bezalel_core, :packs_dir`: a path or `{m, f, a}`;
   `config :bezalel_core, :preferences`: `{m, f, a}` called with the tool ctx,
-  returning the user's `Bezalel.Study.Preferences`) or arguments (the
+  returning the user's `Bezalel.Study.Preferences`; `config :bezalel_core,
+  :materials`: the app's `Bezalel.Materials.Store`) or arguments (the
   prompt's `surface` section). A new platform need gets a config key or a
   behaviour the app implements, never a dependency on the app's framework.
+- **rho** is pinned to a GitHub commit (attachments by reference are
+  unreleased); `BEZALEL_LOCAL_DEPS=rho` uses a sibling `../rho` checkout
+  instead, as in the phone app. Bump the pin with the apps'.
 - Why the split: the phone app's
   `decisions/2026-10-17-study-code-in-bezalel-core.md`.
 
