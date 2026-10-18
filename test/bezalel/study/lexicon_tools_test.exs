@@ -6,7 +6,7 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
   # 'craftsman', so those rankings are the real pack's.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.{Citation, DB, Preferences, Translations, Verses}
+  alias Bezalel.Study.{Citation, DB, Lexicon, Preferences, Translations, Verses}
   alias Bezalel.Study.Tools.{ParseMorphology, SearchByStrongs, SearchLexicon, WordStudy}
 
   # studybible-mcp's default of four results, and the BSB.
@@ -317,8 +317,8 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
   # word_study upper-cased the key, so 436 of the 455 ('AS_ῥοπή' became
   # 'AS_ῬΟΠΉ') were "No entry found".
   test "an Abbott-Smith key keeps its lemma's case" do
-    assert Bezalel.Study.Lexicon.normalize_strongs(" as_ῥοπή ") == "AS_ῥοπή"
-    assert Bezalel.Study.Lexicon.normalize_strongs("g26") == "G0026"
-    assert Bezalel.Study.Lexicon.normalize_strongs("h430g") == "H0430G"
+    assert Lexicon.normalize_strongs(" as_ῥοπή ") == "AS_ῥοπή"
+    assert Lexicon.normalize_strongs("g26") == "G0026"
+    assert Lexicon.normalize_strongs("h430g") == "H0430G"
   end
 end
