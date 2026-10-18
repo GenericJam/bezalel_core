@@ -1,4 +1,4 @@
-defmodule Bezalel.Agent do
+defmodule Bezalel.Agent.Details do
   @moduledoc """
   What every Bezalel app's agent loop shares with rho: the part of a study
   tool's details kept in the session (`keep_details/2`, the loop's
@@ -19,7 +19,7 @@ defmodule Bezalel.Agent do
   @doc """
   The part of tool `name`'s `details` to keep in the session (JSON-safe), or
   nil when there is nothing to keep. The host passes it to `Rho.Loop` as
-  `keep_details: &Bezalel.Agent.keep_details/2`.
+  `keep_details: &Bezalel.Agent.Details.keep_details/2`.
   """
   @spec keep_details(String.t(), term()) :: map() | nil
   def keep_details(name, details) do

@@ -29,7 +29,7 @@ defmodule Bezalel.Study.Citation do
       (or names the book).
 
   `to_map/1` and `from_map/1` convert to and from the JSON-safe map a
-  session stores (`Bezalel.Agent.keep_details/2`).
+  session stores (`Bezalel.Agent.Details.keep_details/2`).
   """
 
   @enforce_keys [:work, :label]

@@ -317,7 +317,7 @@ defmodule Bezalel.Study.CitationsTest do
 
     test "Fee and Stuart is a book" do
       assert Citation.link(Citations.fee_stuart("the Gospels")) ==
-               "Gordon D. Fee and Douglas Stuart, *How to Read the Bible for All Its Worth* (1981), on the Gospels"
+               "Gordon D. Fee and Douglas Stuart, *How to Read the Bible for All Its Worth* (1982), on the Gospels"
     end
   end
 

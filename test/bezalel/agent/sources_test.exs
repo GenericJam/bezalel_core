@@ -1,10 +1,10 @@
 defmodule Bezalel.Agent.SourcesTest do
   # A reply's sources: the citations its tools returned, kept in the session
-  # with the card (Bezalel.Agent.keep_details/2), folded live and on replay,
+  # with the card (Bezalel.Agent.Details.keep_details/2), folded live and on replay,
   # each marked cited when the answer links it.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Agent
+  alias Bezalel.Agent.Details
   alias Bezalel.Agent.{Card, Reply}
   alias Bezalel.Library.Transcript
   alias Bezalel.Study.{Citation, Citations}
@@ -42,7 +42,7 @@ defmodule Bezalel.Agent.SourcesTest do
 
   describe "keep_details/2" do
     test "keeps the card and the citations, JSON-safe" do
-      kept = Agent.keep_details("lookup_verse", lookup_details())
+      kept = Details.keep_details("lookup_verse", lookup_details())
       assert kept["card"]["version_url"] == "https://netbible.org/bible/John+3:16"
       assert Enum.map(kept["citations"], & &1["work"]) == ["net", "step"]
       assert kept == kept |> Jason.encode!() |> Jason.decode!()
@@ -50,17 +50,17 @@ defmodule Bezalel.Agent.SourcesTest do
 
     test "a tool with no card keeps its citations; nothing to keep is nil" do
       assert %{"citations" => [_, _]} =
-               kept = Agent.keep_details("search_ancient_sources", search_details())
+               kept = Details.keep_details("search_ancient_sources", search_details())
 
       refute Map.has_key?(kept, "card")
-      assert Agent.keep_details("parse_morphology", %{citations: []}) == nil
-      assert Agent.keep_details("anything", nil) == nil
+      assert Details.keep_details("parse_morphology", %{citations: []}) == nil
+      assert Details.keep_details("anything", nil) == nil
     end
 
     test "reads the old shape (a bare card) as a card with no citations" do
-      card = Agent.keep_details("lookup_verse", lookup_details())["card"]
-      assert Agent.kept_card(card) == card
-      assert Agent.kept_citations(card) == []
+      card = Details.keep_details("lookup_verse", lookup_details())["card"]
+      assert Details.kept_card(card) == card
+      assert Details.kept_citations(card) == []
     end
   end
 
@@ -145,7 +145,7 @@ defmodule Bezalel.Agent.SourcesTest do
   end
 
   test "replayed from the session: the card and the marked citations, as live" do
-    stored = entries(&Agent.keep_details/2) |> Jason.encode!() |> Jason.decode!()
+    stored = entries(&Details.keep_details/2) |> Jason.encode!() |> Jason.decode!()
     [_question, message] = Transcript.messages(stored, "s")
 
     assert message.card["title"] == "John 3:16"

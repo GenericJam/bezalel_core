@@ -63,7 +63,7 @@ And the agent's surface, the same for every app that shows a conversation:
 `Bezalel.Agent.Reply` folds rho's loop events (`Rho.Events`) into the
 reply's blocks (THINKING, TOOL CALL, SUMMARY) and its sources as it streams,
 `Bezalel.Agent.Card` builds the passage card from `lookup_verse` /
-`word_study` data, `Bezalel.Agent.keep_details/2` is what the session keeps
+`word_study` data, `Bezalel.Agent.Details.keep_details/2` is what the session keeps
 of a tool's data (the card and the citations), and
 `Bezalel.Library.Transcript` reads a conversation's messages
 (`Bezalel.Library.Message`) back off its rho session and plans the branch
@@ -116,7 +116,7 @@ Rho.start_loop(
   system_prompt: Bezalel.Study.Prompt.system_prompt(prefs, surface: my_formatting_text),
   tools: :registry,
   withhold_tools: Bezalel.Study.Tools.withheld(prefs),
-  keep_details: &Bezalel.Agent.keep_details/2
+  keep_details: &Bezalel.Agent.Details.keep_details/2
 )
 ```
 

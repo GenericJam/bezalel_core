@@ -141,7 +141,7 @@ defmodule Bezalel.Study.Citations do
   @fee_stuart %{
     author: "Gordon D. Fee and Douglas Stuart",
     title: "How to Read the Bible for All Its Worth",
-    year: 1981
+    year: 1982
   }
 
   @abbott_smith_item "https://archive.org/details/manualgreeklexic00abborich"

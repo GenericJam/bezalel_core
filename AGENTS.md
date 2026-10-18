@@ -20,7 +20,7 @@ too unless this file says otherwise.
   edit it with the phone app's `data/SOURCES.md`); the agent's surface: rho's loop
   events folded into a reply's blocks, passage card and sources
   (`Bezalel.Agent.Reply`, `Bezalel.Agent.Card`, `Bezalel.Agent.Patterns`; what
-  the session keeps of a tool's data, `Bezalel.Agent.keep_details/2`) and a
+  the session keeps of a tool's data, `Bezalel.Agent.Details.keep_details/2`) and a
   conversation's
   messages read off its rho session, with the branch moves behind Delete and
   Undo (`Bezalel.Library.Transcript`, `Bezalel.Library.Message`; no file I/O, the

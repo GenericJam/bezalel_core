@@ -12,7 +12,7 @@ defmodule Bezalel.Library.Transcript do
   it while it streamed (`Bezalel.Agent.Reply`): each turn's thinking, each
   tool call with its result, the answer as the SUMMARY; its passage card
   and the sources its tools consulted come from the tool results' kept
-  `details` (`Bezalel.Agent.keep_details/2`; a session from before
+  `details` (`Bezalel.Agent.Details.keep_details/2`; a session from before
   citations kept the bare card there, which reads as a card with no
   sources). A reply Bezalel wrote itself (the storyboard's, or one
   moved over from the old messages table) is one assistant message whose
@@ -30,7 +30,7 @@ defmodule Bezalel.Library.Transcript do
   leaf; `custom` entries never reach a model.
   """
 
-  alias Bezalel.Agent
+  alias Bezalel.Agent.Details
   alias Bezalel.Agent.Reply
   alias Bezalel.Library.Message
   alias Bezalel.Materials
@@ -245,8 +245,8 @@ defmodule Bezalel.Library.Transcript do
           text: Session.text(m["content"]),
           is_error: m["isError"] == true,
           details: nil,
-          card: Agent.kept_card(m["details"]),
-          citations: Agent.kept_citations(m["details"])
+          card: Details.kept_card(m["details"]),
+          citations: Details.kept_citations(m["details"])
         }
 
         {Reply.apply(r, event), turn}

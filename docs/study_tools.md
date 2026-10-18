@@ -373,7 +373,7 @@ the verse's Hebrew and Greek on STEP and any Dead Sea Scroll witness as `origina
 | ANE entries, Fee & Stuart | book references as given |
 | Textual variants | their stored citation and URL (none in the data version 1 pack) |
 
-The session keeps a tool's card and citations (`Bezalel.Agent.keep_details/2`, rho's
+The session keeps a tool's card and citations (`Bezalel.Agent.Details.keep_details/2`, rho's
 `:keep_details`); `Bezalel.Agent.Reply` collects a reply's citations as it streams and
 `Reply.sources/1` marks each `cited` when the answer links its URL (the whole URL, so a
 link to John 3:16 doesn't cite John 3:1) or names its book's title; a stored reply's

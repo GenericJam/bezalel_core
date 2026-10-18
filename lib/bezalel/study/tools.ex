@@ -11,7 +11,7 @@ defmodule Bezalel.Study.Tools do
   `Bezalel.Study.Citations`); every record in the Markdown has a `Source:`
   line with the same links. The live agent keeps the citations and, from
   `lookup_verse` and `word_study`, the passage card
-  (`Bezalel.Agent.keep_details/2`, `Bezalel.Agent.Card`).
+  (`Bezalel.Agent.Details.keep_details/2`, `Bezalel.Agent.Card`).
 
   `all/0` is every tool, the set the live agent offers: text, lexicon,
   morphology, names, cross references, similar passages and the Torah
