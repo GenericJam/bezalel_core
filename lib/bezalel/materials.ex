@@ -88,6 +88,10 @@ defmodule Bezalel.Materials do
   # Documents whose bytes are text the model can read as they are.
   @text_types ["application/json", "application/xml", "application/x-yaml", "application/yaml"]
 
+  # The picture formats the providers take as they are; another (HEIC from
+  # a phone) goes only through a store that converts it (`for_model/2`).
+  @model_images ["image/jpeg", "image/png", "image/gif", "image/webp"]
+
   # A transcript or a document's text is cut to this many characters.
   @text_max 100_000
 
@@ -261,6 +265,22 @@ defmodule Bezalel.Materials do
             error
         end
     end
+  end
+
+  @doc """
+  The material a store keeps when `new` has the bytes of one it already
+  keeps (`kept`, the same id): `kept`, with `new`'s parents added to
+  `derived_from` and `new`'s derivation when `kept` had none. Two silent
+  videos have the same empty transcript; it is the transcript of both.
+  `c:Bezalel.Materials.Store.put/3` keeps this.
+  """
+  @spec merge(Material.t(), Material.t()) :: Material.t()
+  def merge(%Material{id: id} = kept, %Material{id: id} = new) do
+    %{
+      kept
+      | derived_from: Enum.uniq(kept.derived_from ++ new.derived_from),
+        derivation: kept.derivation || new.derivation
+    }
   end
 
   @doc """
@@ -483,8 +503,15 @@ defmodule Bezalel.Materials do
     end)
   end
 
+  defp attachment({:attach, %Material{kind: :image} = m}, _ctx, _max) do
+    if essence(m.mime) in @model_images or converts?(),
+      do: {:ok, base(m, :image, about(m))},
+      else:
+        {:ok, base(m, :file, about(m) <> " · a picture in a format models don't take; not sent")}
+  end
+
   defp attachment({:attach, m}, _ctx, _max) do
-    a = base(m, if(m.kind == :image, do: :image, else: :pdf), about(m))
+    a = base(m, :pdf, about(m))
     {:ok, if(m.meta[:pages], do: Map.put(a, :pages, m.meta[:pages]), else: a)}
   end
 
@@ -511,7 +538,7 @@ defmodule Bezalel.Materials do
   defp text_about(m, _t), do: about(m) <> " · its text"
 
   defp cut(bytes, max) do
-    text = if String.valid?(bytes), do: bytes, else: :unicode.characters_to_binary(bytes, :latin1)
+    text = if String.valid?(bytes), do: bytes, else: String.replace_invalid(bytes)
 
     if String.length(text) > max,
       do:
@@ -545,6 +572,14 @@ defmodule Bezalel.Materials do
       store.for_model(m, ctx)
     else
       with {:ok, bytes} <- store.read(m, ctx), do: {:ok, {m.mime, bytes}}
+    end
+  end
+
+  # Does the host's store give models a copy of its own (`for_model/2`)?
+  defp converts? do
+    case store() do
+      {:ok, store} -> function_exported?(store, :for_model, 2)
+      _ -> false
     end
   end
 

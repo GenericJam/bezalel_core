@@ -366,12 +366,15 @@ track, a still or a drawing that names what it came from (`derived_from`). Hosts
 them through `config :bezalel_core, :materials, MyApp.MaterialStore` (a
 `Bezalel.Materials.Store`: `put/3`, `fetch/2`, `read/2`, `derivatives/2`, optional
 `for_model/2`, each with a ctx carrying `:session_id`), and may lay the files out with
-`write_file/3` (`ab/<id>.<ext>` under a directory). `to_map/1` and `from_map/1` are the
+`write_file/3` (`ab/<id>.<ext>` under a directory). Every callback answers only for the
+ctx's owner, and `put/3` of an id already kept keeps `merge/2` (the parents of both: two
+silent videos share one empty transcript). `to_map/1` and `from_map/1` are the
 JSON form for a host's table.
 
 `route/3` says how each goes to a model, by `Rho.Models.inputs/1`: pictures attach (by
 reference; rho fetches the bytes through `config :rho, :resolve_attachment,
-{Bezalel.Materials, :resolve, []}` when it builds a request), a PDF attaches to a model
+{Bezalel.Materials, :resolve, []}` when it builds a request; one the providers don't take,
+such as HEIC, only through a store with `for_model/2`, else by name), a PDF attaches to a model
 that takes PDFs and otherwise goes as its extracted text, audio and video go as their
 newest transcript (directly or through the audio track: rho sends no sound, and no model
 Bezalel runs watches a video), a text file as its text, other documents by name.

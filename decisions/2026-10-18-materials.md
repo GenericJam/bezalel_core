@@ -123,7 +123,10 @@ several users finds the owner from the conversation, and **every callback
 answers only for that owner**: `fetch/2` is `:error`, `read/2` an error
 and `derivatives/2` leaves out another owner's materials. The same bytes
 from two users are one id kept for each. `put/3` of a material already
-kept returns the kept one. `for_model/2` is for a host that sends models a
+kept keeps `Bezalel.Materials.merge(kept, new)`: the parents of both, so
+identical derivatives (the empty transcript of two silent videos, one
+black still from two clips) belong to every material they came from; the
+record (kind, name) is the first one's. `for_model/2` is for a host that sends models a
 resized or re-encoded copy (a phone photo is larger than providers take);
 without it they get `read/2`'s bytes. `Bezalel.Materials.store/0` checks
 the configured module loads and has the callbacks (`{:error,
@@ -136,7 +139,11 @@ which fetches each material again by id with the ctx, so a caller can't
 send another owner's material by handing over its struct):
 
 - an **image** attaches by reference (rho resolves it; a model without
-  `:image` gets rho's note);
+  `:image` gets rho's note). One in a format the providers don't take
+  (anything but JPEG, PNG, GIF and WebP: HEIC from a phone) goes by name
+  only, unless the store converts it (`for_model/2`): otherwise every
+  later request of the conversation would carry a picture the provider
+  rejects;
 - a **PDF** attaches by reference to a model with `:pdf`, else goes as
   its extracted text (a `:transcript` derivative) when there is one, else
   by name only;
@@ -149,7 +156,8 @@ send another owner's material by handing over its struct):
 - a **text file** goes as its text; any other document by name only.
 
 Texts are cut at 100 000 characters (`:text_max`), saying how much was
-left out. An attachment is rho's shape:
+left out; a text that isn't valid UTF-8 loses only its invalid bytes (to
+U+FFFD). An attachment is rho's shape:
 `%{kind: :image | :pdf | :text | :file, ref: id, name, mime, about}`
 (`text:` for `:text`, `pages:` for a PDF that knows them).
 
@@ -186,7 +194,8 @@ name}], text}}`), the text naming its ref so the model can draw from it
 again.
 
 - **One reference**, not several: req_llm 1.28's edits form carries one
-  image. More is a clear error.
+  image. More is a clear error, as is a reference that isn't JPEG, PNG or
+  WebP after the store's `for_model/2` (what the edits endpoint takes).
 - It checks the store, the arguments, the reference and the key **before**
   it calls the API, so a failure costs nothing. Without a key: "Drawing a
   picture needs an OpenAI API key, and none is set. Tell the user to add

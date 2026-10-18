@@ -15,8 +15,10 @@ defmodule Bezalel.Materials.Store do
     * `c:put/3` keeps `material` with its `bytes` (the bytes' SHA-256 is
       `material.id`; `Bezalel.Materials.write_file/3` lays them out under a
       directory) for the ctx's owner and returns it as kept. Putting a
-      material that is already there returns the kept one: the same bytes
-      are the same material.
+      material that is already there keeps and returns
+      `Bezalel.Materials.merge(kept, material)`: the same bytes are the same
+      material, made from every parent it was made from (two silent videos
+      share one empty transcript).
     * `c:fetch/2`: the material `id`, or `:error` when there is none (or
       it isn't the ctx's owner's).
     * `c:read/2`: its bytes, as kept (an error for another owner's).

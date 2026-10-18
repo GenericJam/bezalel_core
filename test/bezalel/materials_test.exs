@@ -251,6 +251,37 @@ defmodule Bezalel.MaterialsTest do
       assert text == "abcd\n(cut here: 6 more characters not sent)"
     end
 
+    test "a text with a stray byte keeps its Hebrew and loses only the byte" do
+      bytes = "רוּחַ means wind" <> <<0x93>>
+      notes = keep(Materials.new(bytes, name: "notes.txt"), bytes)
+
+      assert {:ok, [%{text: text}]} = Materials.attachments([notes], [:text], @ctx)
+      assert text == "רוּחַ means wind�"
+    end
+
+    test "two silent videos share one empty transcript, and both go" do
+      v1 = keep(Materials.new("video one", name: "one.mov"), "video one")
+      v2 = keep(Materials.new("video two", name: "two.mov"), "video two")
+      keep(Materials.derive(:transcript, v1, ""), "")
+      kept = keep(Materials.derive(:transcript, v2, ""), "")
+
+      assert kept.derived_from == [v1.id, v2.id]
+      assert {:ok, [%{text: ""}]} = Materials.attachments([v1], [:text], @ctx)
+      assert {:ok, [%{text: ""}]} = Materials.attachments([v2], [:text], @ctx)
+    end
+
+    test "a picture in a format models don't take goes by name unless the store converts it" do
+      heic = keep(Materials.new("heic", name: "IMG_0412.HEIC"), "heic")
+
+      assert {:ok, [%{kind: :file, about: about}]} =
+               Materials.attachments([heic], [:text, :image], @ctx)
+
+      assert about =~ "a picture in a format models don't take"
+
+      Application.put_env(:bezalel_core, :materials, ResizingStore)
+      assert {:ok, [%{kind: :image}]} = Materials.attachments([heic], [:text, :image], @ctx)
+    end
+
     test "resolve/2 gives rho a referenced file's bytes, only to its owner's session" do
       photo = keep(Materials.new("p", name: "IMG.png"), "p")
       attachment = %{"kind" => "image", "ref" => photo.id, "mimeType" => "image/png"}

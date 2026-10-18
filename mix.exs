@@ -29,7 +29,7 @@ defmodule BezalelCore.MixProject do
       # session shape Bezalel.Library.Transcript reads, attachments by
       # reference (Bezalel.Materials). Pinned to a commit until rho's next
       # release has attachments by reference; then {:rho, "~> 0.2"}.
-      sibling(:rho, "GenericJam/rho", "b27e0251ec9decac3c1cf50f90ecfe171f154500"),
+      sibling(:rho, "GenericJam/rho", "09cf5ae8a1f795c4a8780d795aff2e1e3a7be4bd"),
       # Bezalel.Materials: a file's media type from its name, and back.
       {:mime, "~> 2.0"},
       # Bezalel.Agent.Reply encodes tool arguments for the TOOL CALL block.

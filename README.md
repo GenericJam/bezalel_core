@@ -127,6 +127,7 @@ Rho.Supervisor.start_link(tools: Bezalel.Study.Tools.all() ++ Bezalel.Study.Tool
 case Bezalel.Materials.attachments(materials, Rho.Models.inputs(model), %{session_id: id}) do
   {:ok, attachments} -> Rho.Loop.prompt(loop, text, attachments)
   {:missing, untranscribed} -> transcribe_then_retry(untranscribed)
+  {:error, reason} -> show_error(reason)
 end
 ```
 

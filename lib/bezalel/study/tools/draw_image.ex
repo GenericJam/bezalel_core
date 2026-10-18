@@ -32,6 +32,8 @@ defmodule Bezalel.Study.Tools.DrawImage do
 
   @sizes %{"square" => "1024x1024", "landscape" => "1536x1024", "portrait" => "1024x1536"}
 
+  @edit_types ["image/jpeg", "image/png", "image/webp"]
+
   @no_key "Drawing a picture needs an OpenAI API key, and none is set. Tell the user to add " <>
             "one in Settings (OpenAI, API key); drawings are billed to that key."
 
@@ -163,10 +165,19 @@ defmodule Bezalel.Study.Tools.DrawImage do
     end
   end
 
+  # The edits endpoint takes JPEG, PNG and WebP: a HEIC photo goes only
+  # through a store that converts it (`for_model/2`).
   defp picture(material, ctx) do
     case Materials.resolve(%{"ref" => material.id}, ctx) do
-      {:ok, {mime, bytes}} -> {:ok, {mime, bytes}}
-      {:error, reason} -> {:error, "#{material.name} couldn't be read: #{inspect(reason)}."}
+      {:ok, {mime, bytes}} when mime in @edit_types ->
+        {:ok, {mime, bytes}}
+
+      {:ok, {mime, _bytes}} ->
+        {:error,
+         "#{material.name} is #{mime}; the image model draws from JPEG, PNG or WebP only."}
+
+      {:error, reason} ->
+        {:error, "#{material.name} couldn't be read: #{inspect(reason)}."}
     end
   end
 

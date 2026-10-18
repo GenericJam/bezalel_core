@@ -33,8 +33,12 @@ defmodule Bezalel.Test.MaterialStore do
 
     Agent.get_and_update(__MODULE__, fn kept ->
       case Map.fetch(kept, key) do
-        {:ok, {existing, _bytes}} -> {{:ok, existing}, kept}
-        :error -> {{:ok, material}, Map.put(kept, key, {material, bytes})}
+        {:ok, {existing, bytes}} ->
+          merged = Bezalel.Materials.merge(existing, material)
+          {{:ok, merged}, Map.put(kept, key, {merged, bytes})}
+
+        :error ->
+          {{:ok, material}, Map.put(kept, key, {material, bytes})}
       end
     end)
   end

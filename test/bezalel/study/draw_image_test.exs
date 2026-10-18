@@ -142,14 +142,16 @@ defmodule Bezalel.Study.DrawImageTest do
     refute_received {:generate, _, _, _}
   end
 
-  test "a reference must be one picture of this conversation's" do
+  test "a reference must be one picture of this conversation's, in a format the model takes" do
     theirs = keep(Materials.new("theirs", name: "a.png"), "theirs", %{session_id: "s2"})
     memo = keep(Materials.new("memo", name: "memo.m4a"), "memo")
     photo = keep(Materials.new("p", name: "p.png"), "p")
+    heic = keep(Materials.new("heic", name: "IMG.HEIC"), "heic")
 
     for {refs, error} <- [
           {[theirs.id], "There is no picture with ref"},
           {[memo.id], "memo.m4a isn't a picture"},
+          {[heic.id], "IMG.HEIC is image/heic; the image model draws from JPEG, PNG or WebP"},
           {[photo.id, photo.id], "one picture at a time"},
           {"not a list", "is a list"}
         ] do
