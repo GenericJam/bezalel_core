@@ -27,9 +27,8 @@ defmodule BezalelCore.MixProject do
       {:exqlite, "~> 0.42"},
       # The tool behaviour every study tool implements (Rho.Tool), the
       # session shape Bezalel.Library.Transcript reads, attachments by
-      # reference (Bezalel.Materials). Pinned to a commit until rho's next
-      # release has attachments by reference; then {:rho, "~> 0.2"}.
-      sibling(:rho, "GenericJam/rho", "09cf5ae8a1f795c4a8780d795aff2e1e3a7be4bd"),
+      # reference (Bezalel.Materials, rho 0.2).
+      sibling(:rho, "~> 0.2"),
       # Bezalel.Materials: a file's media type from its name, and back.
       {:mime, "~> 2.0"},
       # Bezalel.Agent.Reply encodes tool arguments for the TOOL CALL block.
@@ -39,13 +38,13 @@ defmodule BezalelCore.MixProject do
     ]
   end
 
-  # BEZALEL_LOCAL_DEPS uses sibling checkouts (../rho) instead of the pins,
-  # for working on them, as the phone app does: 1 (or true) for all, or a
+  # BEZALEL_LOCAL_DEPS uses sibling checkouts (../rho) instead of Hex, for
+  # working on them, as the phone app does: 1 (or true) for all, or a
   # comma-separated list of apps.
-  defp sibling(app, repo, ref) do
+  defp sibling(app, requirement) do
     if local_dep?(app),
       do: {app, path: "../#{app}", override: true},
-      else: {app, github: repo, ref: ref}
+      else: {app, requirement}
   end
 
   defp local_dep?(app) do
