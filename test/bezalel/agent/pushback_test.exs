@@ -1,10 +1,12 @@
 defmodule Bezalel.Agent.PushbackTest do
-  # async: false: the sign-ins (`config :rho, :credential_store`) are app-wide.
+  # async: false: the sign-ins (`config :rho, :credential_store`), rho's
+  # consult system prompt and attachment resolver are app-wide.
   use ExUnit.Case, async: false
 
   alias Bezalel.Agent.{Pushback, Reply}
   alias Bezalel.Library.{Message, Transcript}
-  alias Bezalel.Test.{CredentialStore, FakeLLM}
+  alias Bezalel.Materials
+  alias Bezalel.Test.{CredentialStore, FakeLLM, MaterialStore}
   alias Rho.{Loop, Session}
 
   @moduletag :tmp_dir
@@ -42,7 +44,7 @@ defmodule Bezalel.Agent.PushbackTest do
     ]
   end
 
-  defp start(dir, scripts) do
+  defp start(dir, scripts, tools \\ [Lexicon]) do
     {:ok, llm} = FakeLLM.start(scripts)
     sup = start_supervised!(Task.Supervisor, id: make_ref())
 
@@ -52,7 +54,7 @@ defmodule Bezalel.Agent.PushbackTest do
          session: Session.new(dir, @lead, dir),
          entries: [],
          llm: {FakeLLM, llm},
-         tools: [Lexicon],
+         tools: tools,
          task_supervisor: sup,
          data_dir: dir,
          system_prompt: "study",
@@ -64,30 +66,44 @@ defmodule Bezalel.Agent.PushbackTest do
     %{loop: loop, llm: llm, sup: sup}
   end
 
-  # The loop's events folded into `reply` until the run ends (or the
-  # pushback fails before it starts one).
-  defp fold(reply, timeout \\ 2_000) do
+  defp put_env(app, key, value) do
+    previous = Application.fetch_env(app, key)
+    Application.put_env(app, key, value)
+
+    on_exit(fn ->
+      case previous do
+        {:ok, v} -> Application.put_env(app, key, v)
+        :error -> Application.delete_env(app, key)
+      end
+    end)
+  end
+
+  # The loop's events folded into `reply` until `stop?` says so: by
+  # default the run's end, or a pushback that ended without one.
+  defp fold(reply, stop? \\ &ended?/1, timeout \\ 2_000) do
     receive do
       {:rho, _sid, event} ->
         reply = Reply.apply(reply, event)
-
-        case event.type do
-          :agent_end -> reply
-          :consult_end when event.status != :ok -> reply
-          _ -> fold(reply, timeout)
-        end
+        if stop?.(event), do: reply, else: fold(reply, stop?, timeout)
     after
       timeout -> flunk("no end; reply so far: #{inspect(reply)}")
     end
   end
 
-  defp ask(loop) do
-    :ok = Loop.prompt(loop, @question)
+  defp ended?(%{type: :agent_end}), do: true
+  defp ended?(%{type: :consult_end, call_id: nil, status: status}), do: status != :ok
+  defp ended?(_event), do: false
+
+  defp ask(loop, attachments \\ []) do
+    :ok = Loop.prompt(loop, @question, attachments)
     fold(Reply.new(1, @lead))
   end
 
+  defp pushback, do: Reply.pushback(1, @lead, @critic)
+
   defp branch(loop), do: Loop.snapshot(loop).entries
   defp messages(loop), do: Transcript.messages(branch(loop), "s")
+  defp summary(%Message{blocks: blocks}), do: Enum.find(blocks, &(&1["id"] == "sum"))["text"]
 
   test "auto: after a finished reply the critic reviews it, then the lead answers the critique",
        %{tmp_dir: dir} do
@@ -101,19 +117,23 @@ defmodule Bezalel.Agent.PushbackTest do
     assert {:ok, task} = Pushback.auto(loop, first, @critic, task_supervisor: sup)
     ref = Process.monitor(task)
 
-    # The pushback streams as a reply of its own: the critique first.
-    pushback = fold(Reply.new(1, @lead))
-    assert pushback.status == :done
+    # A pushback is a reply of its own; the critique leads it, streaming.
+    streaming = fold(pushback(), &(&1.type == :consult_delta))
+    assert [%{"type" => "CONSULT", "text" => @critique}] = Reply.blocks(streaming)
+    assert streaming.consult.status == :running
+
+    reply = fold(streaming)
+    assert reply.status == :done
     assert_receive {:DOWN, ^ref, :process, _, :normal}
 
-    assert [consult | rest] = Reply.blocks(pushback)
+    assert [consult | rest] = Reply.blocks(reply)
     assert consult["type"] == "CONSULT"
 
     assert {consult["model"], consult["purpose"], consult["text"]} ==
              {@critic, "critique", @critique}
 
     assert List.last(rest)["text"] == @response
-    assert pushback.consult.entry in pushback.seen
+    assert reply.consult.entry in reply.seen
 
     # The critic got the study brief, the question, the tool result with
     # its Source line, and the answer.
@@ -142,14 +162,14 @@ defmodule Bezalel.Agent.PushbackTest do
            ] = messages(loop)
 
     assert [%{"type" => "CONSULT", "model" => @critic}] = c.blocks
-    assert c.id == pushback.consult.entry
-    assert Enum.find(response.blocks, &(&1["id"] == "sum"))["text"] == @response
+    assert c.id == reply.consult.entry
+    assert summary(response) == @response
 
     # One round: not on the answer again, not on the lead's response.
     shown = messages(loop)
     refute Pushback.offered?(shown, answer)
     refute Pushback.offered?(shown, response)
-    assert Pushback.auto(loop, pushback, @critic, task_supervisor: sup) == :skip
+    assert Pushback.auto(loop, reply, @critic, task_supervisor: sup) == :skip
 
     assert {:error, "This answer has had its pushback" <> _} =
              Pushback.start(loop, @critic, task_supervisor: sup)
@@ -175,8 +195,27 @@ defmodule Bezalel.Agent.PushbackTest do
     refute Pushback.offered?([question, answer, question], answer)
 
     assert {:ok, _task} = Pushback.start(loop, @critic, task_supervisor: sup)
-    assert fold(Reply.new(1, @lead)).status == :done
+    assert fold(pushback()).status == :done
     assert [_, _, %Message{role: :consult}, %Message{role: :agent}] = messages(loop)
+  end
+
+  test "no button and no pushback on a reply that was stopped, failed or written by Bezalel" do
+    question = Transcript.user(@question) |> Map.put("id", "u1")
+
+    for stop <- ["aborted", "error"] do
+      turn = %{text: "Half an ans", stop_reason: stop} |> Session.assistant(@lead)
+      branch = [question, Map.put(turn, "id", "a1")]
+      [_, reply] = shown = Transcript.messages(branch, "s")
+
+      refute Pushback.offered?(shown, reply)
+      assert Pushback.target(branch) == {:error, :no_reply}
+    end
+
+    scripted = Transcript.reply(%{blocks: [%{"id" => "sum", "first" => "Hi.", "rest" => ""}]})
+    branch = [question, Map.put(scripted, "id", "b1")]
+    [_, reply] = shown = Transcript.messages(branch, "s")
+    refute Pushback.offered?(shown, reply)
+    assert Pushback.target(branch) == {:error, :no_reply}
   end
 
   test "no critic, or the critic's provider not signed in: a clear message, nothing sent",
@@ -198,7 +237,7 @@ defmodule Bezalel.Agent.PushbackTest do
     assert [_, %Message{role: :agent}] = messages(loop)
   end
 
-  test "a critic that fails ends the pushback with its error; the lead isn't prompted",
+  test "a critic that fails ends the pushback with its error, as no failed run: the answer stays",
        %{tmp_dir: dir} do
     CredentialStore.install([:anthropic, :google])
 
@@ -208,51 +247,48 @@ defmodule Bezalel.Agent.PushbackTest do
     first = ask(loop)
     assert {:ok, _task} = Pushback.auto(loop, first, @critic, task_supervisor: sup)
 
-    pushback = fold(Reply.new(1, @lead))
-    assert pushback.status == :error
-    assert pushback.error =~ "quota gone"
-    assert pushback.consult.status == :error
+    reply = fold(pushback())
+    assert {reply.status, reply.reason, reply.consult.status} == {:done, :consult_failed, :error}
+    assert reply.error =~ "quota gone"
 
     refute_receive {:rho, _, %{type: :agent_start}}, 100
     assert [%{model: @lead}, %{model: @lead}, %{model: @critic}] = FakeLLM.requests(llm)
-    assert [_, %Message{role: :agent}] = messages(loop)
+    assert [_, %Message{role: :agent} = answer] = shown = messages(loop)
+
+    # Nothing used the round: the button is still there.
+    assert Pushback.offered?(shown, answer)
   end
 
-  test "a critique that arrives while the lead is busy waits its turn, and is still answered",
+  test "a critique that comes back after the user moved on is not added, nor drawn in their reply",
        %{tmp_dir: dir} do
     CredentialStore.install([:anthropic, :google])
 
     scripts = %{
-      @lead => [
-        [{:text, @answer}],
-        [{:sleep, 300}, {:text, "Second answer."}],
-        [{:text, @response}]
-      ],
-      @critic => [[{:sleep, 100}, {:text, @critique}]]
+      @lead => [[{:text, @answer}], [{:text, "Second answer."}]],
+      @critic => [[{:sleep, 300}, {:text, @critique}]]
     }
 
-    %{loop: loop, sup: sup} = start(dir, scripts)
+    %{loop: loop, llm: llm, sup: sup} = start(dir, scripts)
     first = ask(loop)
-    assert {:ok, _task} = Pushback.auto(loop, first, @critic, task_supervisor: sup)
-    # The user asks again before the critique is in.
+    assert {:ok, task} = Pushback.auto(loop, first, @critic, task_supervisor: sup)
+    ref = Process.monitor(task)
+
+    # The user asks again while the critic works: their reply knows
+    # nothing of the critique.
+    assert_receive {:rho, _, %{type: :consult_start}}
     :ok = Loop.prompt(loop, "And Genesis 8:1?")
+    second = fold(Reply.new(1, @lead), &(&1.type == :agent_end))
+    assert second.consult == nil
+    assert {second.status, Enum.map(Reply.blocks(second), & &1["type"])} == {:done, ["SUMMARY"]}
 
-    # The run the question started goes on with the queued critique: one
-    # run, the critique and its answer after the second answer.
-    reply = fold(Reply.new(1, @lead), 3_000)
-    assert {reply.status, reply.consult.status} == {:done, :ok}
+    assert_receive {:rho, _, %{type: :consult_end, status: :ok}}, 2_000
+    assert_receive {:DOWN, ^ref, :process, _, :normal}
+    refute_receive {:rho, _, %{type: :agent_start}}, 100
 
-    assert [
-             _,
-             _,
-             %Message{role: :user},
-             %Message{role: :agent},
-             %Message{role: :consult},
-             response
-           ] =
-             messages(loop)
-
-    assert Enum.find(response.blocks, &(&1["id"] == "sum"))["text"] == @response
+    assert [_, _, %Message{role: :user}, %Message{role: :agent} = last] = shown = messages(loop)
+    assert summary(last) == "Second answer."
+    assert Pushback.offered?(shown, last)
+    assert [_lead, _critic, _lead_again] = FakeLLM.requests(llm)
   end
 
   test "stopping the loop stops the critique", %{tmp_dir: dir} do
@@ -264,13 +300,80 @@ defmodule Bezalel.Agent.PushbackTest do
     first = ask(loop)
     assert {:ok, task} = Pushback.auto(loop, first, @critic, task_supervisor: sup)
     ref = Process.monitor(task)
-    assert_receive {:rho, _, %{type: :consult_start}}
+    reply = fold(pushback(), &(&1.type == :consult_start))
     :ok = Loop.stop(loop)
 
-    assert_receive {:rho, _, %{type: :consult_end, status: :stopped} = ended}
-    assert Reply.apply(Reply.new(1, @lead), ended).status == :stopped
+    assert fold(reply).status == :stopped
     assert_receive {:DOWN, ^ref, :process, _, :normal}
     assert [_, %Message{role: :agent}] = messages(loop)
+  end
+
+  test "the critic sees the pictures the question sent", %{tmp_dir: dir} do
+    CredentialStore.install([:anthropic, :google])
+    MaterialStore.install()
+    put_env(:rho, :resolve_attachment, {Materials, :resolve, []})
+
+    %{loop: loop, llm: llm, sup: sup} =
+      start(dir, %{
+        @lead => [[{:text, @answer}], [{:text, @response}]],
+        @critic => [[{:text, @critique}]]
+      })
+
+    ctx = %{session_id: Loop.config(loop).session.id}
+    {:ok, photo} = Materials.put(Materials.new("png bytes", name: "lamp.png"), "png bytes", ctx)
+
+    picture = %{kind: :image, ref: photo.id, name: "lamp.png", mime: "image/png", about: "image"}
+    first = ask(loop, [picture])
+    assert first.status == :done
+
+    assert {:ok, _task} = Pushback.auto(loop, first, @critic, task_supervisor: sup)
+    assert fold(pushback()).status == :done
+
+    critic = Enum.find(FakeLLM.requests(llm), &(&1.model == @critic))
+    parts = Enum.flat_map(critic.messages, & &1.content)
+    assert Enum.any?(parts, &(&1.type == :image and &1.data == "png bytes"))
+    assert text_of(List.last(critic.messages)) =~ ~s(name="lamp.png")
+  end
+
+  test "asked in words, the lead's own ask_model critique gets the study brief and is the round",
+       %{tmp_dir: dir} do
+    CredentialStore.install([:anthropic, :google])
+    put_env(:rho, :consult_system, {Pushback, :system, []})
+
+    ask = %{
+      "model" => @critic,
+      "purpose" => "critique",
+      "prompt" => "Check my answer about ruach.",
+      "include_conversation" => true
+    }
+
+    %{loop: loop, llm: llm, sup: sup} =
+      start(
+        dir,
+        %{
+          @lead => [[{:tool_call, "c1", "ask_model", ask}], [{:text, @response}]],
+          @critic => [[{:text, @critique}]]
+        },
+        [Lexicon, Rho.Tools.Consult]
+      )
+
+    :ok = Loop.prompt(loop, "Have Gemini push back on that.")
+    streaming = fold(Reply.new(1, @lead), &(&1.type == :consult_delta))
+
+    assert [%{"type" => "CONSULT", "text" => @critique, "model" => @critic}] =
+             Reply.blocks(streaming)
+
+    reply = fold(streaming)
+    assert reply.status == :done
+
+    critic = Enum.find(FakeLLM.requests(llm), &(&1.model == @critic))
+    assert critic.system_prompt == Pushback.critic_prompt()
+
+    [_, %Message{role: :agent} = answered] = shown = messages(loop)
+    assert [%{"type" => "CONSULT", "purpose" => "critique"}, _sum] = answered.blocks
+    refute Pushback.offered?(shown, answered)
+    assert Pushback.auto(loop, reply, @critic, task_supervisor: sup) == :skip
+    assert Pushback.target(branch(loop)) == {:error, :pushed_back}
   end
 
   test "a reply that failed or was stopped gets no automatic pushback", %{tmp_dir: dir} do
@@ -286,8 +389,6 @@ defmodule Bezalel.Agent.PushbackTest do
     assert Pushback.title("google:no-such-model", "critique") == "Pushback · no-such-model"
     assert Pushback.title("google:x", "second_opinion") == "Second opinion · x"
     assert Pushback.title("google:x", "fact_check") == "Fact check · x"
-    assert Pushback.system("critique") == Pushback.critic_prompt()
-    assert Pushback.system("second_opinion") == nil
   end
 
   defp text_of(%ReqLLM.Message{content: parts}), do: Enum.map_join(parts, "", &(&1.text || ""))

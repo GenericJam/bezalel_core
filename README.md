@@ -159,7 +159,8 @@ reply aloud with `Bezalel.Speech.speakable(summary)`. How it all works:
 
 Let another model push back (`prefs.pushback_model`, "Pushback from"). The
 loop's subscriber gets the critique as `consult_*` events, then the lead's
-answer as a run; fold both into a new `Bezalel.Agent.Reply`:
+answer as a run; fold both into a `Bezalel.Agent.Reply.pushback/4` (other
+replies ignore a consult outside a turn):
 
 ```elixir
 # The study brief for a critique the lead asks for in words, too:
@@ -170,14 +171,18 @@ Rho.Supervisor.start_link(tools: Bezalel.Study.Tools.all() ++ [Rho.Tools.Consult
 Bezalel.Study.Prompt.system_prompt(prefs, surface: my_formatting_text, ask_model: true)
 
 # The per-conversation switch, on each finished reply (after :agent_end):
-Bezalel.Agent.Pushback.auto(loop, finished_reply, prefs.pushback_model)
+with {:ok, _task} <- Bezalel.Agent.Pushback.auto(loop, finished_reply, critic),
+     do: stream_into(Bezalel.Agent.Reply.pushback(conversation_id, model, critic, session_id))
 
 # The Pushback button, on the message where offered?/2 is true:
 if Bezalel.Agent.Pushback.offered?(messages, message), do: show_button()
-case Bezalel.Agent.Pushback.start(loop, prefs.pushback_model) do
-  {:ok, _task} -> stream_into(Bezalel.Agent.Reply.new(conversation_id, model, session_id))
+case Bezalel.Agent.Pushback.start(loop, critic) do
+  {:ok, _task} -> stream_into(Bezalel.Agent.Reply.pushback(conversation_id, model, critic, session_id))
   {:error, sentence} -> show_error(sentence)
 end
+
+# A failed critique ends that reply :done, reason: :consult_failed, with its error:
+# show the error; it's no failed run (don't drop entries or ask again).
 ```
 
 A critique is a CONSULT block (`"model"`, `"purpose"`) live and a

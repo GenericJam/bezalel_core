@@ -16,16 +16,21 @@ defmodule Bezalel.Agent.Reply do
   inline) and `materials` (by reference: a `draw_image` drawing).
 
   **Another model** (`Rho.Consult`'s events). A pushback
-  (`Bezalel.Agent.Pushback`) is a reply of its own: the critic's
-  critique streams into `consult` (`%{model, purpose, text, status,
-  error, entry}`: rho's out-of-turn `consult_*` events, `call_id` nil)
-  and leads the blocks as a CONSULT block, then the lead model's answer
-  to it follows as usual. A failed or stopped consult ends the reply
-  (`status` `:error` or `:stopped`); a done one waits for the answer.
-  Its `model_message` entry, once stored, is in `seen` like the reply's
-  other entries (the chat leaves it to the stream while it runs). A
-  model the lead asks itself (rho's `ask_model` tool) is a CONSULT block
-  in place of that TOOL CALL, its text streaming in as it comes.
+  (`Bezalel.Agent.Pushback`) is a reply of its own, started with
+  `pushback/4`: the critic's critique streams into `consult` (`%{id,
+  model, purpose, text, status, error, entry}`, from rho's out-of-turn
+  `consult_*` events, the first `consult_start` with no `call_id` it
+  sees, then those with its `id`) and leads the blocks as a CONSULT
+  block, then the lead model's answer to it follows as usual. Any other
+  reply ignores out-of-turn consults, so a critique never lands in a
+  reply it isn't. A stopped consult ends the reply `:stopped`; a failed
+  one ends it `:done` with `reason: :consult_failed` and the consult's
+  `error` (no run failed: there is nothing to drop or ask again; show the
+  error); a done one waits for the answer. Its `model_message` entry,
+  once stored, is in `seen` like the reply's other entries (the chat
+  leaves it to the stream while it runs). A model the lead asks itself
+  (rho's `ask_model` tool) is a CONSULT block in place of that TOOL CALL,
+  its text streaming in as it comes (by the consult's `id`).
 
   No file I/O: the host app keeps one per conversation with a reply in
   flight. The loop writes the reply to the conversation's session as it
@@ -62,12 +67,17 @@ defmodule Bezalel.Agent.Reply do
           consult: consult() | nil
         }
 
-  @typedoc "Another model's message as it streams: `status` `:running`, `:ok`, `:error` or `:stopped`."
+  @typedoc """
+  Another model's message as it streams: `status` `:waiting` (a pushback
+  not started yet), `:running`, `:ok`, `:error` or `:stopped`; `id` rho's
+  consult id, `entry` its stored `model_message` entry's.
+  """
   @type consult :: %{
+          id: String.t() | nil,
           model: String.t(),
           purpose: String.t(),
           text: String.t(),
-          status: :running | :ok | :error | :stopped,
+          status: :waiting | :running | :ok | :error | :stopped,
           error: String.t() | nil,
           entry: String.t() | nil
         }
@@ -111,6 +121,27 @@ defmodule Bezalel.Agent.Reply do
   def failed(conversation_id, model, error),
     do: %{new(conversation_id, model) | status: :error, error: error}
 
+  @doc """
+  A pushback about to stream in `conversation_id`: `critic`'s critique
+  (a rho model spec), then `model`'s answer to it. Start it when
+  `Bezalel.Agent.Pushback.start/3` or `auto/4` answers `{:ok, _}`; it
+  takes the next consult the loop starts outside a turn.
+  """
+  @spec pushback(integer(), String.t(), String.t(), String.t() | nil) :: t()
+  def pushback(conversation_id, model, critic, session_id \\ nil) do
+    consult = %{
+      id: nil,
+      model: critic,
+      purpose: "critique",
+      text: "",
+      status: :waiting,
+      error: nil,
+      entry: nil
+    }
+
+    %{new(conversation_id, model, session_id) | consult: consult}
+  end
+
   @doc "Folds one loop event in."
   @spec apply(t(), map()) :: t()
   def apply(r, %{type: :turn_start, turn: turn}), do: %{r | turn: turn, text: ""}
@@ -140,61 +171,54 @@ defmodule Bezalel.Agent.Reply do
     do: r |> saw(entry) |> add_images(entry)
 
   # Another model's message stored (a pushback's critique): one of this
-  # reply's entries, and the consult's text as stored.
+  # reply's entries, and, in a pushback, the consult's text as stored.
   def apply(r, %{type: :message_end, entry: %{"type" => "custom_message"} = entry}) do
-    case Session.attribution(entry) do
-      %{model: model, purpose: purpose} ->
-        consult = r.consult || %{model: model, purpose: purpose, status: :ok, error: nil}
-
-        consult =
-          Map.merge(consult, %{text: Session.text(entry["content"]), entry: entry["id"]})
-
-        %{saw(r, entry) | consult: consult}
-
-      nil ->
+    case {Session.attribution(entry), r.consult} do
+      {nil, _consult} ->
         notice(r, entry)
+
+      {%{model: model, purpose: purpose}, %{} = c} ->
+        c = %{c | model: model, purpose: purpose, text: Session.text(entry["content"])}
+        %{saw(r, entry) | consult: %{c | entry: entry["id"]}}
+
+      {_attribution, nil} ->
+        saw(r, entry)
     end
   end
 
-  def apply(r, %{type: :consult_start, call_id: nil, model: model, purpose: purpose}) do
-    consult = %{
-      model: model,
-      purpose: purpose,
-      text: "",
-      status: :running,
-      error: nil,
-      entry: nil
-    }
+  def apply(%{consult: %{status: :waiting} = c} = r, %{type: :consult_start, call_id: nil} = e),
+    do: %{r | consult: %{c | id: e.id, model: e.model, purpose: e.purpose, status: :running}}
 
-    %{r | consult: consult}
-  end
-
-  def apply(r, %{type: :consult_start, call_id: id, model: model, purpose: purpose}),
-    do: update_tool(r, id, &Map.put(&1, :consult, %{model: model, purpose: purpose, text: ""}))
-
-  def apply(%{consult: %{} = c} = r, %{type: :consult_delta, call_id: nil, kind: :text, delta: d}),
-      do: %{r | consult: %{c | text: c.text <> d}}
-
-  def apply(r, %{type: :consult_delta, call_id: id, kind: :text, delta: delta}) when id != nil do
-    update_tool(r, id, fn
-      %{consult: %{} = c} = item -> %{item | consult: %{c | text: c.text <> delta}}
-      item -> item
+  def apply(r, %{type: :consult_start, call_id: call_id} = e) when call_id != nil do
+    update_tool(r, call_id, fn
+      %{consult: %{} = c} = item -> %{item | consult: Map.put(c, :id, e.id)}
+      item -> Map.put(item, :consult, %{id: e.id, model: e.model, purpose: e.purpose, text: ""})
     end)
   end
 
-  def apply(r, %{type: :consult_end, call_id: nil} = event) do
-    consult =
-      Map.merge(
-        r.consult || %{model: event.model, purpose: event.purpose, entry: nil},
-        %{status: event.status, error: event[:error], text: event[:text] || ""}
-      )
+  def apply(%{consult: %{id: id} = c} = r, %{type: :consult_delta, id: id, kind: :text} = e)
+      when id != nil,
+      do: %{r | consult: %{c | text: c.text <> e.delta}}
 
-    r = %{r | consult: consult}
+  def apply(r, %{type: :consult_delta, id: id, kind: :text, delta: delta}) do
+    items =
+      Enum.map(r.items, fn
+        %{consult: %{id: ^id} = c} = item -> %{item | consult: %{c | text: c.text <> delta}}
+        item -> item
+      end)
+
+    %{r | items: items}
+  end
+
+  def apply(%{consult: %{id: id} = c} = r, %{type: :consult_end, id: id} = event)
+      when id != nil do
+    c = %{c | status: event.status, error: event[:error], text: event[:text] || c.text}
+    r = %{r | consult: c}
 
     case event.status do
       :ok -> r
       :stopped -> %{r | status: :stopped, reason: :stopped}
-      :error -> %{r | status: :error, error: r.error || consult_error(consult)}
+      :error -> %{r | status: :done, reason: :consult_failed, error: consult_error(c)}
     end
   end
 

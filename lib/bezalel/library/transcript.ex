@@ -221,11 +221,19 @@ defmodule Bezalel.Library.Transcript do
             | blocks: Reply.blocks(reply),
               card: reply.card,
               citations: Reply.sources(reply),
-              model: model(group)
+              model: model(group),
+              stop_reason: stop_reason(group)
           }
       end
 
     if shown?(message), do: [message], else: []
+  end
+
+  defp stop_reason(group) do
+    Enum.find_value(Enum.reverse(group), fn
+      %{"message" => %{"role" => "assistant"} = m} -> m["stopReason"]
+      _ -> nil
+    end)
   end
 
   defp shown?(m),

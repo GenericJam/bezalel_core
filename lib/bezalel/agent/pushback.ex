@@ -25,10 +25,10 @@ defmodule Bezalel.Agent.Pushback do
   (`Bezalel.Study.Prompt.system_prompt/2`, `ask_model: true`) has the lead
   call rho's `ask_model` tool itself, within its turn.
 
-  The chat: `Bezalel.Agent.Reply` folds the critique into a CONSULT block
-  ahead of the lead's answer; stored, the critique is a `:consult`
-  `Bezalel.Library.Message`; `title/2` names either ("Pushback · Gemini 3
-  Pro").
+  The chat: a reply started with `Bezalel.Agent.Reply.pushback/4` folds
+  the critique into a CONSULT block ahead of the lead's answer; stored,
+  the critique is a `:consult` `Bezalel.Library.Message`; `title/2` names
+  either ("Pushback · Gemini 3 Pro").
 
   The host points rho's consult system prompt here, so a critique the
   lead asks for in words gets the same brief: `config :rho,
@@ -125,15 +125,18 @@ defmodule Bezalel.Agent.Pushback do
 
   @doc """
   Whether the chat offers Pushback on `message` among `messages` (the
-  conversation's, `Bezalel.Library.Transcript.messages/2`): it is the last
-  message, a reply with an answer, and not the lead's answer to another
-  model's message.
+  conversation's, `Bezalel.Library.Transcript.messages/2`), as `target/1`
+  would take it: the last message, a reply that finished with an answer
+  (`stop_reason` `"stop"` or `"length"`: not failed, stopped or written
+  by Bezalel), not the lead's answer to another model's message, and not
+  one that had its critique within its turn (an `ask_model` critique).
   """
   @spec offered?([Message.t()], Message.t()) :: boolean()
   def offered?(messages, %Message{role: :agent, id: id} = message) do
     case Enum.reverse(messages) do
       [%Message{id: ^id} | before] ->
-        answered?(message) and not match?([%Message{role: :consult} | _], before)
+        message.stop_reason in ["stop", "length"] and answered?(message) and
+          not critiqued?(message) and not match?([%Message{role: :consult} | _], before)
 
       _ ->
         false
@@ -144,12 +147,17 @@ defmodule Bezalel.Agent.Pushback do
 
   defp answered?(%Message{blocks: blocks}), do: Enum.any?(blocks, &(&1["id"] == "sum"))
 
+  defp critiqued?(%Message{blocks: blocks}),
+    do: Enum.any?(blocks, &(&1["type"] == "CONSULT" and &1["purpose"] == @purpose))
+
   @doc """
   The reply `branch` (a session's active branch) would push back on: its
   last, if it finished with an answer. `{:error, :no_reply}` when there
   is none (no answer yet, a failed or stopped one, a reply Bezalel wrote
   itself), `{:error, :pushed_back}` when the last reply answers another
-  model's message or the branch ends with one (one round per reply).
+  model's message, the branch ends with one, or the lead had the reply
+  critiqued within its turn (`ask_model`, purpose "critique"): one round
+  per reply.
   """
   @spec target([Session.entry()]) :: {:ok, target()} | {:error, :no_reply | :pushed_back}
   def target(branch) do
@@ -173,10 +181,25 @@ defmodule Bezalel.Agent.Pushback do
            List.last(entries),
          false <- Map.has_key?(last, "bezalel"),
          answer when answer != "" <- answer([question | entries]) do
-      {:ok, %{question: question, entries: entries, answer: answer}}
+      if asked_critique?(entries),
+        do: {:error, :pushed_back},
+        else: {:ok, %{question: question, entries: entries, answer: answer}}
     else
       _ -> {:error, :no_reply}
     end
+  end
+
+  defp asked_critique?(entries) do
+    Enum.any?(entries, fn
+      %{"message" => %{"role" => "assistant"} = m} ->
+        Enum.any?(
+          Session.tool_calls(m),
+          &(&1["name"] == "ask_model" and (&1["arguments"] || %{})["purpose"] == @purpose)
+        )
+
+      _ ->
+        false
+    end)
   end
 
   defp answer(entries) do
@@ -196,24 +219,18 @@ defmodule Bezalel.Agent.Pushback do
   defp turn?(_entry), do: false
 
   @doc """
-  What the critic reads for `target`: the question (its attachments go
-  along by reference, `attachments/1`), each tool call with its result
-  (cut to #{@result_chars} characters each, #{@results_chars} in all) and
-  the answer.
+  What the critic reads for `target`: the question as the lead got it
+  (the user's words and each attachment's envelope: its name, what it is,
+  a transcript's text; pictures and PDFs go along by reference,
+  `attachments/1`), each tool call with its result (cut to
+  #{@result_chars} characters each, #{@results_chars} in all) and the
+  answer.
   """
   @spec brief(target()) :: String.t()
   def brief(%{question: %{"message" => q}, entries: entries, answer: answer}) do
-    attached =
-      case Session.attachments(q) do
-        [] -> ""
-        list -> "\n\n(Attached: #{Enum.map_join(list, ", ", &(&1["name"] || &1["ref"]))}.)"
-      end
-
-    question = String.trim(Session.typed(q)) <> attached
-
     Enum.join(
       [
-        "## The user's question\n\n" <> question,
+        "## The user's question\n\n" <> String.trim(Session.text(q["content"])),
         "## The tool results the answer drew on\n\n" <> results(entries),
         "## The answer\n\n" <> String.trim(answer),
         "Push back on the answer, as your brief says."
@@ -222,10 +239,24 @@ defmodule Bezalel.Agent.Pushback do
     )
   end
 
-  @doc "The question's attachments by reference, for the critic to see them too."
-  @spec attachments(target()) :: [map()]
-  def attachments(%{question: %{"message" => q}}),
-    do: for(%{"ref" => ref} = a <- Session.attachments(q), is_binary(ref), do: a)
+  @doc """
+  The question's pictures and PDFs sent by reference, as rho's
+  attachments (`Rho.Session.user/2`'s), for the critic to see them too;
+  the rest are in the question's text.
+  """
+  @spec attachments(target()) :: [Session.attachment()]
+  def attachments(%{question: %{"message" => q}}) do
+    for %{"ref" => ref, "kind" => kind} = a <- Session.attachments(q),
+        is_binary(ref),
+        kind in ["image", "pdf"],
+        do: %{
+          kind: if(kind == "pdf", do: :pdf, else: :image),
+          ref: ref,
+          name: a["name"] || ref,
+          mime: a["mimeType"],
+          about: a["about"] || ""
+        }
+  end
 
   defp results(entries) do
     calls =
@@ -264,10 +295,12 @@ defmodule Bezalel.Agent.Pushback do
   "add a Gemini key"), a reply still running, nothing to push back on, a
   reply already pushed back. Then runs in a task (`{:ok, pid}`) under
   `opts[:task_supervisor]` (rho's `Rho.TaskSup` by default): the critique,
-  then the lead's answer, both on the loop's event stream. A consult that
-  fails ends there (its `consult_end` carries the error); the critique
-  arrives while the loop is busy (the user asked something meanwhile), it
-  waits in the loop's follow-up queue.
+  then the lead's answer, both on the loop's event stream (fold them into
+  `Bezalel.Agent.Reply.pushback/4`). A consult that fails or is stopped
+  ends there (its `consult_end` says so). A critique that comes back
+  after the conversation moved on (the user asked something else
+  meanwhile) is not added: it would answer a reply that is no longer the
+  last, so the round isn't used up.
 
   `opts[:consult]` is added to `Rho.Consult.run/3`'s options.
   """
@@ -344,21 +377,28 @@ defmodule Bezalel.Agent.Pushback do
       ] ++ (opts[:consult] || [])
 
     case Rho.Consult.run(model, brief(target), consult_opts) do
-      {:ok, %{text: text}} -> answer(loop, model, text)
+      {:ok, %{text: text}} -> answer(loop, model, text, target)
       {:error, _} -> :ok
     end
   end
 
-  # The critique, attributed to the critic, for the lead to answer. A loop
-  # released meanwhile (the user left) has no one to answer it.
-  defp answer(loop, model, text) do
+  # The critique, attributed to the critic, for the lead to answer, if the
+  # reply it reviews is still the last and the loop idle. A loop released
+  # meanwhile (the user left) has no one to answer it.
+  defp answer(loop, model, text, target) do
     opts = [attribution: {:model, model, @purpose}, instruction: @instruction]
 
-    case Loop.prompt(loop, text, opts) do
-      {:error, :running} -> Loop.follow_up(loop, text, opts)
-      other -> other
-    end
+    if still?(loop, target), do: Loop.prompt(loop, text, opts), else: :moved_on
   catch
     :exit, _ -> :ok
+  end
+
+  defp still?(loop, %{entries: entries}) do
+    snapshot = Loop.snapshot(loop)
+
+    with :idle <- snapshot.status,
+         {:ok, now} <- target(snapshot.entries),
+         do: List.last(now.entries)["id"] == List.last(entries)["id"],
+         else: (_ -> false)
   end
 end

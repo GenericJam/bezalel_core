@@ -497,30 +497,40 @@ the decision record is `decisions/2026-10-18-pushback.md`.
   textual and linguistic accuracy, missing or one-sided perspectives, overreach beyond
   the evidence; a numbered list, most serious first, each point with its severity
   (major, minor, nit) and evidence; no rewrite, no confessional side.
-- **What it reads** (`Pushback.brief/1`): the question (its attachments by reference),
-  every tool call of the reply with its result (4,000 characters each, 24,000 in all,
-  Source lines included) and the answer.
+- **What it reads** (`Pushback.brief/1`): the question as the lead got it (each
+  attachment's envelope included; its pictures and PDFs by reference,
+  `Pushback.attachments/1`), every tool call of the reply with its result (4,000
+  characters each, 24,000 in all, Source lines included) and the answer.
 - **One round per reply.** `Pushback.target/1` takes the conversation's last reply if
-  it finished with an answer; the lead's answer to a critique, and a reply already
-  critiqued, are refused. The critique is stored as the critic's own message (rho's
-  attributed `model_message` entry), the lead is prompted with it and
-  `Pushback.instruction/0` ("Respond to each point: revise where it's right, stand your
-  ground with reasons where it isn't…"), and its answer is the reply after it.
+  it finished with an answer (pi's `stopReason` `stop` or `length`, not one Bezalel
+  wrote); the lead's answer to a critique, a reply already critiqued, and a reply whose
+  lead had it critiqued within its turn (`ask_model`, purpose `critique`) are refused.
+  The critique is stored as the critic's own message (rho's attributed `model_message`
+  entry), the lead is prompted with it and `Pushback.instruction/0` ("Respond to each
+  point: revise where it's right, stand your ground with reasons where it isn't…"),
+  and its answer is the reply after it. A critique that comes back after the user
+  moved on (asked something else meanwhile) is not added: it would answer a reply
+  that is no longer the last, and the round isn't used up.
 - **Three ways in.** A per-conversation switch (the app's) calls `Pushback.auto/4` with
   the finished reply after each `agent_end`; the Pushback button on the last reply
-  (`Pushback.offered?/2`) calls `Pushback.start/3`; asking in words is the prompt's
+  (`Pushback.offered?/2`, which agrees with `target/1` through the message's
+  `stop_reason` and blocks) calls `Pushback.start/3`; asking in words is the prompt's
   rule and rho's `ask_model` tool, within the lead's turn. `start/3` answers at once
   with a sentence for the user when it can't run: no critic chosen, the critic's
   provider not signed in (`Rho.Consult.allowed/1`: "Gemini (Google) isn't signed in"),
   a reply still running, nothing to push back on, or the round already had.
 - **On screen.** The critique streams on the loop's events (`consult_start`,
-  `consult_delta`, `consult_end`); `Bezalel.Agent.Reply` folds them into `consult` and a
-  CONSULT block ahead of the lead's answer, and ends the reply with the consult's error
-  if it fails. Stored, the critique is a `Bezalel.Library.Message` with `role: :consult`,
-  `model`, `purpose` and `text` (and the same CONSULT block in `blocks`); an `ask_model`
-  call inside a reply is a CONSULT block in place of its TOOL CALL. A CONSULT block has
-  `"model"` and `"purpose"`; `Pushback.title/2` names it ("Pushback · Gemini 3 Pro").
-  The consult's cost is recorded in the session (rho's `consult` entry, in
+  `consult_delta`, `consult_end`). The app folds them into a reply started with
+  `Bezalel.Agent.Reply.pushback/4` (any other reply ignores a consult outside a turn,
+  so a critique never lands in the user's next reply): `consult`, and a CONSULT block
+  ahead of the lead's answer. A stopped consult ends it `:stopped`; a failed one ends it
+  `:done` with `reason: :consult_failed` and the error (no run failed, so the app's
+  failed-run path, which drops entries and asks again, must not run). Stored, the
+  critique is a `Bezalel.Library.Message` with `role: :consult`, `model`, `purpose` and
+  `text` (and the same CONSULT block in `blocks`); an `ask_model` call inside a reply is
+  a CONSULT block in place of its TOOL CALL, streaming by the consult's id. A CONSULT
+  block has `"model"` and `"purpose"`; `Pushback.title/2` names it ("Pushback · Gemini
+  3 Pro"). The consult's cost is recorded in the session (rho's `consult` entry, in
   `Rho.Session.totals/1`), and stopping the loop stops it.
 - **The same brief in words.** The app sets `config :rho, :consult_system,
   {Bezalel.Agent.Pushback, :system, []}`, so the critic the lead asks for itself gets

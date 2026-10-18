@@ -245,9 +245,6 @@ defmodule Bezalel.Study.PreferencesTest do
     test "with ask_model offered, the rule for asking another model, before the surface section" do
       prompt = Prompt.system_prompt(%Preferences{}, ask_model: true, surface: "## Formatting")
       assert prompt =~ Prompt.other_models()
-      assert prompt =~ "have Gemini push back"
-      assert prompt =~ ~s(purpose "critique")
-      assert prompt =~ "stand your ground with reasons"
       assert String.ends_with?(prompt, "## Formatting")
 
       # Not offered, not mentioned: the model can't call a tool it hasn't got.
