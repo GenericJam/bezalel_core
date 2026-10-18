@@ -22,7 +22,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
      comes from R2 rather than an edge copy, and compares size and sha256.
 
   `--dry-run` does steps 1 and 3 locally and prints what it would upload.
-  A real publish needs `data/` committed (the manifest names the commit) and
+  A real publish needs `data/` and `lib/` committed (the manifest names the commit) and
   wrangler logged in to the Cloudflare account that owns the bucket.
   """
 
@@ -95,12 +95,14 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     )
   end
 
+  # The packs are built by data/ and by core's lib/ (the scrolls pack reads
+  # its registry and folding), so both must be committed.
   defp commit!(dry_run) do
-    {status, 0} = System.cmd("git", ["status", "--porcelain", "--", "."])
+    {status, 0} = System.cmd("git", ["status", "--porcelain", "--", ".", "../lib"])
 
     if status != "" do
       message =
-        "bezalel_core data/ has uncommitted changes; commit the code that built the pack first"
+        "bezalel_core data/ or lib/ has uncommitted changes; commit the code that built the packs first"
 
       if dry_run, do: Mix.shell().info("Warning: #{message}"), else: Mix.raise(message)
     end
@@ -169,11 +171,24 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
   defp check_source!("scrolls", meta) do
     pin = Download.pin!("dss")
     digest = pin["files"] |> Enum.sort() |> Net.digest()
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
 
-    if meta["dss_sha256"] != digest or meta["dss_source"] != Scrolls.provenance(pin).source_url do
-      Mix.raise(
-        "out/scrolls.sqlite wasn't built from pins.json's ETCBC/dss; run mix bezalel.data.scrolls"
-      )
+    cond do
+      meta["dss_sha256"] != digest or meta["dss_source"] != Scrolls.provenance(pin).source_url ->
+        Mix.raise(
+          "out/scrolls.sqlite wasn't built from pins.json's ETCBC/dss; run mix bezalel.data.scrolls"
+        )
+
+      meta["core_sha256"] != core ->
+        Mix.raise("out/scrolls.sqlite wasn't numbered with base.json's core pack; rebuild it")
+
+      meta["build_sha256"] != Scrolls.build_digest() ->
+        Mix.raise(
+          "out/scrolls.sqlite was built by other code than this checkout's; run mix bezalel.data.scrolls"
+        )
+
+      true ->
+        :ok
     end
   end
 

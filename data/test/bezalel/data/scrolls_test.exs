@@ -1,5 +1,7 @@
 defmodule Bezalel.Data.ScrollsTest do
-  use ExUnit.Case, async: true
+  # Not async: Bezalel.Data.Scrolls caches its compiled regexes in
+  # :persistent_term.
+  use ExUnit.Case, async: false
 
   alias Bezalel.Data.Scrolls
   alias Bezalel.Study.Ancient
@@ -221,6 +223,38 @@ defmodule Bezalel.Data.ScrollsTest do
            ] = result.manuscripts
 
     assert result.unmapped == []
+  end
+
+  test "biblical/3: a sign in no word stays inside a verse, is left out between verses" do
+    # Line 1 (slots 1–5): Gen 1:1 at 1 and 3, Gen 1:2 at 5; slot 2 is inside
+    # Gen 1:1, slot 4 between the two verses.
+    words = [
+      %{node: 200, book: "Gen", chapter: "1", verse: "1", slots: 1..1},
+      %{node: 201, book: "Gen", chapter: "1", verse: "1", slots: 3..3},
+      %{node: 202, book: "Gen", chapter: "1", verse: "2", slots: 5..5}
+    ]
+
+    result = Scrolls.biblical(%{data() | words: words}, fn {_, c, v} -> {c, v} end, %{})
+
+    assert [%{reference: "Gen.1.1", text: "א ב ג"}, %{reference: "Gen.1.2", text: "ה"}] =
+             result.verses
+
+    assert result.wordless_signs.kept == %{"cons" => 1}
+    # Slot 4 and all of line 2 (slots 6–9), which has no verse word.
+    assert result.wordless_signs.dropped == %{"cons" => 5}
+  end
+
+  test "biblical/3 stops on a line label that isn't a number" do
+    data = data()
+
+    data = %{
+      data
+      | lines: Enum.map(data.lines, &if(&1.node == 50, do: %{&1 | line: "1a"}, else: &1))
+    }
+
+    assert_raise RuntimeError, ~r/4Q1 f1: line label "1a" is not a number/, fn ->
+      Scrolls.biblical(data, fn {_book, chapter, verse} -> {chapter, verse} end, %{})
+    end
   end
 
   test "biblical/3 keeps a verse the core pack lacks under ETCBC's numbering" do

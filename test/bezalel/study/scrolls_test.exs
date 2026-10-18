@@ -168,6 +168,21 @@ defmodule Bezalel.Study.ScrollsTest do
                "4Q76 (4QXIIa) 4:8–10 (mapping: Hebrew numbering Mal.3.19)"
     end
 
+    test "in Greek numbering the DSS rows follow the LXX verse groups, also when shown alone" do
+      for versions <- [["DSS"], ["MT", "LXX", "DSS"]] do
+        {:ok, result} =
+          CompareBiblicalVersions.result(%{
+            "reference" => "Psalm 21:17",
+            "numbering" => "lxx",
+            "versions" => versions
+          })
+
+        dss = Enum.filter(result.rows, &(&1.version == "DSS"))
+        assert Enum.map(dss, & &1.dss.siglum) == ["4Q88", "5/6hev1b"], inspect(versions)
+        assert Enum.all?(dss, &(&1.canonical_reference == "Psa.22.16"))
+      end
+    end
+
     test "verses no scroll preserves are said to be so" do
       assert ok(CompareBiblicalVersions.run(%{"reference" => "Genesis 1:1"}, %{})) =~
                "*No biblical Dead Sea Scroll (ETCBC/dss) preserves any of these verses.*"
@@ -188,6 +203,52 @@ defmodule Bezalel.Study.ScrollsTest do
       assert message == Sources.excluded_message("manuscripts:dss")
       assert %Sources.Source{default_on: true} = Sources.get("manuscripts:dss")
       refute "compare_biblical_versions" in Sources.withheld_tools(prefs)
+    end
+  end
+
+  # The fixture packs with a scrolls pack that has only pack_meta.
+  defp with_damaged_scrolls(fun) do
+    fixtures = Application.fetch_env!(:bezalel_core, :packs_dir)
+    dir = Path.join(System.tmp_dir!(), "bezalel-damaged-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+
+    for file <- File.ls!(fixtures),
+        file != "scrolls.sqlite",
+        do: File.cp!(Path.join(fixtures, file), Path.join(dir, file))
+
+    {:ok, conn} = Exqlite.Sqlite3.open(Path.join(dir, "scrolls.sqlite"))
+    :ok = Exqlite.Sqlite3.execute(conn, "CREATE TABLE pack_meta (key TEXT, value TEXT)")
+    :ok = Exqlite.Sqlite3.close(conn)
+    Application.put_env(:bezalel_core, :packs_dir, dir)
+
+    try do
+      fun.()
+    after
+      Application.put_env(:bezalel_core, :packs_dir, fixtures)
+      File.rm_rf!(dir)
+    end
+  end
+
+  describe "a scrolls pack that can't be read" do
+    test "is searched around, noted in comparisons, and named in lookups" do
+      with_damaged_scrolls(fn ->
+        text = ok(SearchAncientSources.run(%{"query" => "בני אור", "corpus" => "qumran"}, %{}))
+        assert text =~ "The scrolls study pack (Dead Sea Scrolls) isn't downloaded on this device"
+
+        assert {:error, message} = LookupAncientSource.run(%{"citation" => "11Q13 2:18"}, %{})
+        assert message =~ "The scrolls study pack on this device can't be read"
+
+        assert ok(CompareBiblicalVersions.run(%{"reference" => "Psalm 22:16"}, %{})) =~
+                 "*Dead Sea Scrolls readings need the scrolls study pack"
+
+        assert {:error, message} =
+                 CompareBiblicalVersions.run(
+                   %{"reference" => "Psalm 22:16", "versions" => ["DSS"]},
+                   %{}
+                 )
+
+        assert message =~ "can't be read (no dss_biblical_verses, dss_biblical_manuscripts)"
+      end)
     end
   end
 

@@ -1,6 +1,7 @@
 {
   "what": "Conventional names of the biblical manuscripts (e.g. 4Q37 = 4QDeutj), by ETCBC/dss siglum, for the scrolls pack's dss_biblical_manuscripts.name. A siglum missing here has no name in the pack.",
   "source": "Leon Levy Dead Sea Scrolls Digital Library (Israel Antiquities Authority), each manuscript page's short name and copy letter: https://www.deadseascrolls.org.il/explore-the-archive/manuscript/<siglum>-1, read 2026-10-18. Left out: sigla with no page, pages covering several manuscripts, and pages whose copy letter conflicts with Tov's numbering (4Q26, 4Q38, 4Q38b, 4Q72, 4Q98, 4Q98e-g). 1Qisaa = 1QIsaa added by hand (the great Isaiah scroll).",
+  "licence": "None needed: these are the conventional scholarly designations of the manuscripts (facts, as in the DJD editions and Tov's lists); only the list was read from the library's pages, no text or images.",
   "names": {
     "11Q1": "11QpaleoLeva",
     "11Q2": "11QLevb",

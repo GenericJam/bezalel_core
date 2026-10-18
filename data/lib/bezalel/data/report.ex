@@ -11,6 +11,8 @@ defmodule Bezalel.Data.Report do
   alias Bezalel.Study.Ancient.Scrolls, as: Registry
 
   @examples 25
+  # The ETCBC scrolls studybible-mcp imported into the ancient pack.
+  @ancient_pack ~w(CD 1QS 1QSa 1QpHab)
 
   @doc """
   The report text. `info` has `:rows`, `:empty` (references the source
@@ -166,6 +168,9 @@ defmodule Bezalel.Data.Report do
     ]
   end
 
+  defp counts(frequencies),
+    do: frequencies |> Enum.sort() |> Enum.map_join(", ", fn {type, n} -> "#{type} #{n}" end)
+
   defp site_group(%{site: "Qumran Cave " <> _}), do: "Qumran caves"
   defp site_group(%{site: site}), do: site
 
@@ -173,10 +178,11 @@ defmodule Bezalel.Data.Report do
     biblical = info.biblical
     imported = MapSet.new(info.works, & &1.siglum)
 
-    skipped =
+    {in_ancient, skipped} =
       info.data.scrolls.nodes
       |> Enum.reject(&(&1.biblical or MapSet.member?(imported, &1.siglum)))
       |> Enum.map(& &1.siglum)
+      |> Enum.split_with(&(&1 in @ancient_pack))
 
     biblical_sigla =
       info.data.scrolls.nodes |> Enum.filter(& &1.biblical) |> MapSet.new(& &1.siglum)
@@ -186,6 +192,8 @@ defmodule Bezalel.Data.Report do
 
     [
       "Left out, by rule:",
+      "  In the ancient pack already (studybible-mcp's import, not repeated here): " <>
+        Enum.join(in_ancient, " "),
       "  Non-biblical scroll nodes not registered as works (the long tail of small " <>
         "fragments, and works not judged major): #{length(skipped)}",
       "    " <> Enum.join(Enum.take(skipped, 40), " ") <> " …",
@@ -195,9 +203,11 @@ defmodule Bezalel.Data.Report do
         "ETCBC gives the scroll or photograph siglum): #{unidentified_words} words in " <>
         "#{length(biblical.unidentified)} values",
       "    " <> Enum.map_join(biblical.unidentified, " ", fn {book, n} -> "#{book}:#{n}" end),
-      "  Signs of biblical lines in no word with a book (no verse; left out of verse text; " <>
-        "the letters are 2Q29's unplaced fragments): " <>
-        Enum.map_join(Enum.sort(biblical.wordless_signs), ", ", fn {type, n} -> "#{type} #{n}" end),
+      "  Signs of biblical lines in no word with a book, outside every verse on their line " <>
+        "(no verse; left out; the letters are 2Q29's unplaced fragments): " <>
+        counts(biblical.wordless_signs.dropped),
+      "  Kept: signs in no word inside one verse's words on a line (in its text, where the " <>
+        "scroll has them): " <> counts(biblical.wordless_signs.kept),
       "  ETCBC's morpheme break (׳), analytical not written: dropped from every text",
       "Kept with ETCBC's own numbering (no such verse in the core pack's English numbering): " <>
         "#{length(biblical.unmapped)}",

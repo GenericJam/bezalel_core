@@ -26,8 +26,11 @@ defmodule Bezalel.Data.Scrolls do
     * a word whose `book` isn't a book of the Hebrew Bible (ETCBC gives the
       scroll or photograph siglum for unidentified fragments) has no verse
       and isn't imported;
-    * a sign belonging to no word (line ends, empty signs, an unidentified
-      letter between words) has no verse: it is left out of the verse text;
+    * a sign belonging to no word has no verse: between two verses, or
+      before a line's first verse word or after its last (line ends, empty
+      signs), it is left out; inside one verse's words on a line (a `vacat`,
+      an unreadable letter) it is kept in that verse's text, where the
+      scroll has it;
     * non-biblical scrolls not registered as works (the long tail of small
       fragments) are not imported;
     * an unknown sign type or a non-numeric line label stops the build.
@@ -117,6 +120,34 @@ defmodule Bezalel.Data.Scrolls do
     {"Pam", "unknown (identified on a PAM photograph)"},
     {"X", "unknown provenance"}
   ]
+
+  # The code and data that decide the pack's rows, relative to data/: the
+  # importer, core's registry, folding and locator keys, the names.
+  @build_inputs ~w(
+    lib/bezalel/data/scrolls.ex lib/bezalel/data/scrolls_pack.ex
+    lib/bezalel/data/text_fabric.ex lib/bezalel/data/pack.ex
+    lib/mix/tasks/bezalel.data.scrolls.ex dss_names.json
+    ../lib/bezalel/study/ancient.ex ../lib/bezalel/study/ancient/scrolls.ex
+    ../lib/bezalel/study/ancient/passages.ex ../lib/bezalel/study/patterns.ex
+  )
+
+  @doc """
+  One checksum of the files that decide the pack's rows (`@build_inputs`,
+  relative to `data/`), recorded in `pack_meta.build_sha256` so a publish
+  can tell a pack built by other code.
+  """
+  @spec build_digest() :: String.t()
+  def build_digest do
+    root = Path.expand("../../..", __DIR__)
+
+    @build_inputs
+    |> Enum.map(
+      &{&1, :crypto.hash(:sha256, File.read!(Path.join(root, &1))) |> Base.encode16(case: :lower)}
+    )
+    |> Enum.map(fn {path, sha256} -> [path, ?\t, sha256, ?\n] end)
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
+  end
 
   @doc "The Text-Fabric features read, as file names."
   @spec files() :: [String.t()]
@@ -572,7 +603,8 @@ defmodule Bezalel.Data.Scrolls do
         |> Enum.frequencies_by(& &1.book)
         |> Enum.sort(),
       unmapped: rows |> Enum.reject(& &1.mapped) |> Enum.map(& &1.source_reference),
-      wordless_signs: wordless_signs(biblical_lines, verse_words ++ unidentified, data.signs)
+      wordless_signs:
+        wordless_signs(biblical_lines, verse_words ++ unidentified, runs, data.signs)
     }
   end
 
@@ -593,6 +625,11 @@ defmodule Bezalel.Data.Scrolls do
 
   defp run(line, words, signs) do
     [first | _] = words
+
+    unless Regex.match?(regex(~S"^[0-9]+$"), line.line) and String.to_integer(line.line) < 1000 do
+      raise "#{line.siglum} #{line.fragment}: line label #{inspect(line.line)} is not a number below 1000"
+    end
+
     slots = first.slots.first..List.last(words).slots.last
     {all, preserved} = letters(slots, signs)
 
@@ -699,14 +736,22 @@ defmodule Bezalel.Data.Scrolls do
     end)
   end
 
-  defp wordless_signs(lines, words, signs) do
-    in_words =
-      words |> Enum.flat_map(&Enum.to_list(&1.slots)) |> MapSet.new()
+  # The signs of biblical lines in no word: `dropped` (outside every verse's
+  # span on its line) and `kept` (inside one), counted by sign type.
+  defp wordless_signs(lines, words, runs, signs) do
+    in_words = words |> Enum.flat_map(&Enum.to_list(&1.slots)) |> MapSet.new()
+    in_runs = runs |> Enum.flat_map(&Enum.to_list(&1.slots)) |> MapSet.new()
 
-    lines
-    |> Enum.flat_map(&Enum.to_list(&1.slots))
-    |> Enum.reject(&MapSet.member?(in_words, &1))
-    |> Enum.frequencies_by(&signs["type"][&1])
+    {kept, dropped} =
+      lines
+      |> Enum.flat_map(&Enum.to_list(&1.slots))
+      |> Enum.reject(&MapSet.member?(in_words, &1))
+      |> Enum.split_with(&MapSet.member?(in_runs, &1))
+
+    %{
+      kept: Enum.frequencies_by(kept, &signs["type"][&1]),
+      dropped: Enum.frequencies_by(dropped, &signs["type"][&1])
+    }
   end
 
   @doc """

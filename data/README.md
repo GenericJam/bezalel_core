@@ -144,9 +144,9 @@ corpus caveat says any English is the assistant's own).
 |---|---|---|
 | `ancient_source_passages`, `ancient_source_passages_fts` | the ancient pack's schema, FTS5 columns and tokenizer (`porter unicode61 remove_diacritics 2`), unchanged: corpus `qumran`, one passage per fragment or column label of a manuscript, its lines numbered; `section_number` the label's lookup key (`Bezalel.Study.Ancient.fragment_key/1`), `book_number` its position, `sort_start`/`sort_end` position × 1000 + line | ETCBC/dss: CC BY-NC 4.0 |
 | `ancient_source_biblical_links`, `ancient_source_notes` | the ancient pack's, empty | — |
-| `dss_biblical_manuscripts` | `siglum` (ETCBC), `name` (conventional, e.g. 4QDeutj, or null), `site`, `books`, `verses`, `reconstructed_only`, `sort_order` | names: Leon Levy DSS Digital Library ([dss_names.json](dss_names.json)) |
+| `dss_biblical_manuscripts` | `siglum` (ETCBC), `name` (conventional, e.g. 4QDeutj, or null), `site`, `books`, `verses`, `reconstructed_only`, `sort_order` | names: the conventional scholarly designations (facts, no licence needed), as the Leon Levy DSS Digital Library lists them ([dss_names.json](dss_names.json)) |
 | `dss_biblical_verses` | `reference` (STEP, the packs' English numbering), `book`, `chapter`, `verse`, `source_reference` (ETCBC's Hebrew numbering), `mt_verse` (0: the core pack has no such verse), `siglum`, `occurrence`, `locator` (fragment or column and lines), `text`, `letters`, `preserved_letters` (outside `[ ]`), `language`; PK `(reference, siglum, occurrence)` | ETCBC/dss: CC BY-NC 4.0 |
-| `pack_meta` | `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `dss_source`, `dss_sha256`, `versification`, `core_sha256` | — |
+| `pack_meta` | `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `dss_source`, `dss_sha256`, `versification`, `core_sha256`, `build_sha256` (the importer's and core's files that decide the rows; `Bezalel.Data.Scrolls.build_digest/0`) | — |
 
 **Source.** [ETCBC/dss](https://github.com/ETCBC/dss), the Text-Fabric
 release 2.0.1 (tag v2.0.1, commit `47ecc173`, the one the ancient pack's
@@ -191,13 +191,16 @@ byte-identical to the ancient pack's rows and search columns):
 - biblical readings: every word with a book, chapter and verse of the Hebrew
   Bible, consecutive words of one verse in one manuscript joined (` / ` a
   line break), a verse read again later in the manuscript a second
-  `occurrence`; signs in no word (line ends, gaps between verses) are not
-  verse text;
+  `occurrence`; a non-numeric line label stops the build;
 - leaves out, by rule, and counts in `out/scrolls_report.txt`: the
-  non-biblical scrolls not registered (603 scroll nodes: the long tail of
+  non-biblical scrolls not registered (599 scroll nodes: the long tail of
   small fragments, works not judged major, and the non-biblical parts of
-  4Q88, 11Q5 and 11Q6), and the 5,815 words of biblical scrolls whose ETCBC
-  `book` is a scroll or photograph siglum (unidentified fragments).
+  4Q88, 11Q5 and 11Q6; CD, 1QS, 1QSa and 1QpHab are in the ancient pack),
+  the 5,815 words of biblical scrolls whose ETCBC `book` is a scroll or
+  photograph siglum (unidentified fragments), and the signs in no word
+  outside every verse on their line (line ends, gaps between verses). A
+  sign in no word between two words of one verse (a `vacat`, an unreadable
+  letter) stays in that verse's text.
 
 **Coverage** (build of 2026-10-18): 2,492 passages in 132 manuscripts; 265
 biblical manuscripts (262 with an identified verse; 235 from the Qumran
@@ -228,7 +231,7 @@ mix bezalel.data.publish
 
 Who can run it: someone with `npx` whose wrangler is logged in
 (`npx wrangler@4 login`) to the Cloudflare account that owns the bucket, and
-`zstd` on the path. A real publish also needs `data/` committed: the manifest
+`zstd` on the path. A real publish also needs `data/` and `lib/` committed: the manifest
 names the bezalel_core commit that built the new packs.
 
 What it does, in order:
@@ -239,7 +242,9 @@ What it does, in order:
    entries' descriptions, licences, `required` and tables are copied from
    the published manifest.
 2. Checks `out/translations.sqlite` and `out/scrolls.sqlite` were built
-   from `pins.json`'s NET responses and ETCBC/dss files, compresses each
+   from `pins.json`'s NET responses and ETCBC/dss files (the scrolls pack
+   also with `base.json`'s core pack and by this checkout's code, its
+   `build_sha256`), compresses each
    with `zstd -19` (as the phone app's `make_packs.py` compresses the base)
    and uploads it to `packs/v<N>/<pack>.sqlite.zst` with
    `Cache-Control: public, max-age=31536000, immutable`. An object already

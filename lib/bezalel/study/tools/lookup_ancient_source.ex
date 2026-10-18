@@ -196,9 +196,9 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
   # A fragment citation needs its label resolved against the pack first.
   defp cited(conn, %{fragment: %{} = fragment} = match, limit, args) do
-    case fragment_range(conn, match, fragment) do
-      {:ok, range} -> lookup(conn, %{match | sort_range: range}, limit, args)
-      {:error, message} -> {:error, message}
+    with :ok <- DB.check_tables(conn, Ancient.pack(match.work), ["ancient_source_passages"]),
+         {:ok, range} <- fragment_range(conn, match, fragment) do
+      lookup(conn, %{match | sort_range: range}, limit, args)
     end
   end
 

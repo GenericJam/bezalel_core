@@ -119,6 +119,35 @@ defmodule Bezalel.Study.DB do
     error
   end
 
+  @doc """
+  `:ok` if every table in `tables` (virtual tables too) can be read on
+  `conn`, else the error a tool returns for a damaged `pack` (`with_pack/2`
+  checks only `pack_meta`).
+  """
+  @spec check_tables(conn(), pack(), [String.t()]) :: :ok | {:error, String.t()}
+  def check_tables(conn, pack, tables) do
+    case Enum.reject(tables, &readable?(conn, &1)) do
+      [] ->
+        :ok
+
+      missing ->
+        {:error,
+         "The #{pack} study pack on this device can't be read (no #{Enum.join(missing, ", ")}); " <>
+           "it may need downloading again."}
+    end
+  end
+
+  defp readable?(conn, table) do
+    case Sqlite3.prepare(conn, "SELECT 1 FROM #{table} LIMIT 0") do
+      {:ok, statement} ->
+        Sqlite3.release(conn, statement)
+        true
+
+      {:error, _reason} ->
+        false
+    end
+  end
+
   @doc "Every row of `sql` with `params`, as maps keyed by column name."
   @spec all(conn(), String.t(), list()) :: [row()]
   def all(conn, sql, params \\ []) do

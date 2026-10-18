@@ -101,7 +101,7 @@ Borderline, kept: Catena A (4Q177; some read it as part of the same work as
 Not in ETCBC/dss, so not imported: the Masada Songs of the Sabbath Sacrifice
 (Mas1k), 4Q206a (Giants), 4Q173 (Pesher Psalms b), 3Q4 (Pesher Isaiah),
 4Q253–254a (Commentaries on Genesis B–D), and the Genizah copies of Aramaic
-Levi. Not imported by choice: the remaining 603 non-biblical scroll nodes
+Levi. Not imported by choice: the remaining 599 non-biblical scroll nodes
 (small fragments known by siglum only, and works not judged major, e.g. New
 Jerusalem, 4Q448, the non-masoretic compositions of 11QPsa).
 

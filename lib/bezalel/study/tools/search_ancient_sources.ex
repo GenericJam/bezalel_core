@@ -250,13 +250,24 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         fun.([ancient], [])
 
       DB.available?(:scrolls) ->
-        case DB.with_pack(:scrolls, &fun.([ancient, &1], [])) do
+        case DB.with_pack(:scrolls, &with_readable_scrolls(ancient, &1, fun)) do
           {:ok, result} -> result
           {:error, _unreadable} -> fun.([ancient], [:scrolls])
         end
 
       true ->
         fun.([ancient], [:scrolls])
+    end
+  end
+
+  @tables ~w(ancient_source_passages ancient_source_passages_fts ancient_source_biblical_links
+              ancient_source_notes)
+
+  # A damaged scrolls pack is searched as if it were missing.
+  defp with_readable_scrolls(ancient, scrolls, fun) do
+    case DB.check_tables(scrolls, :scrolls, @tables) do
+      :ok -> fun.([ancient, scrolls], [])
+      {:error, _damaged} -> fun.([ancient], [:scrolls])
     end
   end
 
@@ -531,7 +542,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   # Searching Qumran without the scrolls pack covers only the ancient pack's four works.
   defp missing_note(%{missing_packs: [_ | _]}, lead) do
     lead <>
-      "The scrolls study pack (Dead Sea Scrolls) isn't downloaded on this device, so only " <>
+      "The scrolls study pack (Dead Sea Scrolls) isn't downloaded on this device (or can't be " <>
+      "read), so only " <>
       "CD, 1QS, 1QSa and 1QpHab of the Qumran works were searched; tell the user the other " <>
       "scrolls need that pack."
   end

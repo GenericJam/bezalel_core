@@ -276,8 +276,8 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
          numbering = if(book in @lxx_only_books, do: "lxx", else: numbering),
          {:ok, dss} <- dss_status(versions, Map.has_key?(args, "versions"), prefs),
          versions = if(dss == :off, do: versions -- ["DSS"], else: versions),
-         {:ok, {rows, lxx_only}} <- fetch(book, start, finish, versions, numbering),
-         {:ok, rows, dss_url} <- add_dss(rows, dss, book, start, finish, numbering, versions),
+         {:ok, {rows, lxx_only, groups}} <- fetch(book, start, finish, versions, numbering),
+         {:ok, rows, dss, dss_url} <- add_dss(rows, groups, dss, {book, start, finish}, versions),
          :ok <- needs_lxx(rows, book, versions, reference) do
       {rows, cap_note} = cap(reference, rows, numbering)
 
@@ -313,39 +313,46 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
     end
   end
 
-  # The DSS readings of the passage (canonical numbering) or of the
-  # canonical verses of the rows (Greek numbering), merged into the rows.
-  defp add_dss(rows, dss, _book, _start, _finish, _numbering, _versions) when dss != :on,
-    do: {:ok, rows, nil}
+  # The DSS readings of the passage (canonical numbering: `groups` nil) or
+  # of the canonical verses of the Greek passage's verse groups (`groups`:
+  # `{group, canonical reference}` in order, whichever versions are shown),
+  # merged into the rows.
+  # A scrolls pack that can't be read is noted as missing (an error when
+  # DSS was asked for alone).
+  defp add_dss(rows, _groups, dss, _passage, _versions) when dss != :on,
+    do: {:ok, rows, dss, nil}
 
-  defp add_dss(rows, :on, book, start, finish, numbering, versions) do
-    result =
-      DB.with_pack(:scrolls, fn conn ->
-        readings =
-          if numbering == "canonical",
-            do: BiblicalScrolls.range(conn, book, verse_bound(start), verse_bound(finish)),
-            else:
-              BiblicalScrolls.at(
-                conn,
-                rows
-                |> Enum.map(& &1.canonical_reference)
-                |> Enum.reject(&is_nil/1)
-                |> Enum.uniq()
-              )
+  defp add_dss(rows, groups, :on, {book, start, finish}, versions) do
+    result = DB.with_pack(:scrolls, &dss_readings(&1, groups, {book, start, finish}))
 
-        {Enum.map(readings, &dss_row/1), BiblicalScrolls.source_url(conn)}
-      end)
-
-    with {:ok, {dss_rows, url}} <- result do
-      {:ok, merge_dss(rows, dss_rows, numbering, versions), url}
+    case result do
+      {:ok, {:ok, dss_rows, url}} -> {:ok, merge_dss(rows, dss_rows, groups, versions), :on, url}
+      {_, {:error, message}} when versions == ["DSS"] -> {:error, message}
+      {:error, message} when versions == ["DSS"] -> {:error, message}
+      _damaged -> {:ok, rows, :missing, nil}
     end
   end
+
+  defp dss_readings(conn, groups, {book, start, finish}) do
+    with :ok <- BiblicalScrolls.check(conn) do
+      readings =
+        if groups,
+          do: BiblicalScrolls.at(conn, group_references(groups)),
+          else: BiblicalScrolls.range(conn, book, verse_bound(start), verse_bound(finish))
+
+      {:ok, Enum.map(readings, &dss_row/1), BiblicalScrolls.source_url(conn)}
+    end
+  end
+
+  defp group_references(groups),
+    do: groups |> Enum.map(&elem(&1, 1)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
   defp verse_bound({chapter, verse, _suffix}), do: {chapter, verse}
 
   # Canonical numbering sorts every row by verse; Greek numbering keeps the
-  # LXX groups' order and puts each verse's DSS rows after its MT/LXX rows.
-  defp merge_dss(rows, dss_rows, "canonical", versions) do
+  # LXX groups' order and puts each verse's DSS rows after the group's rows
+  # (also when the group shows no MT or LXX row).
+  defp merge_dss(rows, dss_rows, nil, versions) do
     order = version_order(versions)
 
     (rows ++ dss_rows)
@@ -356,18 +363,17 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
     |> Enum.map(&Map.delete(&1, :position))
   end
 
-  defp merge_dss(rows, dss_rows, _lxx, _versions) do
+  defp merge_dss(rows, dss_rows, groups, _versions) do
     by_reference = Enum.group_by(dss_rows, & &1.canonical_reference)
+    by_group = Enum.group_by(rows, &group/1)
 
     {merged, _} =
-      rows
-      |> Enum.chunk_by(&group/1)
-      |> Enum.flat_map_reduce(MapSet.new(), fn chunk, seen ->
-        reference = hd(chunk).canonical_reference
+      Enum.flat_map_reduce(groups, MapSet.new(), fn {key, reference}, seen ->
+        shown = Map.get(by_group, key, [])
 
         if reference && not MapSet.member?(seen, reference),
-          do: {chunk ++ Map.get(by_reference, reference, []), MapSet.put(seen, reference)},
-          else: {chunk, seen}
+          do: {shown ++ Map.get(by_reference, reference, []), MapSet.put(seen, reference)},
+          else: {shown, seen}
       end)
 
     Enum.map(merged, &Map.delete(&1, :position))
@@ -520,7 +526,12 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
           |> Enum.sort_by(&{order.(&1), &1.edition, &1.position})
         end)
 
-      {:ok, {Enum.map(rows, &Map.delete(&1, :position)), []}}
+      groups =
+        Enum.map(keys, fn key ->
+          {key, Enum.find(lxx_rows, &(group(&1) == key)).canonical_reference}
+        end)
+
+      {:ok, {Enum.map(rows, &Map.delete(&1, :position)), [], groups}}
     end
   end
 
@@ -546,7 +557,7 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
         )
         |> Enum.map(&Map.delete(&1, :position))
 
-      {:ok, {rows, lxx_only}}
+      {:ok, {rows, lxx_only, nil}}
     end
   end
 

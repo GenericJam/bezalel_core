@@ -84,6 +84,11 @@ defmodule Bezalel.Study.BiblicalScrolls do
     |> Enum.sort_by(&{order[&1.reference], &1.sort_order, &1.occurrence})
   end
 
+  @doc "`:ok` if the pack's biblical tables can be read, else the damaged-pack error."
+  @spec check(DB.conn()) :: :ok | {:error, String.t()}
+  def check(conn),
+    do: DB.check_tables(conn, :scrolls, ["dss_biblical_verses", "dss_biblical_manuscripts"])
+
   @doc "The ETCBC/dss source the pack was built from (its `pack_meta` `dss_source`), or nil."
   @spec source_url(DB.conn()) :: String.t() | nil
   def source_url(conn) do

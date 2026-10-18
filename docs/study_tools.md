@@ -87,9 +87,10 @@ ETCBC/dss (the Abegg–Bowley–Cook transcription, CC BY-NC 4.0), in two parts
   by (`section_number`), and the label's position (`book_number`) × 1000 + the
   line is the sort key the overlap query uses. `search_ancient_sources` over
   `qumran` or `all` searches both packs and ranks a stage's rows together;
-  without the scrolls pack it searches the ancient pack and says what it
-  left out, and `lookup_ancient_source` of a scrolls work is the missing-pack
-  error.
+  without the scrolls pack (or with one whose tables can't be read,
+  `DB.check_tables/3`) it searches the ancient pack and says what it left
+  out, and `lookup_ancient_source` of a scrolls work is the missing- or
+  damaged-pack error.
 - **Biblical manuscripts**: every verse of the Hebrew Bible ETCBC assigns to
   a word of a biblical scroll, per manuscript (265 sigla, 11,919 readings of
   8,020 verses in 36 books; `dss_biblical_verses`), with the fragment and line

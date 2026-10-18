@@ -66,7 +66,9 @@ defmodule Mix.Tasks.Bezalel.Data.Scrolls do
       "built_by" => "bezalel_core data/: mix bezalel.data.scrolls",
       "licences" =>
         "ETCBC/dss (Abegg, Bowley, Cook): CC BY-NC 4.0, https://creativecommons.org/licenses/by-nc/4.0/; " <>
-          "manuscript names: Leon Levy Dead Sea Scrolls Digital Library (IAA)",
+          "manuscript names: the conventional scholarly designations (facts, e.g. 4QDeutj), " <>
+          "as the Leon Levy Dead Sea Scrolls Digital Library (IAA) lists them",
+      "build_sha256" => Scrolls.build_digest(),
       "dss_source" => provenance.source_url,
       "dss_sha256" => digest,
       "versification" => "Hebrew to English numbering from the base core pack's verses.reference",
