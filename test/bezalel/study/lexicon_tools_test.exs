@@ -6,14 +6,14 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
   # 'craftsman', so those rankings are the real pack's.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.{DB, Preferences, Translations, Verses}
+  alias Bezalel.Study.{Citation, DB, Lexicon, Preferences, Translations, Verses}
   alias Bezalel.Study.Tools.{ParseMorphology, SearchByStrongs, SearchLexicon, WordStudy}
 
   # studybible-mcp's default of four results, and the BSB.
   @prefs Preferences.new(limit: 4, translation: "bsb")
 
   defp ok(ParseMorphology, args) do
-    assert {:ok, text} = ParseMorphology.run(args, %{})
+    assert {:ok, {:details, text, %{citations: [_]}}} = ParseMorphology.run(args, %{})
     text
   end
 
@@ -88,6 +88,47 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
       assert error(WordStudy, %{}) ==
                "Please provide either 'strongs' number or 'word' to study."
     end
+
+    test "the entry cites its lexicons and Strong's page, each example its verse" do
+      assert {:ok, ruach} = WordStudy.result(%{"strongs" => "H7307"}, @prefs)
+
+      assert [
+               %Citation{work: "step", url: "https://www.stepbible.org/?q=strong=H7307"},
+               %Citation{work: "bdb", url: "https://biblehub.com/bdb/7307.htm"},
+               %Citation{work: "strongs", url: "https://biblehub.com/hebrew/7307.htm"},
+               %Citation{work: "bsb", url: "https://biblehub.com/genesis/1-2.htm"}
+               | examples
+             ] = citations = WordStudy.citations(ruach)
+
+      assert Enum.count(examples) == 4
+      text = WordStudy.render(ruach)
+
+      # The entry's Source line closes the entry; an example's sits under it.
+      assert text =~
+               "\n" <>
+                 Citation.source_line(Enum.take(citations, 3)) <> "\n\n## Example Passages (BSB)"
+
+      assert text =~
+               ~r/\n\*\*Gen\.1\.2\*\*: [^\n]+\nSource: \[Genesis 1:2\]\(https:\/\/biblehub\.com\/genesis\/1-2\.htm\)\n/
+
+      assert {:ok, {:details, _text, %{citations: run_citations, entry: %{"strongs" => "H7307"}}}} =
+               WordStudy.run(%{"strongs" => "H7307"}, %{})
+
+      assert %Citation{url: "https://biblehub.com/bdb/7307.htm"} =
+               Enum.find(run_citations, &(&1.work == "bdb"))
+
+      # Greek: LSJ for the full entry, Abbott-Smith's, and the Strong's page.
+      assert {:ok, agape} = WordStudy.result(%{"strongs" => "G26"}, @prefs)
+
+      assert [
+               %Citation{work: "step"},
+               %Citation{work: "lsj", url: "https://lsj.gr/wiki/" <> _},
+               %Citation{work: "abbott_smith", url: "https://archive.org/details/" <> _},
+               %Citation{work: "strongs", url: "https://biblehub.com/greek/26.htm"} | _
+             ] = WordStudy.citations(agape)
+
+      assert WordStudy.citations(%{entry: nil}) == []
+    end
   end
 
   describe "search_lexicon" do
@@ -95,7 +136,25 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
       text = ok(SearchLexicon, %{"query" => "love"})
       assert text =~ ~r/\A## Lexicon Search: 'love'\n\nFound 4 entries:\n\n/
       assert lexicon_hits(text) == ["H0157", "G0025", "G0026", "G0027"]
-      assert text =~ ~r/^### G0026 - \S+ \(agap.\)\nlove\n\n/mu
+
+      assert text =~
+               ~r/^### G0026 - \S+ \(agap.\)\nlove\nSource: \[STEP lexicon G0026 \S+\]\(https:\/\/www\.stepbible\.org\/\?q=strong=G0026\) · \[Strong's G26 \S+\]\(https:\/\/biblehub\.com\/greek\/26\.htm\)\n\n/mu
+    end
+
+    test "each entry cites the brief lexicon its definition comes from and its Strong's page" do
+      assert {:ok, result} = SearchLexicon.result(%{"query" => "love"}, @prefs)
+
+      assert [
+               %Citation{work: "step", url: "https://www.stepbible.org/?q=strong=H0157"},
+               %Citation{work: "strongs", url: "https://biblehub.com/hebrew/157.htm"} | _
+             ] = citations = SearchLexicon.citations(result)
+
+      assert Enum.count(citations, &(&1.work == "strongs")) == 4
+
+      assert {:ok, {:details, text, %{citations: ^citations}}} =
+               SearchLexicon.run(%{"query" => "love", "limit" => 4}, %{})
+
+      assert text =~ "Source: [STEP lexicon H0157"
     end
 
     test "the language filter and a larger limit" do
@@ -115,8 +174,31 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
   describe "search_by_strongs" do
     test "the default cap is the user's limit (four here), in canonical order" do
       text = ok(SearchByStrongs, %{"strongs" => "H7307"})
-      assert text =~ ~r/\A## Verses with H7307 \(\S+ - ruach\) \(BSB\)\n\n\*masculine\*\n\n/
+
+      assert text =~
+               ~r/\A## Verses with H7307 \(\S+ - ruach\) \(BSB\)\n\n\*masculine\*\nSource: \[STEP lexicon H7307 \S+\]\(https:\/\/www\.stepbible\.org\/\?q=strong=H7307\) · \[Strong's H7307 \S+\]\(https:\/\/biblehub\.com\/hebrew\/7307\.htm\)\n\n/
+
+      # Each verse cites its BSB page, on the line under it.
+      assert text =~
+               ~r/^\*\*Exo\.31\.3\*\*: And I have filled him [^\n]+\nSource: \[Exodus 31:3\]\(https:\/\/biblehub\.com\/exodus\/31-3\.htm\)\n\n/m
+
       assert verse_hits(text) == ["Gen.1.2", "Exo.31.3", "Exo.35.31", "Ezk.27.26"]
+    end
+
+    test "the entry and the verses shown are the citations, in order" do
+      assert {:ok, result} = SearchByStrongs.result(%{"strongs" => "H7307"}, @prefs)
+
+      assert [
+               %Citation{work: "step"},
+               %Citation{work: "strongs", url: "https://biblehub.com/hebrew/7307.htm"},
+               %Citation{work: "bsb", url: "https://biblehub.com/genesis/1-2.htm"},
+               %Citation{work: "bsb", url: "https://biblehub.com/exodus/31-3.htm"},
+               %Citation{work: "bsb"},
+               %Citation{work: "bsb", url: "https://biblehub.com/ezekiel/27-26.htm"}
+             ] = SearchByStrongs.citations(result)
+
+      assert {:ok, {:details, _text, %{citations: [_ | _]}}} =
+               SearchByStrongs.run(%{"strongs" => "H7307"}, %{})
     end
 
     test "the default cap is 8 unless the user changes it" do
@@ -185,6 +267,19 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
       refute noun =~ "**Tense**"
     end
 
+    test "the parsing cites STEPBible's morphology codes" do
+      assert {:ok, {:details, text, %{citations: [citation]}}} =
+               ParseMorphology.run(%{"code" => "V-AAI-3S"}, %{})
+
+      assert %Citation{
+               work: "step",
+               locator: "V-AAI-3S",
+               url: "https://github.com/STEPBible/STEPBible-Data"
+             } = citation
+
+      assert String.ends_with?(text, "\n" <> Citation.source_line(citation) <> "\n")
+    end
+
     test "the language argument" do
       hebrew = ok(ParseMorphology, %{"code" => "HVqp3ms", "language" => "hebrew"})
       assert hebrew =~ "**Language**: Hebrew"
@@ -200,5 +295,30 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
       assert error(ParseMorphology, %{"code" => ""}) ==
                "Please provide a morphology code to parse."
     end
+  end
+
+  # The real core pack keys 455 Abbott-Smith entries by lemma ("AS_ἀγγέλλω",
+  # no Strong's number); search_lexicon used to crash on them.
+  test "an entry with no Strong's number cites Abbott-Smith alone" do
+    entry = %{
+      "strongs" => "AS_ἀγγέλλω",
+      "word" => "ἀγγέλλω",
+      "short_definition" => "to announce",
+      "full_definition" => "to announce, report",
+      "abbott_smith_def" => "to announce, report"
+    }
+
+    for shown <- [:brief, :full] do
+      assert [%Citation{work: "abbott_smith", url: url}] = WordStudy.entry_citations(entry, shown)
+      assert url =~ "/page/4/"
+    end
+  end
+
+  # word_study upper-cased the key, so 436 of the 455 ('AS_ῥοπή' became
+  # 'AS_ῬΟΠΉ') were "No entry found".
+  test "an Abbott-Smith key keeps its lemma's case" do
+    assert Lexicon.normalize_strongs(" as_ῥοπή ") == "AS_ῥοπή"
+    assert Lexicon.normalize_strongs("g26") == "G0026"
+    assert Lexicon.normalize_strongs("h430g") == "H0430G"
   end
 end

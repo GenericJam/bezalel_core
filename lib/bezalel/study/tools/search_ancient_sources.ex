@@ -34,7 +34,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Ancient, Args, DB, Preferences, Sources}
+  alias Bezalel.Study.{Ancient, Args, Citations, DB, Preferences, Sources}
   alias Bezalel.Study.Ancient.Passages
 
   @max_limit 20
@@ -110,7 +110,10 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)) do
+      {markdown, citations} = rendered(result)
+      Citations.details(markdown, result, citations)
+    end
   end
 
   @typedoc """
@@ -508,29 +511,14 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
 
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
-  def render(%{status: :no_link} = r) do
-    label = label(default_corpus(r))
+  def render(r), do: r |> rendered() |> elem(0)
 
-    "No #{label} passage has an editorial biblical link covering " <>
-      "#{r.biblical_reference}. Biblical links are curated narrative " <>
-      "overlaps, never inferred from wording; #{r.link_count} " <>
-      "links currently cover #{r.linked_passage_count} #{label} " <>
-      "passages. Search without biblical_reference to find passages by wording." <>
-      missing_note(r, " ")
-  end
+  @doc "`render/1`'s Markdown with the citations of the passages it shows."
+  @spec rendered(t()) :: {String.t(), [Bezalel.Study.Citation.t()]}
+  def rendered(%{status: status} = r) when status in [:no_link, :no_match],
+    do: {message(r), []}
 
-  def render(%{status: :no_match} = r) do
-    filters =
-      if(r.biblical_reference, do: ["biblical_reference=#{r.biblical_reference}"], else: []) ++
-        if r.period, do: ["period=#{r.period}"], else: []
-
-    scope = if filters == [], do: "", else: " with filters #{Enum.join(filters, ", ")}"
-
-    "No #{label(default_corpus(r))} passage contains any of the search terms " <>
-      "(#{Enum.join(r.terms, ", ")})#{scope}." <> missing_note(r, " ")
-  end
-
-  def render(r) do
+  def rendered(r) do
     filters =
       ["corpus=#{r.corpus}"] ++
         if(r.biblical_reference, do: ["biblical_reference=#{r.biblical_reference}"], else: []) ++
@@ -563,6 +551,28 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
       end,
       if(r.prefix_match, do: " (prefix match)", else: "")
     )
+  end
+
+  defp message(%{status: :no_link} = r) do
+    label = label(default_corpus(r))
+
+    "No #{label} passage has an editorial biblical link covering " <>
+      "#{r.biblical_reference}. Biblical links are curated narrative " <>
+      "overlaps, never inferred from wording; #{r.link_count} " <>
+      "links currently cover #{r.linked_passage_count} #{label} " <>
+      "passages. Search without biblical_reference to find passages by wording." <>
+      missing_note(r, " ")
+  end
+
+  defp message(%{status: :no_match} = r) do
+    filters =
+      if(r.biblical_reference, do: ["biblical_reference=#{r.biblical_reference}"], else: []) ++
+        if r.period, do: ["period=#{r.period}"], else: []
+
+    scope = if filters == [], do: "", else: " with filters #{Enum.join(filters, ", ")}"
+
+    "No #{label(default_corpus(r))} passage contains any of the search terms " <>
+      "(#{Enum.join(r.terms, ", ")})#{scope}." <> missing_note(r, " ")
   end
 
   # Searching without the ancient pack covers only the scrolls pack's Qumran works.

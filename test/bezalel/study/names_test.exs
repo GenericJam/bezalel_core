@@ -5,13 +5,22 @@ defmodule Bezalel.Study.Tools.NamesTest do
   # the real pack's.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.Preferences
+  alias Bezalel.Study.{Citation, Preferences}
   alias Bezalel.Study.Tools.{LookupName, PeopleInPassage}
 
   defp ok(tool, args) do
-    assert {:ok, text} = tool.run(args, %{})
+    {text, _citations} = cited(tool, args)
     text
   end
+
+  defp cited(tool, args) do
+    assert {:ok, {:details, text, %{citations: citations}}} = tool.run(args, %{})
+    {text, citations}
+  end
+
+  @step_data "https://github.com/STEPBible/STEPBible-Data"
+  @acai "https://github.com/BibleAquifer/ACAI/blob/7e6a2d66/"
+  @theographic "https://theographic.netlify.app/"
 
   defp entries(text), do: text |> String.split("\n---\n") |> Enum.drop(-1)
   defp name_hits(text), do: for([_, n] <- Regex.scan(~r/^### (.+)$/m, text), do: n)
@@ -30,6 +39,40 @@ defmodule Bezalel.Study.Tools.NamesTest do
       assert later =~ "only mentioned at Ezr.10.30"
       assert later =~ "**Also known as**: Bezaleel\n**Referenced in**: 1 verses\n"
       refute later =~ "Craftsman"
+    end
+
+    test "each entry's Source line cites its TIPNR entry and ACAI entity" do
+      {text, citations} = cited(LookupName, %{"name" => "Bezalel"})
+      [craftsman, later] = entries(text)
+
+      assert craftsman =~
+               "\nSource: [STEPBible proper names (Bezalel)](#{@step_data}) · " <>
+                 "[Bezalel (ACAI)](#{@acai}people/md/Bezalel.md)\n"
+
+      assert later =~ "[Bezalel (Ezra 10:30) (ACAI)](#{@acai}people/md/Bezalel.2.md)"
+
+      # The two entries share STEPBible's dataset: one citation for both.
+      assert [
+               %Citation{work: "step", url: @step_data},
+               %Citation{work: "acai", locator: "person:Bezalel", url: craftsman_url},
+               %Citation{work: "acai", locator: "person:Bezalel.2"}
+             ] = citations
+
+      assert craftsman_url == @acai <> "people/md/Bezalel.md"
+    end
+
+    test "a place's ACAI entity is under places" do
+      {text, citations} = cited(LookupName, %{"name" => "Ai", "type" => "place", "limit" => 2})
+      ephraim = @acai <> "places/md/Ai.md"
+      ammon = @acai <> "places/md/Ai.2.md"
+      assert text =~ "[Ai (of Ephraim) (ACAI)](#{ephraim})"
+      assert text =~ "[Ai (of Ammon) (ACAI)](#{ammon})"
+
+      assert [
+               %Citation{work: "step"},
+               %Citation{work: "acai", locator: "place:Ai", url: ^ephraim},
+               %Citation{work: "acai", locator: "place:Ai.2", url: ^ammon}
+             ] = citations
     end
 
     test "ACAI matches each entry by its own TIPNR entry, the entry's type first" do
@@ -132,6 +175,29 @@ defmodule Bezalel.Study.Tools.NamesTest do
     test "result/1 gives the entities with their graph ids" do
       {:ok, result} = PeopleInPassage.result(%{"reference" => "Exodus 31:2"})
       assert %{id: "bezaleel_490", name: "Bezaleel"} in result.people
+    end
+
+    test "a Source line under each list cites every entity in Theographic" do
+      {text, citations} = cited(PeopleInPassage, %{"reference" => "Exodus 31"})
+      aaron = "[Aaron (Theographic)](#{@theographic}person/aaron_1/)"
+
+      assert text =~ ~r/### People\n(- .+\n)+\nSource: .*#{Regex.escape(aaron)}/
+
+      assert text =~
+               "### Places\n- **Holy Place**\n- **Mount Sinai**\n\n" <>
+                 "Source: [Holy Place (Theographic)](#{@theographic}place/holy_place_574/) · " <>
+                 "[Mount Sinai (Theographic)](#{@theographic}place/mount_sinai_855/)\n"
+
+      assert text =~
+               "- **Tabernacle Built**\n\n" <>
+                 "Source: [Tabernacle Built (Theographic)](#{@theographic}event/tabernacle_built_128/)\n"
+
+      assert %Citation{work: "theographic", label: "Aaron (Theographic)", locator: "aaron_1"} =
+               Enum.find(citations, &(&1.url == "#{@theographic}person/aaron_1/"))
+
+      {:ok, result} = PeopleInPassage.result(%{"reference" => "Exodus 31"})
+      shown = length(result.people) + length(result.places) + length(result.events)
+      assert length(citations) == shown
     end
   end
 end

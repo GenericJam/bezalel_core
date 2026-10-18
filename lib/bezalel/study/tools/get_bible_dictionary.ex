@@ -9,10 +9,13 @@ defmodule Bezalel.Study.Tools.GetBibleDictionary do
   not available" message. `result/1` returns the articles untruncated. With
   the dictionary switched off (`Bezalel.Study.Sources`, `notes:dictionary`)
   the tool is withheld, and if called anyway answers with an error saying so.
+  Each article carries a `Source:` line, its heading in Aquifer's Markdown
+  (`Bezalel.Study.Citations.dictionary/2`), and `run/2` returns those
+  citations as `details.citations`.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Aquifer, Args, Preferences, Sources}
+  alias Bezalel.Study.{Aquifer, Args, Citations, Preferences, Sources}
 
   @impl true
   def name, do: "get_bible_dictionary"
@@ -54,7 +57,8 @@ defmodule Bezalel.Study.Tools.GetBibleDictionary do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, Enum.map(result.articles, &cite/1))
   end
 
   @type t :: %{topic: String.t(), articles: [Aquifer.article()]}
@@ -85,7 +89,10 @@ defmodule Bezalel.Study.Tools.GetBibleDictionary do
     Aquifer.render(
       articles,
       4000,
-      "\n\n*[Article truncated — full text available in the Tyndale Bible Dictionary]*"
+      "\n\n*[Article truncated — full text available in the Tyndale Bible Dictionary]*",
+      &cite/1
     )
   end
+
+  defp cite(article), do: Citations.dictionary(article.content_id, article.title)
 end

@@ -104,5 +104,18 @@
       "vac.tf": "f193cf146850d34030e6c12e19f7b6f8cf3f96eb586214532f554ed7c92555f9",
       "verse.tf": "d8ad61f1cb0690792b31115c24105d240a4fc5fb0cbea719c1d7a8adc4eab251"
     }
+  },
+  "abbott_smith": {
+    "name": "Abbott-Smith, A Manual Greek Lexicon of the New Testament (1922): the TEI edition (its <pb n> page breaks) and the Internet Archive scan's page numbers",
+    "repo": "https://github.com/translatable-exegetical-tools/Abbott-Smith",
+    "commit": "4048093cc09ea15203518f08f6ee32c300608979",
+    "tei": "https://raw.githubusercontent.com/translatable-exegetical-tools/Abbott-Smith/4048093cc09ea15203518f08f6ee32c300608979/abbott-smith.tei.xml",
+    "tei_sha256": "99821bee411626b4aa3e674040297b54b267eff86cb4f9b7ef69a8bdb18b6f90",
+    "scan": "https://archive.org/details/manualgreeklexic00abborich",
+    "page_numbers": "https://archive.org/download/manualgreeklexic00abborich/manualgreeklexic00abborich_page_numbers.json",
+    "page_numbers_sha256": "43057905f3e5c1c9235aec447aa1ec8302216df7f4700829fe2fa308c6746f38",
+    "reviewed": "2026-10-18",
+    "licence": "Public domain, the marked-up TEI included (the repo's README)",
+    "note": "The commit the core pack's lexicon.abbott_smith_def was built from (studybible-mcp). Output: ../priv/study/abbott_smith_pages.json (mix bezalel.data.abbott_smith)."
   }
 }

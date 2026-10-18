@@ -5,12 +5,13 @@ defmodule Bezalel.Study.Tools.PeopleInPassage do
 
   Ported from studybible-mcp's `handle_people_in_passage`,
   `graph_get_verse_entities`, `graph_get_chapter_entities` and
-  `format_passage_entities` (MIT). Same text; an entity without a name
-  shows its id. `result/1` returns the entities with their graph ids.
+  `format_passage_entities` (MIT). Same text, with a Theographic `Source:`
+  line under each list; an entity without a name shows its id. `result/1`
+  returns the entities with their graph ids.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Reference}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Reference}
 
   @impl true
   def name, do: "people_in_passage"
@@ -47,8 +48,27 @@ defmodule Bezalel.Study.Tools.PeopleInPassage do
 
   @impl true
   def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+    with {:ok, result} <- result(args),
+         do: Citations.details(render(result), result, citations(result))
   end
+
+  @doc "The Theographic citations of every entity a `result/1` shows, in order."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(result) do
+    Enum.flat_map(sections(result), fn {_heading, kind, entities} -> sources(kind, entities) end)
+  end
+
+  defp sections(result) do
+    [
+      {"People", :person, result.people},
+      {"Places", :place, result.places},
+      {"Events", :event, result.events}
+    ]
+  end
+
+  defp sources(:person, entities), do: Enum.map(entities, &Citations.person(&1.id, &1.name))
+  defp sources(:place, entities), do: Enum.map(entities, &Citations.place(&1.id, &1.name))
+  defp sources(:event, entities), do: Enum.map(entities, &Citations.event(&1.id, &1.name))
 
   @typedoc "An entity: its graph id ('bezaleel_490') and name."
   @type entity :: %{id: String.t(), name: String.t()}
@@ -118,13 +138,9 @@ defmodule Bezalel.Study.Tools.PeopleInPassage do
   @spec render(t()) :: String.t()
   def render(result) do
     sections =
-      for {heading, entities} <- [
-            {"People", result.people},
-            {"Places", result.places},
-            {"Events", result.events}
-          ],
-          entities != [] do
-        ["### #{heading}" | Enum.map(entities, &"- **#{&1.name}**")] ++ [""]
+      for {heading, kind, entities} <- sections(result), entities != [] do
+        ["### #{heading}" | Enum.map(entities, &"- **#{&1.name}**")] ++
+          ["", Citation.source_line(sources(kind, entities)), ""]
       end
 
     lines =

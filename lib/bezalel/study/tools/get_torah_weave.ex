@@ -13,13 +13,14 @@ defmodule Bezalel.Study.Tools.GetTorahWeave do
   a missing pack is the pack error.
 
   `result/1` returns each matching cell with its unit and its partner
-  cells by direction. With the Torah weave switched off
+  cells by direction; each unit shown cites its page at chaver.com
+  (`citations/1`). With the Torah weave switched off
   (`Bezalel.Study.Sources`, `method:torah_weave`) the tool is withheld, and
   if called anyway answers with an error saying so.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Preferences, Reference, Sources}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Preferences, Reference, Sources}
 
   @torah ~w(Gen Exo Lev Num Deu)
 
@@ -110,8 +111,16 @@ defmodule Bezalel.Study.Tools.GetTorahWeave do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)) do
+      Citations.details(render(result), result, citations(result))
+    end
   end
+
+  @doc "The units `result/1` shows, one citation each, in display order."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{matches: matches}), do: Enum.map(matches, &unit_citation(&1.unit))
+
+  defp unit_citation(unit), do: Citations.torah_weave(unit.book, unit.number, unit.title)
 
   @typedoc """
   A weave cell: its label ('2Bc'), row, column, subdivision (nil for a
@@ -355,6 +364,8 @@ defmodule Bezalel.Study.Tools.GetTorahWeave do
       "### Unit #{unit.id} · \"#{unit.title}\" (#{unit.verses})",
       "",
       Enum.join(meta, " · "),
+      "",
+      Citation.source_line(unit_citation(unit)),
       "",
       "**Cell position**: `#{cell.label}` — row #{cell.row}, column #{cell.column}#{sub_note(cell)}",
       "**Cell verse range**: #{cell.reference}",

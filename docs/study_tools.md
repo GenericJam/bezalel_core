@@ -13,7 +13,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 |---|---|
 | `Bezalel.Study.Tools` | `all/0`, every study tool module; `materials/0`, the tools that make materials (`draw_image`); `withheld/1`, the tool names to withhold under a user's preferences |
 | `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by OpenAI's gpt-image on the user's OpenAI API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
-| `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. `LookupVerse` and `WordStudy`'s `run/2` also hand `result/1` to rho as the result's details (`{:ok, {:details, markdown, result}}`): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card. The Mermaid diagrams of the graph tools stay in the Markdown only |
+| `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. Every `run/2` hands rho the data with its `citations` as the result's details (`{:ok, {:details, markdown, data}}`, [Sources](#sources)): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card for `lookup_verse` and `word_study`. The Mermaid diagrams of the graph tools stay in the Markdown only |
 | `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
@@ -30,6 +30,8 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Aquifer` | Dictionary and key-term search and article Markdown |
 | `Bezalel.Study.Ancient`, `Bezalel.Study.Ancient.Passages`, `Bezalel.Study.Ancient.Registry`, `Bezalel.Study.Ancient.Scrolls` | Ancient-source citations (with the scrolls pack's fragment locators), search folding and excerpts, and their corpus registry (6 corpora, 241 works, 132 of them Dead Sea Scrolls manuscripts) as data |
 | `Bezalel.Study.BiblicalScrolls` | The biblical Dead Sea Scrolls' readings by verse (scrolls pack) |
+| `Bezalel.Study.Citation`, `Bezalel.Study.Citations` | A source a result rests on, and every URL template that builds one ([Sources](#sources)) |
+| `Bezalel.Agent.Details`, `Bezalel.Agent.Reply`, `Bezalel.Agent.Card` | What the session keeps of a tool's data (`keep_details/2`, `kept_card/1`, `kept_citations/1`), a reply's fold and sources, the passage card |
 
 ## Pack access
 
@@ -320,14 +322,78 @@ Changed result data: a verse view's `bsb` (was it the BSB) is now `translated` (
 the chosen translation's text), and `lookup_verse`'s result adds `translation`,
 `translation_note` and `genre_guidance`.
 
+## Sources
+
+Why and what Kevin decided: [decisions/2026-10-18-sources.md](../decisions/2026-10-18-sources.md).
+
+Every tool's `run/2` returns `{:ok, {:details, markdown, data}}`, `data` with
+`citations`: a `Bezalel.Study.Citation` for each record the Markdown shows, in display
+order, without repeats. Under each record the Markdown has one `Source:` line built from
+the same citations (`Citation.source_line/1`), so the model can copy the link into its
+answer (the prompt's rule 6). A citation is the record's `work` (`"net"`, `"bdb"`,
+`"josephus"`, `"dss"`, `"theology:stott"`…; `Citations.work_title/1` names it), a
+`label`, its reader `url` (nil for a print-only book), `locator`, `book` (author, title,
+year, for a book), `licence` (CC BY-NC sources, which ask for credit with each use),
+`dataset_url` (the pinned file imported), `translation` and `original`.
+
+`translation` is `:published`, `:assistant` or `:unpublished_draft`. `:assistant` marks
+a text the tool gives only in its original language (every Dead Sea Scroll, Philo's
+sections without Yonge, Septuagint rows without Brenton, Targum Onkelos, whose English is
+Metsudah's of the Hebrew Torah): any English the model gives is its own, an AI
+translation, and its Source line says so; `original` links the original. The 26 "Heiser
+Literal Translation" rows of the textual-variants data are `:unpublished_draft`: printed
+as "Unpublished draft rendering (AI-assisted), not Heiser's", never as Heiser's, with
+the verse's Hebrew and Greek on STEP and any Dead Sea Scroll witness as `original`.
+
+`Bezalel.Study.Citations` holds every URL template (checked against the live sites on
+2026-10-18; `test/bezalel/study/citations_test.exs` pins each to a verified example):
+
+| Work | Link |
+|---|---|
+| NET | `https://netbible.org/bible/{Book+Name}+{c}:{v}` (a superscription: verse 1) |
+| BSB | Bible Hub `https://biblehub.com/{slug}/{c}-{v}.htm` |
+| Hebrew, Greek, Septuagint, Tyndale notes | STEP `https://www.stepbible.org/?q=version={THOT, THGNT, LXX, TNotes}@reference={ref}` |
+| Brenton | `https://ebible.org/eng-Brenton/{BOOK}{cc}.htm#V{v}` (Psalms three digits, Daniel `DAG`, Rahlfs's 2 Esdras as Ezra and Nehemiah) |
+| BDB, Strong's | `https://biblehub.com/bdb/{n}.htm`, `https://biblehub.com/{hebrew,greek}/{n}.htm` |
+| LSJ | `https://lsj.gr/wiki/{lemma}` |
+| Abbott-Smith | the Internet Archive scan at the entry's page, `priv/study/abbott_smith_pages.json` (built by data/'s `mix bezalel.data.abbott_smith` from the TEI's page breaks), with the book reference |
+| STEP brief lexicons, morphology, proper names | `https://www.stepbible.org/?q=strong={Hnnnn}`; the STEPBible-Data repository (no page per code or name) |
+| TSK | `https://www.openbible.info/labs/cross-references/search?q={Book}+{c}%3A{v}` |
+| unfoldingWord, SIL notes | Door43 `tn_{BOOK}.tsv`; opentn.bible (no page per note) |
+| Tyndale dictionary, FIA key terms | Aquifer's Markdown at the pinned commit, `{file}.content.md#{heading-anchor}` (one file per initial, past a leading "The") |
+| ACAI | `https://github.com/BibleAquifer/ACAI/blob/{commit}/{type dir}/md/{Name}.md` |
+| Theographic | `https://theographic.netlify.app/{person,place}/{id}/`, `/event/{slug(title)}_{id}/` |
+| Torah Weave | `https://chaver.com/torah-weave/{Book}/{book}-unit-{n}/{book}-unit-{n}` |
+| Josephus | Perseus Hopper, Whiston (or Niese when there's no English) by book and section |
+| Philo | Scaife, Yonge (`1st1K-eng1`) or the Greek (`1st1K-grc1`) by section |
+| Onkelos, Mishnah | Sefaria `Onkelos_{Book}.{c}.{v}`, `Mishnah_{Tractate}.{c}.{m}` |
+| 1 Enoch, 4 Ezra | the stored Wikisource revision; eBible's KJV 2 Esdras |
+| Dead Sea Scrolls | Leon Levy `…/manuscript/{siglum}-1` (biblical manuscripts only where the scrolls pack names them); the Israel Museum for 1QIsaa, 1QS, 1QpHab, 1QM, 11Q19; Cambridge's CD MS A (cols. 1–16) and MS B (19–20); 1QHa as DJD 40 |
+| Theology summaries | Heiser's and Owen's stored URLs and pages; Stott, Lennox, Bradley as their book (author, title, year; no edition, which the data doesn't record) "on" the chapter |
+| ANE entries, Fee & Stuart | book references as given |
+| Textual variants | their stored citation and URL (none in the data version 1 pack) |
+
+The session keeps a tool's card and citations (`Bezalel.Agent.Details.keep_details/2`, rho's
+`:keep_details`); `Bezalel.Agent.Reply` collects a reply's citations as it streams and
+`Reply.sources/1` marks each `cited` when the answer links its URL (the whole URL, so a
+link to John 3:16 doesn't cite John 3:1) or names its book's title; a stored reply's
+`Bezalel.Library.Message` has the same as `citations`. A session from before citations
+kept the bare card: it reads as a card with no citations. The apps list a reply's
+sources grouped by work (`Citations.by_work/1`), the cited ones first, with an "AI
+translation" mark and the `original` link where `translation` isn't `:published`; the
+credits page (`Bezalel.Study.Credits`) stays the licence page.
+
 ## The system prompt
 
 `Prompt.system_prompt(prefs, surface: text)` is three parts:
 
 1. `Prompt.fixed(prefs)`, the part no user edits and kept minimal: Bezalel is a
    companion for studying the Bible; use the tools, quote what they return and cite it,
-   say where each claim comes from, don't invent, and label every quotation with its
-   translation (the NET linked to netbible.org, unaltered). Then a neutral guide to the
+   say where each claim comes from, don't invent, label every quotation with its
+   translation (the NET linked to the verse's page on netbible.org, unaltered), and link
+   each source it uses with the Source link the tool gave, never one of its own, saying
+   when English is its own translation and linking the original ([Sources](#sources)).
+   Then a neutral guide to the
    tools the user's preferences leave on (withheld tools are not named), and a line
    naming the sources the user switched off, so the model doesn't supply them from
    memory.

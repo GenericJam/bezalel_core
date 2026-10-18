@@ -10,13 +10,15 @@ defmodule Bezalel.Study.Tools.ExploreGenealogy do
   ancestors, descendants or both is an error, and a null one is both
   (theirs traced nothing and said "No genealogical data"); a null or
   non-numeric `generations` is the default 5 (theirs traced nothing for
-  null and every generation for text). An unknown person is an error.
+  null and every generation for text). An unknown person is an error. A
+  Theographic `Source:` line follows the heading (the person) and each list
+  of people.
   `result/1` returns the tree as lists of people, each linked to the person
   one generation nearer the focal person.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Graph}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Graph}
 
   @directions ["ancestors", "descendants", "both"]
   @default_generations 5
@@ -65,7 +67,21 @@ defmodule Bezalel.Study.Tools.ExploreGenealogy do
 
   @impl true
   def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+    with {:ok, result} <- result(args),
+         do: Citations.details(render(result), result, citations(result))
+  end
+
+  @doc "The Theographic citations of everyone a `result/1` shows, in order."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{person: person, ancestors: ancestors, descendants: descendants, family: family}) do
+    Enum.flat_map(
+      [[person], ancestors, descendants, family.partners, family.siblings],
+      &sources/1
+    )
+  end
+
+  defp sources(people) do
+    people |> Enum.uniq_by(& &1.id) |> Enum.map(&Citations.person(&1.id, &1.name))
   end
 
   @typedoc """
@@ -227,7 +243,7 @@ defmodule Bezalel.Study.Tools.ExploreGenealogy do
   @spec render(t()) :: String.t()
   def render(%{person: person, ancestors: ancestors, descendants: descendants, family: family}) do
     lines =
-      ["## Genealogy of #{person.name}\n"] ++
+      ["## Genealogy of #{person.name}\n", Citation.source_line(sources([person])), ""] ++
         tree(ancestors, "Ancestors") ++
         tree(descendants, "Descendants") ++
         if(ancestors == [] and descendants == [],
@@ -240,6 +256,11 @@ defmodule Bezalel.Study.Tools.ExploreGenealogy do
           people != [] do
         "**#{label}**: #{Enum.map_join(people, ", ", & &1.name)}"
       end
+
+    family_lines =
+      if family_lines == [],
+        do: [],
+        else: family_lines ++ [Citation.source_line(sources(family.partners ++ family.siblings))]
 
     Enum.join(lines, "\n") <>
       if(family_lines == [],
@@ -263,7 +284,7 @@ defmodule Bezalel.Study.Tools.ExploreGenealogy do
         "#{indent}- **#{p.name}** (#{relationship})#{Graph.year_suffix(p.birth_year)}"
       end
 
-    ["### #{heading}" | lines] ++ [""]
+    ["### #{heading}" | lines] ++ ["", Citation.source_line(sources(people)), ""]
   end
 
   defp diagram(name, ancestors, descendants, family) do

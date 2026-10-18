@@ -8,10 +8,10 @@ defmodule Bezalel.Study.Aquifer do
   (`database.py`) and `_format_content_items` (`tools.py`).
   """
 
-  alias Bezalel.Study.{DB, Format}
+  alias Bezalel.Study.{Citation, DB, Format}
 
-  @typedoc "An article: its title and plain text."
-  @type article :: %{title: String.t(), content: String.t()}
+  @typedoc "An article: its Aquifer content id, title and plain text."
+  @type article :: %{content_id: String.t() | integer(), title: String.t(), content: String.t()}
 
   @doc """
   The articles of `resource_type` whose title is `query` (any case), else
@@ -21,12 +21,12 @@ defmodule Bezalel.Study.Aquifer do
   @spec search(String.t(), String.t()) :: {:ok, [article()]} | {:error, String.t()}
   def search(resource_type, query) do
     exact = """
-    SELECT title, content_plain FROM aquifer_content
+    SELECT content_id, title, content_plain FROM aquifer_content
     WHERE resource_type = ? AND LOWER(title) = LOWER(?)
     """
 
     like = """
-    SELECT title, content_plain FROM aquifer_content
+    SELECT content_id, title, content_plain FROM aquifer_content
     WHERE resource_type = ?
       AND (LOWER(title) LIKE LOWER(?) OR LOWER(content_plain) LIKE LOWER(?))
     ORDER BY
@@ -44,21 +44,28 @@ defmodule Bezalel.Study.Aquifer do
           rows -> rows
         end
 
-      Enum.map(rows, &%{title: &1["title"], content: &1["content_plain"]})
+      Enum.map(
+        rows,
+        &%{content_id: &1["content_id"], title: &1["title"], content: &1["content_plain"]}
+      )
     end)
   end
 
-  @doc "Each article under its title, cut to `limit` characters with `note`."
-  @spec render([article()], non_neg_integer(), String.t()) :: String.t()
-  def render(articles, limit, note) do
+  @doc """
+  Each article under its title, cut to `limit` characters with `note`,
+  with the `Source:` line of its citation (`cite`) under it.
+  """
+  @spec render([article()], non_neg_integer(), String.t(), (article() -> Citation.t())) ::
+          String.t()
+  def render(articles, limit, note, cite) do
     articles
     |> Enum.flat_map(fn article ->
       body =
         if Format.present?(article.content),
-          do: [Format.truncate(article.content, limit, note)],
+          do: [Format.truncate(article.content, limit, note), ""],
           else: []
 
-      ["## #{article.title}", ""] ++ body ++ [""]
+      ["## #{article.title}", ""] ++ body ++ [Citation.source_line(cite.(article)), ""]
     end)
     |> Enum.join("\n")
   end

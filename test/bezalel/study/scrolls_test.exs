@@ -5,10 +5,16 @@ defmodule Bezalel.Study.ScrollsTest do
   # without the pack. Not async: the missing-pack tests repoint :packs_dir.
   use ExUnit.Case, async: false
 
-  alias Bezalel.Study.{Ancient, DB, Preferences, Sources}
+  alias Bezalel.Study.{Ancient, Citation, DB, Preferences, Sources}
   alias Bezalel.Study.Tools.{CompareBiblicalVersions, LookupAncientSource, SearchAncientSources}
 
-  defp ok({:ok, text}), do: text
+  defp ok(result), do: result |> cited() |> elem(0)
+
+  # A tool's Markdown and its citations.
+  defp cited({:ok, {:details, text, %{citations: citations}}}), do: {text, citations}
+
+  @leon_levy "https://www.deadseascrolls.org.il/explore-the-archive/manuscript/"
+
   defp headings(text), do: for([_, h] <- Regex.scan(~r/^### (.+)$/m, text), do: h)
 
   defp resolved(citation) do
@@ -95,6 +101,26 @@ defmodule Bezalel.Study.ScrollsTest do
       refute text =~ "\n21 "
     end
 
+    test "a scroll passage cites its Leon Levy page as the original: any English is the assistant's" do
+      {text, citations} = cited(LookupAncientSource.run(%{"citation" => "11Q13 2:18"}, %{}))
+      url = @leon_levy <> "11Q13-1"
+
+      assert text =~
+               "\n\nSource: [11Q13 2:1–25](#{url}) (original text: any English you give for it is your own translation"
+
+      assert [
+               %Citation{
+                 work: "dss",
+                 url: ^url,
+                 translation: :assistant,
+                 original: [%{url: ^url}]
+               }
+             ] = citations
+
+      # The closing licence list stays.
+      assert text =~ "License: CC BY-NC 4.0 (non-commercial;"
+    end
+
     test "a fragment cited without 'frg.', by name, or as a range of fragments" do
       text = ok(LookupAncientSource.run(%{"citation" => "4Q174 1-2 i 10"}, %{}))
       assert headings(text) == ["Florilegium, 4Q174 frg. 1–2 i 1–19 (4QFlor frg. 1–2 i 1–19)"]
@@ -152,6 +178,31 @@ defmodule Bezalel.Study.ScrollsTest do
       assert text =~ "#### DSS Dead Sea Scrolls · 4Q45 (4QpaleoDeutr) frg. 35 3–4"
       assert text =~ "- DSS Dead Sea Scrolls: Hebrew and Aramaic"
       assert text =~ "CC BY-NC 4.0"
+    end
+
+    test "each scroll cites its manuscript: Leon Levy's page when the pack names it, else the ETCBC transcription" do
+      {text, citations} =
+        cited(CompareBiblicalVersions.run(%{"reference" => "Deuteronomy 32:8"}, %{}))
+
+      deutj = @leon_levy <> "4Q37-1"
+
+      assert text =~
+               "**English:** none (any English is the assistant's own).\n" <>
+                 "Source: [4Q37 12:13–14](#{deutj}) (original text:"
+
+      assert %Citation{work: "dss", translation: :assistant, licence: "CC BY-NC 4.0"} =
+               Enum.find(citations, &(&1.url == deutj))
+
+      # 5/6Hev 1b has no name in the pack, so no Leon Levy page to link.
+      {_text, psalm} = cited(CompareBiblicalVersions.run(%{"reference" => "Psalm 22:16"}, %{}))
+
+      assert [
+               %Citation{url: url},
+               %Citation{label: "5/6hev1b " <> _, url: "https://github.com/ETCBC/dss"}
+             ] =
+               Enum.filter(psalm, &(&1.work == "dss"))
+
+      assert url == @leon_levy <> "4Q88-1"
     end
 
     test "Hebrew numbering is mapped to the canonical verse and said; a wholly reconstructed reading says so" do

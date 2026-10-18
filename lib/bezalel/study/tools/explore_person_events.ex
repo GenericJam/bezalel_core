@@ -6,13 +6,14 @@ defmodule Bezalel.Study.Tools.ExplorePersonEvents do
 
   Ported from studybible-mcp's `handle_explore_person_events`,
   `graph_get_person_events`, `graph_get_event_places`,
-  `format_person_events` and `mermaid_person_timeline` (MIT). Same text; an
-  unknown person is an error. `result/1` returns the timeline: each event
-  with its year and places.
+  `format_person_events` and `mermaid_person_timeline` (MIT). Same text,
+  with a Theographic `Source:` line under the heading (the person) and under
+  each event (the event and its places); an unknown person is an error.
+  `result/1` returns the timeline: each event with its year and places.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Graph}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Graph}
 
   @impl true
   def name, do: "explore_person_events"
@@ -48,7 +49,20 @@ defmodule Bezalel.Study.Tools.ExplorePersonEvents do
 
   @impl true
   def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+    with {:ok, result} <- result(args),
+         do: Citations.details(render(result), result, citations(result))
+  end
+
+  @doc "The Theographic citations of the person and every event and place a `result/1` shows."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{person: person, events: events}),
+    do: [person_source(person) | Enum.flat_map(events, &event_sources/1)]
+
+  defp person_source(person), do: Citations.person(person.id, person.name)
+
+  defp event_sources(event) do
+    places = Enum.map(event.places, &Citations.place(&1.id, &1.name))
+    [Citations.event(event.id, event.title) | places]
   end
 
   @typedoc "An event of the timeline: `start_year` negative for BC, nil when unknown."
@@ -122,19 +136,23 @@ defmodule Bezalel.Study.Tools.ExplorePersonEvents do
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
   def render(%{person: person, events: []}) do
-    "## Timeline of #{person.name}\n\nNo events found in the Theographic database.\n"
+    "## Timeline of #{person.name}\n\n#{Citation.source_line(person_source(person))}\n\n" <>
+      "No events found in the Theographic database.\n"
   end
 
   def render(%{person: person, events: events}) do
     lines =
       Enum.flat_map(events, fn event ->
         ["- **#{event.title}**#{Graph.year_suffix(event.start_year)}"] ++
-          if event.places == [],
+          if(event.places == [],
             do: [],
             else: ["  Location: #{Enum.map_join(event.places, ", ", & &1.name)}"]
+          ) ++ ["  " <> Citation.source_line(event_sources(event))]
       end)
 
-    Enum.join(["## Timeline of #{person.name}\n" | lines] ++ [""], "\n") <>
+    heading = ["## Timeline of #{person.name}\n", Citation.source_line(person_source(person)), ""]
+
+    Enum.join(heading ++ lines ++ [""], "\n") <>
       "\n### Timeline Diagram\n#{diagram(person.name, events)}\n"
   end
 

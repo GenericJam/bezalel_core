@@ -7,17 +7,22 @@ defmodule Bezalel.Study.Tools.AncientSourcesTest do
   # ANCIENT_CITATIONS) and those linked to the fixture chapters.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.Ancient
+  alias Bezalel.Study.{Ancient, Citation}
   alias Bezalel.Study.Ancient.Passages
   alias Bezalel.Study.Tools.{LookupAncientSource, SearchAncientSources}
 
   defp search(args), do: SearchAncientSources.run(args, %{})
   defp lookup(args), do: LookupAncientSource.run(args, %{})
 
-  defp ok(result) do
-    assert {:ok, text} = result
-    text
+  defp ok(result), do: result |> cited() |> elem(0)
+
+  # A tool's Markdown and its citations.
+  defp cited(result) do
+    assert {:ok, {:details, text, %{citations: citations}}} = result
+    {text, citations}
   end
+
+  @perseus "https://www.perseus.tufts.edu/hopper/text?doc=Perseus:text:"
 
   defp error(result) do
     assert {:error, text} = result
@@ -153,6 +158,31 @@ defmodule Bezalel.Study.Tools.AncientSourcesTest do
       assert ok(lookup(%{"citation" => "Life 1"})) =~ "### Flavius Josephus, Life 1–6 (Whiston 1)"
     end
 
+    test "each passage cites its page: Josephus at Perseus, the Whiston English when shown" do
+      {text, citations} = cited(lookup(%{"citation" => "Ant. 18.117"}))
+      url = @perseus <> "1999.01.0146:book=18:section=116"
+
+      assert text =~
+               "\n\nSource: [Antiquities 18.116–119 (Whiston)](#{url})\n\n" <>
+                 "- Shared tradition: Mark 6:17–29"
+
+      assert [%Citation{work: "josephus", url: ^url, translation: :published}] = citations
+
+      # The per-passage tag and the closing licence list stay.
+      assert text =~
+               "*Not Scripture · Jewish history (AD 93–94) · tier A · Niese Greek, Whiston English*"
+
+      assert text =~ "**Sources**\n- Josephus: Greek: Benedikt Niese"
+
+      # A search cites every passage it shows, in order.
+      {found, search_citations} = cited(search(%{"query" => "Vitellius xylophone"}))
+      shown = for [_, ref] <- Regex.scan(~r/^Source: \[([^\]]+)\]/m, found), do: ref
+      assert Enum.map(search_citations, & &1.label) == shown
+
+      assert Enum.find(search_citations, &(&1.label == "Antiquities 18.120–129 (Whiston)")).url ==
+               @perseus <> "1999.01.0146:book=18:section=120"
+    end
+
     test "caps passages and explains failures" do
       capped = ok(lookup(%{"citation" => "Antiquities 18", "limit" => 1}))
       assert capped =~ "*Showing the first 1 of 2 overlapping passages"
@@ -210,6 +240,13 @@ defmodule Bezalel.Study.Tools.AncientSourcesTest do
       assert text =~ "(non-commercial; https://creativecommons.org/licenses/by-nc/4.0/)"
 
       refute ok(lookup(%{"citation" => "1QpHab 8"})) =~ "Lines 8:"
+
+      # Hebrew only: the citation is the Israel Museum's scroll, any English the assistant's.
+      {text, [citation]} = cited(lookup(%{"citation" => "1QpHab 8:8-12"}))
+      imj = "http://dss.collections.imj.org.il/habakkuk"
+      assert %Citation{work: "dss", url: ^imj, translation: :assistant} = citation
+      assert citation.original == [%{label: "1QpHab 8:1–17", url: imj}]
+      assert text =~ "Source: [1QpHab 8:1–17](#{imj}) (original text:"
     end
 
     test "every corpus's own citation forms" do

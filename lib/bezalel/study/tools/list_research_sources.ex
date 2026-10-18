@@ -10,11 +10,13 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
   `research_search_url` and `format_research_sources` (`tools.py`, MIT).
   Same text. A `limit` that isn't a whole number is the default (theirs
   truncated 2.5 to 2 and failed on text); zero is the default and the
-  limit is held to 1–10, as theirs.
+  limit is held to 1–10, as theirs. Each listing's address is its
+  `Source:` line (`Bezalel.Study.Citations.research/1`), and `run/2`
+  returns those citations as `details.citations`.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, Patterns, Preferences}
+  alias Bezalel.Study.{Args, Citation, Citations, Patterns, Preferences}
 
   # Read at compile time (mix links priv into the build before compiling),
   # so the device needs no priv file.
@@ -89,7 +91,8 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, Enum.map(result.sources, &cite/1))
   end
 
   @typedoc """
@@ -278,7 +281,7 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
 
         [
           "### #{source["name"]}",
-          source["url"],
+          Citation.source_line(cite(source)),
           source["description"],
           "- **Coverage**: #{Enum.join(source["coverage"], ", ")}",
           "- **Perspective**: #{source["perspective"]}",
@@ -289,4 +292,6 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
     oldest = sources |> Enum.map(& &1["last_verified"]) |> Enum.min()
     [shown, ""] ++ listings ++ ["*Listings verified on or after #{oldest}.*"]
   end
+
+  defp cite(source), do: Citations.research(source)
 end

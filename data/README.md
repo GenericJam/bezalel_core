@@ -37,6 +37,7 @@ mix deps.get
 mix bezalel.data.net        # → out/translations.sqlite, out/net_report.txt
 mix bezalel.data.scrolls    # → out/scrolls.sqlite, out/scrolls_report.txt
 mix bezalel.data.fixtures   # → ../test/fixtures/packs/{translations,scrolls}.sqlite
+mix bezalel.data.abbott_smith  # → ../priv/study/abbott_smith_pages.json
 ```
 
 Needs the network for the first run (NET: 66 requests, about 30 seconds;
@@ -54,6 +55,14 @@ the phone app's `../../bezalel/data/out/core.sqlite` when that is there.
 `translations` rows and the verses for exactly the references in
 `test/fixtures/packs/core.sqlite`'s `bsb_verses`, with the same `pack_meta`
 plus a `fixture` row. Run it after `bezalel.data.net`.
+
+`mix bezalel.data.abbott_smith` writes core's `priv/study/abbott_smith_pages.json`
+(committed; not a pack): the printed page each Abbott-Smith entry starts on, by
+Strong's number, from the TEI edition's `<pb n>` page breaks at the commit the core
+pack's `abbott_smith_def` was built from, and the Internet Archive scan's page numbers
+(`pins.json` → `abbott_smith`, both sha256-pinned), for the lexicon citations' links
+into the scan (`Bezalel.Study.Citations.abbott_smith/2`). 5,401 entries; the 470 pack
+entries the TEI keys without a Strong's number link the scan's first page.
 
 ## The `translations` pack
 

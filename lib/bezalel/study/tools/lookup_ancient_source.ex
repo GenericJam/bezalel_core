@@ -32,7 +32,7 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Ancient, Args, DB, Preferences, Sources}
+  alias Bezalel.Study.{Ancient, Args, Citations, DB, Preferences, Sources}
   alias Bezalel.Study.Ancient.Passages
 
   @max_limit 10
@@ -100,7 +100,10 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)) do
+      {markdown, citations} = rendered(result)
+      Citations.details(markdown, result, citations)
+    end
   end
 
   @typedoc """
@@ -435,35 +438,16 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
-  def render(%{status: :out_of_range, first: nil} = r),
-    do: "No #{r.work} passages are imported in this database."
+  def render(r), do: r |> rendered() |> elem(0)
 
-  def render(%{status: :out_of_range} = r) do
-    {_corpus, work} = corpus_work(r)
+  @doc "`render/1`'s Markdown with the citations of the passages it shows."
+  @spec rendered(t()) :: {String.t(), [Bezalel.Study.Citation.t()]}
+  def rendered(%{status: :out_of_range, first: nil} = r),
+    do: {"No #{r.work} passages are imported in this database.", []}
 
-    nearest =
-      for {side, value} <- [{"preceding", r.before}, {"following", r.after}],
-          value,
-          do: "#{side} #{value}"
+  def rendered(%{status: :out_of_range} = r), do: {out_of_range_text(r), []}
 
-    gaps = Enum.map_join(r.gap_notes, &" ⚠ #{&1["citation"]}: #{&1["note"]}")
-
-    runs =
-      if Ancient.fragment_locator?(work),
-        do: "",
-        else:
-          " Imported #{r.work} runs #{r.work} #{Ancient.format_range(work.locator, r.first, r.last)}"
-
-    "No passage covers #{r.heading}.#{runs}" <>
-      if(nearest != [],
-        do:
-          "#{if runs == "", do: " Nearest", else: "; nearest"} passages: #{Enum.join(nearest, ", ")}.",
-        else: if(runs == "", do: "", else: ".")
-      ) <>
-      if(work.coverage_note != "", do: " #{work.coverage_note}", else: "") <> gaps
-  end
-
-  def render(r) do
+  def rendered(r) do
     {corpus, work} = corpus_work(r)
     count = r.total
     shown = length(r.passages)
@@ -495,6 +479,31 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
       "*Stopped at the 12,000-character response budget after #{shown} passages.#{resume}*"
     end)
+  end
+
+  defp out_of_range_text(r) do
+    {_corpus, work} = corpus_work(r)
+
+    nearest =
+      for {side, value} <- [{"preceding", r.before}, {"following", r.after}],
+          value,
+          do: "#{side} #{value}"
+
+    gaps = Enum.map_join(r.gap_notes, &" ⚠ #{&1["citation"]}: #{&1["note"]}")
+
+    runs =
+      if Ancient.fragment_locator?(work),
+        do: "",
+        else:
+          " Imported #{r.work} runs #{r.work} #{Ancient.format_range(work.locator, r.first, r.last)}"
+
+    "No passage covers #{r.heading}.#{runs}" <>
+      if(nearest != [],
+        do:
+          "#{if runs == "", do: " Nearest", else: "; nearest"} passages: #{Enum.join(nearest, ", ")}.",
+        else: if(runs == "", do: "", else: ".")
+      ) <>
+      if(work.coverage_note != "", do: " #{work.coverage_note}", else: "") <> gaps
   end
 
   defp corpus_work(r) do

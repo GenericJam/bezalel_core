@@ -12,7 +12,11 @@ defmodule Bezalel.Library.Message do
   (`passage`, scripted replies) or a card built from the study tools'
   results (`card`, `Bezalel.Agent.Card`, live replies), a requested
   drawing's subject (`image`, scripted), the `model` that answered (the
-  host app's model id, or `"storyboard"`).
+  host app's model id, or `"storyboard"`), and the sources its tools
+  consulted (`citations`, `Bezalel.Study.Citation`s in the order the tools
+  returned them, each `cited` when the reply's text links it:
+  `Bezalel.Agent.Reply.sources/1`; a sources list groups them with
+  `Bezalel.Study.Citations.by_work/1`).
 
   Its files come two ways. `materials` are those sent or received by
   reference (`Bezalel.Materials`: a user's attachment, a `draw_image`
@@ -45,6 +49,7 @@ defmodule Bezalel.Library.Message do
           blocks: [map()],
           passage: String.t() | nil,
           card: map() | nil,
+          citations: [Bezalel.Study.Citation.t()],
           image: String.t() | nil,
           images: [image()],
           materials: [material()],
@@ -61,6 +66,7 @@ defmodule Bezalel.Library.Message do
     :image,
     :model,
     blocks: [],
+    citations: [],
     images: [],
     materials: [],
     entries: []

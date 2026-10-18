@@ -6,7 +6,7 @@ defmodule Bezalel.Study.TranslationsTest do
   # "NET" texts are markers, not the NET's wording).
   use ExUnit.Case, async: false
 
-  alias Bezalel.Study.{DB, Preferences, Translations, Verses}
+  alias Bezalel.Study.{Citation, DB, Preferences, Translations, Verses}
 
   alias Bezalel.Study.Tools.{
     FindSimilarPassages,
@@ -107,6 +107,12 @@ defmodule Bezalel.Study.TranslationsTest do
     assert {:ok, %{verses: [gap]}} = LookupVerse.result(%{"reference" => "Exodus 31:4"}, @net)
     refute gap.translated
     assert gap.english =~ "[gloss]"
+
+    # Its source is its original on STEP alone: no NET page for a gloss.
+    assert {:ok, gap_result} = LookupVerse.result(%{"reference" => "Exodus 31:4"}, @net)
+    assert [%Citation{work: "step", url: step_url}] = LookupVerse.citations(gap_result)
+    assert step_url =~ "reference=Exo.31.4"
+    refute LookupVerse.render(gap_result) =~ "netbible.org/bible"
   end
 
   test "the other tools that quote English use the chosen translation", %{dir: dir} do
@@ -134,6 +140,14 @@ defmodule Bezalel.Study.TranslationsTest do
              Enum.find(study.examples, &(&1.reference == "Exo.31.3"))
 
     assert WordStudy.render(study) =~ "## Example Passages ([NET](http://netbible.org))"
+
+    # An example in the NET cites its NET page; one shown in the gloss, STEP.
+    assert WordStudy.render(study) =~
+             "**Exo.31.3**: NET marker for Exodus 31:3\n" <>
+               "Source: [Exodus 31:3](https://netbible.org/bible/Exodus+31:3)\n"
+
+    assert %Citation{work: "step"} =
+             Enum.find(WordStudy.citations(study), &(&1.locator == "Gen.1.2"))
 
     assert {:ok, similar} = FindSimilarPassages.result(%{"reference" => "Exodus 31:3"}, @net)
     assert similar.source.english == "NET marker for Exodus 31:3"

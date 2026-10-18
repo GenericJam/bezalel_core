@@ -7,7 +7,7 @@ defmodule Bezalel.Study.Tools.LookupVerseTest do
   # names, and all the notes pack's textual-variant cases and quotations).
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.Preferences
+  alias Bezalel.Study.{Citation, Preferences}
   alias Bezalel.Study.Tools.LookupVerse
 
   # These cases read the BSB (the core pack) with the genre guidance on, as
@@ -254,6 +254,67 @@ defmodule Bezalel.Study.Tools.LookupVerseTest do
                {"Matthew 24:30", :ot, true},
                {"Revelation 1:7", :ot, false}
              ]
+    end
+  end
+
+  describe "sources" do
+    test "a verse cites its NET verse page and its Greek on STEP, under it and in citations" do
+      assert {:ok, {:details, text, %{citations: citations}}} =
+               LookupVerse.run(%{"reference" => "John 3:16"}, %{})
+
+      # The heading keeps the NET's own label.
+      assert text =~ ~r/\A## Jhn\.3\.16 \(\[NET\]\(http:\/\/netbible\.org\)\)\n/
+
+      assert [
+               %Citation{work: "net", url: "https://netbible.org/bible/John+3:16"} = net,
+               %Citation{work: "step", url: step_url} = step
+             ] = citations
+
+      assert step_url =~ "version=THGNT"
+      assert step_url =~ "reference=Jhn.3.16"
+      # One Source line, after the verse's word list.
+      assert [_, after_words] = String.split(text, "### Word Analysis")
+      assert after_words =~ "\n" <> Citation.source_line([net, step]) <> "\n"
+
+      assert text =~
+               "Source: [John 3:16](https://netbible.org/bible/John+3:16) · [John 3:16 (Greek)]("
+    end
+
+    test "the BSB cites Bible Hub; every verse of a passage gets its own line" do
+      {:ok, result} = LookupVerse.result(%{"reference" => "Exodus 31:2-3"}, @bsb)
+      text = LookupVerse.render(result)
+
+      for verse <- [2, 3] do
+        assert text =~
+                 "Source: [Exodus 31:#{verse}](https://biblehub.com/exodus/31-#{verse}.htm) · "
+      end
+
+      assert [
+               %Citation{work: "bsb", url: "https://biblehub.com/exodus/31-2.htm"},
+               %Citation{work: "step", url: hebrew},
+               %Citation{work: "bsb", url: "https://biblehub.com/exodus/31-3.htm"},
+               %Citation{work: "step"},
+               %Citation{work: "fee_stuart", book: %{title: title}} = fee_stuart
+             ] = LookupVerse.citations(result)
+
+      assert hebrew =~ "version=THOT"
+      # The genre guidance (on here) cites Fee & Stuart on the genre, after it.
+      assert title == "How to Read the Bible for All Its Worth"
+      assert fee_stuart.locator == "on Old Testament Narratives"
+      assert text =~ "### Questions for Application:"
+
+      assert text =~
+               ~r/### Questions for Application:.*\n\n#{Regex.escape(Citation.source_line(fee_stuart))}/s
+    end
+
+    test "without the original only the translation is cited" do
+      {:ok, result} =
+        LookupVerse.result(%{"reference" => "Exodus 31:3", "include_original" => false}, @bsb)
+
+      assert [%Citation{work: "bsb"}, %Citation{work: "fee_stuart"}] =
+               LookupVerse.citations(result)
+
+      refute LookupVerse.render(result) =~ "stepbible.org"
     end
   end
 end

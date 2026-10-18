@@ -10,7 +10,19 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Lexicon, Preferences, Translations, Verses}
+  alias Bezalel.Study.{
+    Args,
+    Citation,
+    Citations,
+    DB,
+    Format,
+    Lexicon,
+    Preferences,
+    Translations,
+    Verses
+  }
+
+  alias Bezalel.Study.Tools.WordStudy
 
   @impl true
   def name, do: "search_by_strongs"
@@ -48,7 +60,8 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc """
@@ -113,10 +126,28 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
     body =
       if verses == [],
         do: "No verses found with this Strong's number in the database.\n",
-        else: Enum.map_join(verses, &"**#{&1.reference}**: #{&1.english}\n\n")
+        else:
+          Enum.map_join(verses, fn view ->
+            "**#{view.reference}**: #{view.english}\n" <>
+              Citation.source_line(verse_citation(view, result.translation)) <> "\n\n"
+          end)
 
     "## Verses with #{strongs} (#{Format.s(entry["word"])} - #{Format.s(entry["transliteration"])})#{label}\n\n" <>
       Format.translation_note(result.translation_note) <>
-      "*#{Format.s(entry["short_definition"])}*\n\n" <> body
+      "*#{Format.s(entry["short_definition"])}*\n" <>
+      Citation.source_line(WordStudy.entry_citations(entry, :brief)) <> "\n\n" <> body
   end
+
+  @doc """
+  The sources `render/1` shows, in its order: the entry's brief definition
+  and Strong's page, then each verse in the quoted translation (STEP
+  Bible's for a verse shown in STEPBible's gloss).
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{entry: entry, verses: verses, translation: translation}) do
+    WordStudy.entry_citations(entry, :brief) ++ Enum.map(verses, &verse_citation(&1, translation))
+  end
+
+  defp verse_citation(view, translation),
+    do: Citations.scripture(view.reference, if(view.translated, do: translation))
 end

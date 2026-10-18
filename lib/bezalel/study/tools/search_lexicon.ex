@@ -8,7 +8,8 @@ defmodule Bezalel.Study.Tools.SearchLexicon do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Lexicon, Preferences}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Lexicon, Preferences}
+  alias Bezalel.Study.Tools.WordStudy
 
   @impl true
   def name, do: "search_lexicon"
@@ -54,7 +55,8 @@ defmodule Bezalel.Study.Tools.SearchLexicon do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @type t :: %{query: String.t(), entries: [DB.row()]}
@@ -88,7 +90,13 @@ defmodule Bezalel.Study.Tools.SearchLexicon do
     "## Lexicon Search: '#{query}'\n\nFound #{length(entries)} entries:\n\n" <>
       Enum.map_join(entries, fn entry ->
         "### #{entry["strongs"]} - #{Format.s(entry["word"])} (#{Format.s(entry["transliteration"])})\n" <>
-          "#{Format.s(entry["short_definition"])}\n\n"
+          "#{Format.s(entry["short_definition"])}\n" <>
+          Citation.source_line(WordStudy.entry_citations(entry, :brief)) <> "\n\n"
       end)
   end
+
+  @doc "The sources `render/1` shows: each entry's brief definition and Strong's page, in order."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{entries: entries}),
+    do: Enum.flat_map(entries, &WordStudy.entry_citations(&1, :brief))
 end

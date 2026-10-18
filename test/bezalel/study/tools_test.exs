@@ -56,8 +56,13 @@ defmodule Bezalel.Study.ToolsTest do
           {Tools.SearchByStrongs, %{"strongs" => "H2451", "limit" => huge}},
           {Tools.FindSimilarPassages, %{"reference" => "Psalm 22:18", "limit" => huge}}
         ] do
-      assert {status, text} = tool.run(args, %{}), inspect({tool, args})
-      assert status in [:ok, :error] and is_binary(text)
+      text =
+        case tool.run(args, %{}) do
+          {:ok, {:details, text, %{citations: citations}}} when is_list(citations) -> text
+          {:error, text} -> text
+        end
+
+      assert is_binary(text), inspect({tool, args})
     end
   end
 end

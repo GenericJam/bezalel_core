@@ -9,7 +9,17 @@ defmodule Bezalel.Study.Tools.WordStudy do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Lexicon, Preferences, Translations, Verses}
+  alias Bezalel.Study.{
+    Args,
+    Citation,
+    Citations,
+    DB,
+    Format,
+    Lexicon,
+    Preferences,
+    Translations,
+    Verses
+  }
 
   @examples 5
 
@@ -65,7 +75,7 @@ defmodule Bezalel.Study.Tools.WordStudy do
   @impl true
   def run(args, ctx) do
     with {:ok, result} <- result(args, Preferences.current(ctx)),
-         do: {:ok, {:details, render(result), result}}
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc """
@@ -151,14 +161,77 @@ defmodule Bezalel.Study.Tools.WordStudy do
   @spec render(t()) :: String.t()
   def render(%{entry: nil}), do: not_found()
 
-  def render(%{entry: entry, examples: []}), do: Format.lexicon_entry(entry)
+  def render(%{entry: entry, examples: []}), do: entry_text(entry)
 
   def render(%{entry: entry, examples: examples} = result) do
     label = Format.translation_label(examples, result.translation)
 
-    Format.lexicon_entry(entry) <>
+    entry_text(entry) <>
       "\n\n## Example Passages#{label}\n" <>
       Format.translation_note(result.translation_note) <>
-      Enum.map_join(examples, &"\n**#{&1.reference}**: #{&1.english}\n")
+      Enum.map_join(examples, fn view ->
+        "\n**#{view.reference}**: #{view.english}\n" <>
+          Citation.source_line(example_citation(view, result.translation)) <> "\n"
+      end)
+  end
+
+  defp entry_text(entry),
+    do: Format.lexicon_entry(entry) <> Citation.source_line(entry_citations(entry, :full))
+
+  @doc """
+  The sources `render/1` shows, in its order: the lexicon entry
+  (`entry_citations/2`), then each example verse in the quoted
+  translation (STEP Bible's for a verse shown in STEPBible's gloss).
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{entry: nil}), do: []
+
+  def citations(%{entry: entry, examples: examples, translation: translation}) do
+    entry_citations(entry, :full) ++ Enum.map(examples, &example_citation(&1, translation))
+  end
+
+  defp example_citation(view, translation),
+    do: Citations.scripture(view.reference, if(view.translated, do: translation))
+
+  @doc """
+  A lexicon entry's sources, for the definitions shown: `:full` as
+  `Format.lexicon_entry/1` shows them (STEPBible's brief definition when
+  it differs from the full one or stands alone, the full BDB (Hebrew) or
+  LSJ (Greek) entry, Abbott-Smith's), `:brief` the brief definition alone
+  (as `search_lexicon` and `search_by_strongs` show it); then the Strong's
+  number's page. An entry the core pack keys `"AS_<lemma>"` (Abbott-Smith's,
+  with no Strong's number) cites Abbott-Smith alone, its only source.
+  """
+  @spec entry_citations(DB.row(), :full | :brief) :: [Citation.t()]
+  def entry_citations(entry, shown) do
+    if Citations.strongs?(entry["strongs"]),
+      do: strongs_citations(entry, shown),
+      else: [Citations.abbott_smith(Format.s(entry["strongs"]), Format.s(entry["word"]))]
+  end
+
+  # An entry keyed by its Strong's number: the lexicons its shown definitions
+  # come from, and the number's page.
+  defp strongs_citations(entry, shown) do
+    strongs = entry["strongs"]
+    word = Format.s(entry["word"])
+    short = Format.s(entry["short_definition"])
+    full = if shown == :full, do: Format.s(entry["full_definition"]), else: ""
+
+    brief =
+      if short != "" and short != full, do: [Citations.step_lexicon(strongs, word)], else: []
+
+    full_entry =
+      cond do
+        full == "" -> []
+        String.starts_with?(String.upcase(strongs), "H") -> [Citations.bdb(strongs, word)]
+        true -> [Citations.lsj(strongs, word)]
+      end
+
+    abbott_smith =
+      if shown == :full and Format.present?(entry["abbott_smith_def"]),
+        do: [Citations.abbott_smith(strongs, word)],
+        else: []
+
+    brief ++ full_entry ++ abbott_smith ++ [Citations.strongs(strongs, word)]
   end
 end
