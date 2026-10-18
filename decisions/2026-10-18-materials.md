@@ -139,8 +139,8 @@ which fetches each material again by id with the ctx, so a caller can't
 send another owner's material by handing over its struct):
 
 - an **image** attaches by reference (rho resolves it; a model without
-  `:image` gets rho's note). One in a format the providers don't take
-  (anything but JPEG, PNG, GIF and WebP: HEIC from a phone) goes by name
+  `:image` gets rho's note). One in a format not every provider takes
+  (anything but JPEG, PNG and WebP: HEIC from a phone, a GIF) goes by name
   only, unless the store converts it (`for_model/2`): otherwise every
   later request of the conversation would carry a picture the provider
   rejects;

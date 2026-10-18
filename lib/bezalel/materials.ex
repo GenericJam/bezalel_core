@@ -88,9 +88,10 @@ defmodule Bezalel.Materials do
   # Documents whose bytes are text the model can read as they are.
   @text_types ["application/json", "application/xml", "application/x-yaml", "application/yaml"]
 
-  # The picture formats the providers take as they are; another (HEIC from
-  # a phone) goes only through a store that converts it (`for_model/2`).
-  @model_images ["image/jpeg", "image/png", "image/gif", "image/webp"]
+  # The picture formats every provider takes as they are (Gemini takes no
+  # GIF); another (HEIC from a phone, a GIF) goes only through a store that
+  # converts it (`for_model/2`).
+  @model_images ["image/jpeg", "image/png", "image/webp"]
 
   # A transcript or a document's text is cut to this many characters.
   @text_max 100_000
