@@ -323,7 +323,7 @@ defmodule Bezalel.Usage do
   defp limit_reached(ctx, provider, window, text, error) do
     %{state: state, now: now} = ctx
     out = provider && exhausted(state, provider, now)
-    at = until(error, out, state, provider, now)
+    at = until(error, out, now)
 
     label =
       cond do
@@ -354,18 +354,11 @@ defmodule Bezalel.Usage do
     }
   end
 
-  defp until({:rate_limited, %{resets_at: at}}, _out, _state, _provider, now)
+  defp until({:rate_limited, %{resets_at: at}}, _out, now)
        when is_integer(at) and at > now,
        do: at
 
-  defp until(_error, %{resets_at: at}, _state, _provider, _now), do: at
-
-  defp until(_error, nil, state, provider, now) do
-    case provider && latest_429(state, provider, now) do
-      %{resets_at: at} -> at
-      _ -> nil
-    end
-  end
+  defp until(_error, out, _now), do: out && out.resets_at
 
   defp explanation(:no_credit, provider, _kind, _ctx, text) do
     who = if provider, do: "#{api_name(provider)} account", else: "API account"
