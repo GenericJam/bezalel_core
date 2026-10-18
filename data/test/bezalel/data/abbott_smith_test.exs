@@ -24,7 +24,6 @@ defmodule Bezalel.Data.AbbottSmithTest do
 
   test "an entry is on the page of the last break before it, a break inside it included" do
     {pages, _tokens} = AbbottSmith.pages(@tei, @numbers)
-    {pages, _tokens} = AbbottSmith.pages(@tei, @numbers)
     assert pages == %{"G1" => "1", "AS_Ἀβειληνή" => "1", "G12" => "2", "G26" => "3"}
   end
 
