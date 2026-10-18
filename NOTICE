@@ -35,4 +35,4 @@ licence:
 The study data (the test fixtures in test/fixtures/packs, cut from the
 packs by the phone app's data/scripts/make_fixtures.py) carry their own
 licences and attributions: see the phone app's data/SOURCES.md
-(https://github.com/GenericJam/bezalel).
+(https://github.com/GenericJam/bezalel_mob).

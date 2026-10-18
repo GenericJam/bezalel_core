@@ -1,7 +1,7 @@
 defmodule Bezalel.Study.DB do
   @moduledoc """
   Read-only access to the study packs (built by the phone app's
-  `data/build.sh`, GenericJam/bezalel; `data/README.md` there): `core`,
+  `data/build.sh`, GenericJam/bezalel_mob; `data/README.md` there): `core`,
   `notes`, `lxx`, `ancient` and `graph`, one SQLite file each in `dir/0`.
 
   Every call opens its own read-only connection to the one pack it needs

@@ -4,7 +4,7 @@ Bezalel's study tools are [studybible-mcp](https://github.com/djayatillake/study
 query layer ported to Elixir (MIT, commit `38cef28`; see [NOTICE](../NOTICE)), run as
 [rho](https://github.com/GenericJam/rho) tool modules with no MCP layer. They read the
 study packs the phone app builds and publishes (its `data/README.md`,
-[GenericJam/bezalel](https://github.com/GenericJam/bezalel)). They live here, in
+[GenericJam/bezalel_mob](https://github.com/GenericJam/bezalel_mob)). They live here, in
 bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 
 ## Modules

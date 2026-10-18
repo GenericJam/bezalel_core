@@ -1,7 +1,7 @@
 # bezalel_core — Agent Instructions
 
-Bezalel's study tools, shared by the phone app (GenericJam/bezalel, Mob) and
-the website (bezalel_ca). Read this file before you change anything. The
+Bezalel's study tools, shared by the phone app (GenericJam/bezalel_mob, Mob)
+and the website (bezalel_ca). Read this file before you change anything. The
 phone app's AGENTS.md has the wider picture (repo topology, issue tracking
 in beads, the verification ladder, adversarial review); its rules apply here
 too unless this file says otherwise.

@@ -1,36 +1,88 @@
 # bezalel_core
 
-Bezalel's study tools, shared by its apps: the phone app
-([GenericJam/bezalel](https://github.com/GenericJam/bezalel), built with
-Mob) and the website (bezalel_ca). Plain Elixir, with no UI and no platform
-code.
+The study engine behind Bezalel, a free Bible-study companion: 25 study
+tools over SQLite study packs, written in Elixir as
+[rho](https://github.com/GenericJam/rho) agent tools. Every Bezalel app runs
+the same engine, so a question gets the same evidence wherever it's asked:
 
-- **The study tools** (`Bezalel.Study.Tools.*`): an Elixir port of
-  [studybible-mcp](https://github.com/djayatillake/studybible-mcp)'s query
-  layer (MIT), as [rho](https://github.com/GenericJam/rho) tool modules over
-  the study packs (SQLite). See [docs/study_tools.md](docs/study_tools.md).
-- **Pack access** (`Bezalel.Study.DB`): read-only, one connection per call.
-  The host app names the packs directory:
+- the phone app, [bezalel_mob](https://github.com/GenericJam/bezalel_mob)
+  (Android and iOS, built with [Mob](https://github.com/GenericJam/mob));
+- the website, bezalel_ca (in progress);
+- later, a desktop app.
 
-  ```elixir
-  # a path ...
-  config :bezalel_core, :packs_dir, "/srv/bezalel/packs"
-  # ... or a function resolved on every call
-  config :bezalel_core, :packs_dir, {MyApp.Storage, :packs_dir, []}
-  ```
+There is no UI and no platform code here.
 
-- **The corpus registry, the genre guidance and the system prompt**
-  (`Bezalel.Study.Ancient.Registry`, `Bezalel.Study.Hermeneutics`,
-  `Bezalel.Study.Prompt`).
+## Credit
 
-The packs themselves are built and published by the phone app's `data/`
-pipeline; their sources and licences are in its `data/SOURCES.md`.
+The study tools are an Elixir port of
+**[studybible-mcp](https://github.com/djayatillake/studybible-mcp)** by
+[@djayatillake](https://github.com/djayatillake) and the Study Bible MCP
+contributors (MIT): its query layer, tool handlers,
+output formats, tool descriptions, hermeneutics guidance, system prompt and
+research-sources catalogue, ported from commit `38cef28` and adapted. The
+study database those tools read is built by studybible-mcp's pipeline from
+STEPBible, BibleAquifer, ACAI, Theographic, Perseus and the other sources
+listed in bezalel_mob's
+[data/SOURCES.md](https://github.com/GenericJam/bezalel_mob/blob/master/data/SOURCES.md).
+See [NOTICE](NOTICE) for the licence text. If you want an MCP server for
+Claude or another client rather than an Elixir library, use studybible-mcp.
+
+## The tools
+
+| Pack | Tools |
+|---|---|
+| core | `lookup_verse`, `word_study`, `search_lexicon`, `search_by_strongs`, `get_cross_references`, `parse_morphology`, `lookup_name`, `find_similar_passages`, `get_torah_weave` |
+| graph | `people_in_passage`, `explore_genealogy`, `explore_person_events`, `explore_place`, `find_connection`, `graph_enriched_search` |
+| notes | `get_study_notes`, `get_bible_dictionary`, `get_key_terms`, `get_ane_context`, `get_theology_context`, `get_textual_variant` |
+| lxx | `compare_biblical_versions` (with core) |
+| ancient | `search_ancient_sources`, `lookup_ancient_source` |
+| none | `list_research_sources` |
+
+Each tool is a `Rho.Tool` module (`Bezalel.Study.Tools.*`; `Bezalel.Study.Tools.all/0`
+lists them) whose `run/2` returns the Markdown the model reads, and whose
+`result/1` returns the same answer as data for an app to draw. A missing pack
+is an error that names it, so the model can say so instead of guessing.
+How each was ported and where it differs from studybible-mcp:
+[docs/study_tools.md](docs/study_tools.md).
+
+Also here: `Bezalel.Study.Reference` (book names and reference forms),
+`Bezalel.Study.Ancient.Registry` (the ancient-source corpora and their
+labels), `Bezalel.Study.Hermeneutics` (genre guidance) and
+`Bezalel.Study.Prompt` (the system prompt).
+
+## Using it
+
+```elixir
+# mix.exs — unreleased, so pinned to a commit
+{:bezalel_core, github: "GenericJam/bezalel_core", ref: "<commit>"}
+```
+
+Tell it where the packs are, as a path or a function resolved on every call:
+
+```elixir
+config :bezalel_core, :packs_dir, "/srv/bezalel/packs"
+config :bezalel_core, :packs_dir, {MyApp.Storage, :packs_dir, []}
+```
+
+Give the tools to a rho loop:
+
+```elixir
+Rho.Supervisor.start_link(tools: Bezalel.Study.Tools.all())
+Rho.start_loop(system_prompt: Bezalel.Study.Prompt.system_prompt(), tools: :registry)
+```
+
+The packs (`core.sqlite`, `notes.sqlite`, `lxx.sqlite`, `ancient.sqlite`,
+`graph.sqlite`) are published at
+https://bezalel.genericjam.com/packs/manifest.json, zstd-compressed with
+their checksums; how they're built: bezalel_mob's
+[data/README.md](https://github.com/GenericJam/bezalel_mob/blob/master/data/README.md).
 
 ## Development
 
 ```bash
 mix setup     # deps and the git hooks
-mix test      # against the fixture packs in test/fixtures/packs
+mix test      # against the small fixture packs in test/fixtures/packs
 ```
 
-Agents working here: start with [AGENTS.md](AGENTS.md).
+Elixir 1.20 on OTP 29 (`.tool-versions`). Contributors and coding agents:
+start with [AGENTS.md](AGENTS.md).
