@@ -173,22 +173,16 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     digest = pin["files"] |> Enum.sort() |> Net.digest()
     core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
 
-    cond do
-      meta["dss_sha256"] != digest or meta["dss_source"] != Scrolls.provenance(pin).source_url ->
-        Mix.raise(
-          "out/scrolls.sqlite wasn't built from pins.json's ETCBC/dss; run mix bezalel.data.scrolls"
-        )
+    expected = %{
+      dss_sha256: digest,
+      dss_source: Scrolls.provenance(pin).source_url,
+      core_sha256: core,
+      build_sha256: Scrolls.build_digest()
+    }
 
-      meta["core_sha256"] != core ->
-        Mix.raise("out/scrolls.sqlite wasn't numbered with base.json's core pack; rebuild it")
-
-      meta["build_sha256"] != Scrolls.build_digest() ->
-        Mix.raise(
-          "out/scrolls.sqlite was built by other code than this checkout's; run mix bezalel.data.scrolls"
-        )
-
-      true ->
-        :ok
+    case Publish.check_scrolls(meta, expected) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise("out/scrolls.sqlite #{reason}; run mix bezalel.data.scrolls")
     end
   end
 

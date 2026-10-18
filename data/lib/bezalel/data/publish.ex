@@ -85,6 +85,30 @@ defmodule Bezalel.Data.Publish do
     end
   end
 
+  @doc """
+  `:ok` if a scrolls pack's `meta` (its pack_meta) says it was built from
+  `expected`'s sources: `dss_sha256` and `dss_source` (the pinned ETCBC/dss
+  files), `core_sha256` (base.json's core pack) and `build_sha256` (this
+  checkout's code, `Bezalel.Data.Scrolls.build_digest/0`); else
+  `{:error, reason}`.
+  """
+  @spec check_scrolls(map(), map()) :: :ok | {:error, String.t()}
+  def check_scrolls(meta, expected) do
+    cond do
+      meta["dss_sha256"] != expected.dss_sha256 or meta["dss_source"] != expected.dss_source ->
+        {:error, "wasn't built from pins.json's ETCBC/dss"}
+
+      meta["core_sha256"] != expected.core_sha256 ->
+        {:error, "wasn't numbered with base.json's core pack"}
+
+      meta["build_sha256"] != expected.build_sha256 ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
   @doc "The names of the packs built here, in manifest order."
   @spec built_here() :: [String.t()]
   def built_here, do: ~w(translations scrolls)

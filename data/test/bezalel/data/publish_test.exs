@@ -109,6 +109,28 @@ defmodule Bezalel.Data.PublishTest do
     end
   end
 
+  test "a scrolls pack is refused unless built from the pins, the base core and this code" do
+    meta = %{
+      "dss_sha256" => "d",
+      "dss_source" => "s",
+      "core_sha256" => "c",
+      "build_sha256" => "b"
+    }
+
+    expected = %{dss_sha256: "d", dss_source: "s", core_sha256: "c", build_sha256: "b"}
+
+    assert Publish.check_scrolls(meta, expected) == :ok
+
+    assert {:error, "wasn't built from pins.json's ETCBC/dss"} =
+             Publish.check_scrolls(meta, %{expected | dss_sha256: "x"})
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_scrolls(meta, %{expected | core_sha256: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_scrolls(Map.delete(meta, "build_sha256"), expected)
+  end
+
   describe "manifest/4" do
     setup do
       {:ok, [base_entry]} = Publish.base_entries(@base, @published)

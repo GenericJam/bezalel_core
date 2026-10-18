@@ -3,7 +3,7 @@ defmodule Bezalel.Data.ScrollsTest do
   # :persistent_term.
   use ExUnit.Case, async: false
 
-  alias Bezalel.Data.Scrolls
+  alias Bezalel.Data.{Report, Scrolls}
   alias Bezalel.Study.Ancient
 
   # Signs as Text-Fabric gives them: a map per feature, by slot.
@@ -244,17 +244,53 @@ defmodule Bezalel.Data.ScrollsTest do
     assert result.wordless_signs.dropped == %{"cons" => 5}
   end
 
-  test "biblical/3 stops on a line label that isn't a number" do
-    data = data()
+  test "biblical/3 stops on a line label that isn't a number, also on a line with no verse" do
+    for node <- [50, 51] do
+      data = data()
+      # Line 51 keeps no verse word once its words are gone.
+      words = if node == 51, do: Enum.reject(data.words, &(&1.slots.first >= 6)), else: data.words
+      lines = Enum.map(data.lines, &if(&1.node == node, do: %{&1 | line: "1a"}, else: &1))
 
-    data = %{
-      data
-      | lines: Enum.map(data.lines, &if(&1.node == 50, do: %{&1 | line: "1a"}, else: &1))
-    }
-
-    assert_raise RuntimeError, ~r/4Q1 f1: line label "1a" is not a number/, fn ->
-      Scrolls.biblical(data, fn {_book, chapter, verse} -> {chapter, verse} end, %{})
+      assert_raise RuntimeError, ~r/4Q1 f1: line label "1a" is not a number/, fn ->
+        Scrolls.biblical(%{data | lines: lines, words: words}, fn {_, c, v} -> {c, v} end, %{})
+      end
     end
+  end
+
+  test "the report counts what is kept and left out, and names the ancient pack's works" do
+    data = data()
+    cd = %{siglum: "CD", biblical: false}
+    data = %{data | scrolls: %{data.scrolls | nodes: data.scrolls.nodes ++ [cd]}}
+
+    # Gen 1:1 at slots 1 and 3, the unidentified word at 4, Gen 1:2 at 5:
+    # slot 2 kept, line 2 (slots 6–9) left out.
+    words = [
+      %{node: 200, book: "Gen", chapter: "1", verse: "1", slots: 1..1},
+      %{node: 201, book: "Gen", chapter: "1", verse: "1", slots: 3..3},
+      %{node: 202, book: "4Q1", chapter: "f1", verse: "1", slots: 4..4},
+      %{node: 203, book: "Gen", chapter: "1", verse: "2", slots: 5..5}
+    ]
+
+    data = %{data | words: words}
+    biblical = Scrolls.biblical(data, fn {_, c, v} -> {c, v} end, %{})
+
+    report =
+      Report.scrolls(%{
+        source: "Source: test",
+        data: data,
+        works: [],
+        passages: [],
+        anomalies: [],
+        biblical: biblical
+      })
+
+    assert report =~
+             "In the ancient pack already (studybible-mcp's import, not repeated here): CD\n"
+
+    assert report =~ "and works not judged major): 1\n    4Q999"
+    assert report =~ "the letters are 2Q29's unplaced fragments): cons 4\n"
+    assert report =~ "(in its text, where the scroll has them): cons 1\n"
+    assert report =~ "siglum): 1 words in 1 values"
   end
 
   test "biblical/3 keeps a verse the core pack lacks under ETCBC's numbering" do

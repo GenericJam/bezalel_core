@@ -126,8 +126,9 @@ defmodule Bezalel.Data.Scrolls do
   @build_inputs ~w(
     lib/bezalel/data/scrolls.ex lib/bezalel/data/scrolls_pack.ex
     lib/bezalel/data/text_fabric.ex lib/bezalel/data/pack.ex
-    lib/mix/tasks/bezalel.data.scrolls.ex dss_names.json
-    ../lib/bezalel/study/ancient.ex ../lib/bezalel/study/ancient/scrolls.ex
+    lib/bezalel/data/books.ex lib/mix/tasks/bezalel.data.scrolls.ex dss_names.json
+    ../lib/bezalel/study/ancient.ex ../lib/bezalel/study/ancient/registry.ex
+    ../lib/bezalel/study/ancient/scrolls.ex
     ../lib/bezalel/study/ancient/passages.ex ../lib/bezalel/study/patterns.ex
   )
 
@@ -576,6 +577,8 @@ defmodule Bezalel.Data.Scrolls do
     biblical_lines =
       Enum.filter(data.lines, &data.scrolls.lines[&1.node].biblical)
 
+    Enum.each(biblical_lines, &check_line_label!/1)
+
     {verse_words, unidentified} = Enum.split_with(data.words, &book(&1.book))
 
     words_by_line = words_by_line(biblical_lines, verse_words)
@@ -623,12 +626,14 @@ defmodule Bezalel.Data.Scrolls do
     Map.new(pairs)
   end
 
-  defp run(line, words, signs) do
-    [first | _] = words
-
+  defp check_line_label!(line) do
     unless Regex.match?(regex(~S"^[0-9]+$"), line.line) and String.to_integer(line.line) < 1000 do
       raise "#{line.siglum} #{line.fragment}: line label #{inspect(line.line)} is not a number below 1000"
     end
+  end
+
+  defp run(line, words, signs) do
+    [first | _] = words
 
     slots = first.slots.first..List.last(words).slots.last
     {all, preserved} = letters(slots, signs)
