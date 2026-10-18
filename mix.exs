@@ -22,6 +22,8 @@ defmodule BezalelCore.MixProject do
       {:exqlite, "~> 0.42"},
       # The tool behaviour every study tool implements (Rho.Tool).
       {:rho, "~> 0.1"},
+      # Bezalel.Agent.Reply encodes tool arguments for the TOOL CALL block.
+      {:jason, "~> 1.4"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4.2", only: [:dev, :test], runtime: false}
     ]
