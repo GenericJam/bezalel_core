@@ -204,6 +204,19 @@ defmodule Bezalel.Study.Reference do
   }
   @codes_lower Map.new(Map.values(@book_codes), &{String.downcase(&1), &1})
 
+  # Each book code's English name: its longest spelling in the table, in
+  # title case ("1 Corinthians", "Song of Solomon").
+  @names @book_codes
+         |> Enum.group_by(&elem(&1, 1), &elem(&1, 0))
+         |> Map.new(fn {code, names} ->
+           name = names |> Enum.sort() |> Enum.max_by(&String.length/1)
+
+           {code,
+            name
+            |> String.split(" ")
+            |> Enum.map_join(" ", &if(&1 in ~w(of and the), do: &1, else: String.capitalize(&1)))}
+         end)
+
   # Books with a single chapter, conventionally cited by verse alone ("Jude 3").
   @single_chapter_books MapSet.new(["Oba", "Phm", "2Jn", "3Jn", "Jud"])
 
@@ -287,6 +300,17 @@ defmodule Bezalel.Study.Reference do
       Map.get(@book_codes, candidate) || Map.get(@codes_lower, candidate)
     end)
   end
+
+  @doc """
+  A book code's English name, or nil.
+
+      iex> Bezalel.Study.Reference.book_name("Exo")
+      "Exodus"
+      iex> Bezalel.Study.Reference.book_name("1Co")
+      "1 Corinthians"
+  """
+  @spec book_name(String.t()) :: String.t() | nil
+  def book_name(code), do: Map.get(@names, code)
 
   @doc """
   The book code of a name exactly as the abbreviation table spells it

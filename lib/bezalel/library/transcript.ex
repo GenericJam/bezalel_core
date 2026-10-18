@@ -30,15 +30,19 @@ defmodule Bezalel.Library.Transcript do
 
   alias Bezalel.Agent.Reply
   alias Bezalel.Library.Message
+  alias Bezalel.Materials
   alias Rho.Session
 
   @marker "bezalel.branch"
 
   # ── Entries Bezalel writes ───────────────────────────────────────────────
 
-  @doc "A user message entry."
-  @spec user(String.t()) :: Session.entry()
-  def user(text), do: Session.user(text)
+  @doc """
+  A user message entry; `opts` as `Rho.Session.user/2` takes them
+  (`:attachments`: `Bezalel.Materials.attachments/4`'s, by reference).
+  """
+  @spec user(String.t(), keyword()) :: Session.entry()
+  def user(text, opts \\ []), do: Session.user(text, opts)
 
   @doc """
   A reply Bezalel writes itself: `attrs` has `:blocks`, and optionally
@@ -158,6 +162,7 @@ defmodule Bezalel.Library.Transcript do
       role: :user,
       text: Session.typed(m),
       images: images([entry], session_id),
+      materials: materials([entry]),
       entries: [id]
     }
   end
@@ -167,6 +172,7 @@ defmodule Bezalel.Library.Transcript do
       id: first["id"],
       role: :agent,
       images: images(group, session_id),
+      materials: materials(group),
       entries: Enum.map(group, & &1["id"])
     }
 
@@ -187,11 +193,13 @@ defmodule Bezalel.Library.Transcript do
           %{message | blocks: Reply.blocks(reply), card: reply.card, model: model(group)}
       end
 
-    if message.blocks == [] and message.images == [] and
-         is_nil(message.card || message.passage || message.image),
-       do: [],
-       else: [message]
+    if shown?(message), do: [message], else: []
   end
+
+  defp shown?(m),
+    do:
+      m.blocks != [] or m.images != [] or m.materials != [] or
+        (m.card || m.passage || m.image) != nil
 
   # The loop's events for a reply's entries, folded as they were live.
   defp replay(group) do
@@ -268,6 +276,26 @@ defmodule Bezalel.Library.Transcript do
           entry: id,
           index: index,
           mime: part["mimeType"]
+        }
+  end
+
+  @doc """
+  The materials `entries` send or receive by reference (a user's
+  attachment, a tool's picture: rho's attachments with a `"ref"`), as
+  `Bezalel.Library.Message` lists them.
+  """
+  @spec materials([Session.entry()]) :: [Message.material()]
+  def materials(entries) do
+    for %{"message" => %{} = m} = entry <- entries,
+        %{"ref" => ref} = a <- Session.attachments(m),
+        is_binary(ref),
+        do: %{
+          id: ref,
+          kind: Materials.kind(a["mimeType"] || ""),
+          mime: a["mimeType"],
+          name: a["name"] || ref,
+          about: a["about"],
+          entry: entry["id"]
         }
   end
 

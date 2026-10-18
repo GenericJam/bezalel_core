@@ -8,7 +8,8 @@ defmodule Bezalel.Agent.Reply do
   THINKING. A `lookup_verse` or `word_study` result that names a passage
   becomes the passage card (`Bezalel.Agent.Card`).
 
-  Pictures in a turn or a tool result are listed in `images`.
+  Pictures in a turn or a tool result are listed in `images` (stored
+  inline) and `materials` (by reference: a `draw_image` drawing).
 
   No file I/O: the host app keeps one per conversation with a reply in
   flight. The loop writes the reply to the conversation's session as it
@@ -33,6 +34,7 @@ defmodule Bezalel.Agent.Reply do
           summary: String.t(),
           card: Card.t() | nil,
           images: [Bezalel.Library.Message.image()],
+          materials: [Bezalel.Library.Message.material()],
           seen: [String.t()],
           kept: [String.t()],
           pending: [String.t()],
@@ -52,6 +54,7 @@ defmodule Bezalel.Agent.Reply do
     summary: "",
     card: nil,
     images: [],
+    materials: [],
     seen: [],
     kept: [],
     pending: [],
@@ -177,9 +180,9 @@ defmodule Bezalel.Agent.Reply do
   def running?(%__MODULE__{status: :running}), do: true
   def running?(_reply), do: false
 
-  @doc "Whether there's anything to show: a block, a card or a picture."
+  @doc "Whether there's anything to show: a block, a card, a picture or a material."
   @spec any?(t()) :: boolean()
-  def any?(r), do: blocks(r) != [] or r.card != nil or r.images != []
+  def any?(r), do: blocks(r) != [] or r.card != nil or r.images != [] or r.materials != []
 
   @doc """
   Starts over after the steering message `text` was injected: the reply so
@@ -393,9 +396,14 @@ defmodule Bezalel.Agent.Reply do
   end
 
   # Pictures in a model's turn or a tool's result, keyed as the stored
-  # reply's are (`Bezalel.Library.Message`).
-  defp add_images(r, entry),
-    do: %{r | images: r.images ++ Transcript.images([entry], r.session_id || "")}
+  # reply's are (`Bezalel.Library.Message`), and materials by reference.
+  defp add_images(r, entry) do
+    %{
+      r
+      | images: r.images ++ Transcript.images([entry], r.session_id || ""),
+        materials: r.materials ++ Transcript.materials([entry])
+    }
+  end
 
   # The session entries the loop wrote for this reply so far (`seen`); the
   # chat leaves them to the stream while it runs.
