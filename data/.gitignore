@@ -1,0 +1,8 @@
+/out/
+/work/
+/_build/
+/deps/
+/doc/
+# ExUnit @tmp_dir output
+/tmp/
+erl_crash.dump

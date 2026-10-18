@@ -1,0 +1,55 @@
+{
+  "what": "The frozen base: the five study packs built by studybible-mcp's pipeline (bezalel_mob data/build.sh) and published as data version 1. New data is built on top of these in Elixir; the Python pipeline is not run again except to replace one importer at a time.",
+  "frozen": "2026-10-17",
+  "data_version": 1,
+  "built": "2026-10-15T20:00:00Z",
+  "manifest": "https://bezalel.genericjam.com/packs/manifest.json",
+  "bezalel_mob_commit": "0c1b349fc50049e66da5973a275e96748d4b4285",
+  "studybible_mcp": {
+    "repo": "https://github.com/djayatillake/studybible-mcp",
+    "commit": "38cef28dc2d7c1e834cbd5248edc0f65843e7819"
+  },
+  "packs": {
+    "core": {
+      "url": "https://bezalel.genericjam.com/packs/v1/core.sqlite.zst",
+      "sha256": "72c1847c49e367f55aa094b6e18c09d80fec6df66a42ce48e0d8415d81ebd10f",
+      "size": 26110356,
+      "raw_sha256": "cc63a17a7bce53e22259f9df43616e71b4d9d042154026151e74b907aaaad5ba",
+      "raw_size": 181886976
+    },
+    "notes": {
+      "url": "https://bezalel.genericjam.com/packs/v1/notes.sqlite.zst",
+      "sha256": "96ef45715446268aa1a4110d4de09afd381510af76f02f26b100e5b45c2b7ae7",
+      "size": 26053810,
+      "raw_sha256": "4a1538f392583d01d2f1384834924c91f4b29c62eedc371d1b5e9242b5a9c757",
+      "raw_size": 285011968
+    },
+    "lxx": {
+      "url": "https://bezalel.genericjam.com/packs/v1/lxx.sqlite.zst",
+      "sha256": "9c94e7986c260d36013b091a1ecf2c3b514cc85f9441ffb5893bb1619eebe025",
+      "size": 17566461,
+      "raw_sha256": "a85ff5a9f84da5c2226726ee557c516adb0399e98aaeebf20dac19edd1372c85",
+      "raw_size": 39075840
+    },
+    "ancient": {
+      "url": "https://bezalel.genericjam.com/packs/v1/ancient.sqlite.zst",
+      "sha256": "4bd662e330ea912a9cc1868916a7d8e3d753c14a89d10e9ada16028fbd1049cc",
+      "size": 20399050,
+      "raw_sha256": "8f8b33479fb2c4b80490205bd0fb217393f4d6187871e18c76f297765c2e200f",
+      "raw_size": 95105024
+    },
+    "graph": {
+      "url": "https://bezalel.genericjam.com/packs/v1/graph.sqlite.zst",
+      "sha256": "8693ff5c22b31baf7e4e3c974e95bf5ab388bf27e7571c9dd97d594ffe86df68",
+      "size": 1258327,
+      "raw_sha256": "4662fa8606695ca26458342e59227c38c76400a170b112fd3440fcf185f47402",
+      "raw_size": 5967872
+    }
+  },
+  "rebuild_check": {
+    "date": "2026-10-17",
+    "where": "Linux x86_64, bezalel_mob data/build.sh at the same pins (25 min)",
+    "full_database_sha256": "052e1349429ec180f9863bbad6acefb01efd744b725b9ba7a502dc62e8ed39ca",
+    "result": "Same sizes and, by SQL dump, the same rows in all five packs, except: pack_meta sqlite_version (3.50.4 here, 3.49.1 for the published build) and SQLite's own sqlite_stat1 planner statistics; lxx identical; in core, about 400 similar_verses rows whose BGE-small scores differ in the last digit or swap rank between near-ties (floating point on another CPU)."
+  }
+}
