@@ -69,6 +69,28 @@ defmodule Bezalel.Study.PreferencesTest do
       assert Preferences.new(%Preferences{limit: 999}).limit == 8
     end
 
+    test "Pictures by and Pushback from: gpt-image and no pushback by default; only known models" do
+      assert %Preferences{}.image_model == "openai:gpt-image-2"
+      assert %Preferences{}.pushback_model == nil
+
+      prefs =
+        Preferences.new(%{
+          "image_model" => "google:gemini-3-pro-image",
+          "pushback_model" => "google:gemini-3-pro"
+        })
+
+      assert {prefs.image_model, prefs.pushback_model} ==
+               {"google:gemini-3-pro-image", "google:gemini-3-pro"}
+
+      # An image model not offered (a chat model, an unknown one), a
+      # pushback model rho can't call: the defaults.
+      for image <- ["google:gemini-3-pro", "openai:dall-e-9", nil, 3],
+          do: assert(Preferences.new(image_model: image).image_model == "openai:gpt-image-2")
+
+      for critic <- ["gemini-3-pro", "mistral:large", "", 3],
+          do: assert(Preferences.new(pushback_model: critic).pushback_model == nil)
+    end
+
     test "limit/2 holds the setting to a tool's maximum" do
       assert Preferences.limit(%Preferences{limit: 30}, 20) == 20
       assert Preferences.limit(%Preferences{limit: 5}, 20) == 5
@@ -218,6 +240,18 @@ defmodule Bezalel.Study.PreferencesTest do
       prompt = Prompt.system_prompt(%Preferences{}, surface: "## Formatting\n\nNarrow column.")
       assert String.ends_with?(prompt, "## Formatting\n\nNarrow column.")
       refute Prompt.system_prompt(%Preferences{}) =~ "phone"
+    end
+
+    test "with ask_model offered, the rule for asking another model, before the surface section" do
+      prompt = Prompt.system_prompt(%Preferences{}, ask_model: true, surface: "## Formatting")
+      assert prompt =~ Prompt.other_models()
+      assert prompt =~ "have Gemini push back"
+      assert prompt =~ ~s(purpose "critique")
+      assert prompt =~ "stand your ground with reasons"
+      assert String.ends_with?(prompt, "## Formatting")
+
+      # Not offered, not mentioned: the model can't call a tool it hasn't got.
+      refute Prompt.system_prompt(%Preferences{}) =~ "ask_model"
     end
   end
 end

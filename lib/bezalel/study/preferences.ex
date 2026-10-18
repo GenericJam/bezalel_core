@@ -11,7 +11,13 @@ defmodule Bezalel.Study.Preferences do
       (default: the editorial verdicts and the genre guidance);
     * `limit`: how many results a list tool returns when the model doesn't
       say (each tool still caps it at its own maximum);
-    * `translation`: the English the tools quote (`Bezalel.Study.Translations`).
+    * `translation`: the English the tools quote (`Bezalel.Study.Translations`);
+    * `image_model`: the model `draw_image` draws with (Settings, "Pictures
+      by"): one of `Bezalel.Study.Tools.DrawImage.models/0`'s ids, OpenAI's
+      gpt-image by default;
+    * `pushback_model`: the model that pushes back on a reply (Settings,
+      "Pushback from"; `Bezalel.Agent.Pushback`): a rho model spec
+      (`"google:gemini-3-pro"`), nil (the default) for none.
 
   Settings live in the host app. `current/1` asks it through `config
   :bezalel_core, :preferences, {module, function, args}`, called with the
@@ -20,19 +26,24 @@ defmodule Bezalel.Study.Preferences do
   """
 
   alias Bezalel.Study.{Sources, Translations}
+  alias Bezalel.Study.Tools.DrawImage
 
   defstruct approach: nil,
             scripture_labels: true,
             excluded_sources: MapSet.new(["editorial:verdicts", "method:genre_guidance"]),
             limit: 8,
-            translation: "net"
+            translation: "net",
+            image_model: DrawImage.default_model(),
+            pushback_model: nil
 
   @type t :: %__MODULE__{
           approach: String.t() | nil,
           scripture_labels: boolean(),
           excluded_sources: MapSet.t(String.t()),
           limit: pos_integer(),
-          translation: String.t()
+          translation: String.t(),
+          image_model: String.t(),
+          pushback_model: String.t() | nil
         }
 
   @max_limit 50
@@ -41,8 +52,10 @@ defmodule Bezalel.Study.Preferences do
   Settings from a map or keyword list (atom or string keys), or a struct to
   re-check. Unknown keys are ignored; an invalid value is the default: an
   approach that isn't non-blank text, a limit outside 1–#{@max_limit}, a
-  translation not in `Bezalel.Study.Translations.keys/0`. Unknown source
-  keys are dropped from `excluded_sources`.
+  translation not in `Bezalel.Study.Translations.keys/0`, an image model not
+  in `Bezalel.Study.Tools.DrawImage.models/0`, a pushback model that isn't a
+  rho model spec (`Rho.Auth.provider_for_model/1`). Unknown source keys are
+  dropped from `excluded_sources`.
   """
   @spec new(t() | map() | keyword()) :: t()
   def new(%__MODULE__{} = prefs), do: prefs |> Map.from_struct() |> new()
@@ -59,7 +72,10 @@ defmodule Bezalel.Study.Preferences do
       limit:
         valid(fetch(opts, :limit), &(is_integer(&1) and &1 in 1..@max_limit), defaults.limit),
       translation:
-        valid(fetch(opts, :translation), &(&1 in Translations.keys()), defaults.translation)
+        valid(fetch(opts, :translation), &(&1 in Translations.keys()), defaults.translation),
+      image_model:
+        valid(fetch(opts, :image_model), &(&1 in DrawImage.model_ids()), defaults.image_model),
+      pushback_model: pushback_model(fetch(opts, :pushback_model))
     }
   end
 
@@ -96,6 +112,15 @@ defmodule Bezalel.Study.Preferences do
     do: if(String.trim(text) == "", do: nil, else: text)
 
   defp approach(_), do: nil
+
+  defp pushback_model({:ok, model}) when is_binary(model) do
+    case Rho.Auth.provider_for_model(model) do
+      {:ok, _provider} -> model
+      _ -> nil
+    end
+  end
+
+  defp pushback_model(_), do: nil
 
   defp excluded({:ok, keys}, _default) when is_list(keys) or is_struct(keys, MapSet) do
     known = MapSet.new(Sources.keys())

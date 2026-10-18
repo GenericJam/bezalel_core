@@ -183,6 +183,10 @@ drawing still shows.
 
 ### draw_image
 
+> Superseded in part by `2026-10-18-pushback.md`: the model is now the
+> user's "Pictures by" (gpt-image or a Gemini image model), and a missing
+> key is named per provider. The rest stands.
+
 `Bezalel.Study.Tools.DrawImage` (`draw_image`): `prompt` (required),
 `references` (one material id), `size` (`square` 1024×1024, `landscape`
 1536×1024, `portrait` 1024×1536). It calls `ReqLLM.generate_image/3` with

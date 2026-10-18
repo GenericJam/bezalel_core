@@ -3,7 +3,7 @@ defmodule Bezalel.Study.DrawImageTest do
   use ExUnit.Case, async: false
 
   alias Bezalel.Materials
-  alias Bezalel.Study.Tools
+  alias Bezalel.Study.{Preferences, Tools}
   alias Bezalel.Study.Tools.DrawImage
   alias Bezalel.Test.MaterialStore
   alias ReqLLM.Error.API.Request
@@ -29,8 +29,13 @@ defmodule Bezalel.Study.DrawImageTest do
       end
     end
 
-    def key(:openai), do: {:ok, %{type: :api_key, key: "sk-test"}}
-    def signed_out(:openai), do: {:error, :signed_out}
+    def key(provider) when provider in [:openai, :google],
+      do: {:ok, %{type: :api_key, key: "#{provider}-key"}}
+
+    def openai_only(:openai), do: key(:openai)
+    def openai_only(_provider), do: {:error, :signed_out}
+
+    def signed_out(_provider), do: {:error, :signed_out}
   end
 
   @ctx %{session_id: "s1", call_id: "call_1"}
@@ -51,10 +56,12 @@ defmodule Bezalel.Study.DrawImageTest do
   defp use_key(credential) do
     Application.put_env(:bezalel_core, :draw_image,
       generate: {Fake, :generate},
-      credential: credential,
-      model: "openai:gpt-image-2"
+      credential: credential
     )
   end
+
+  defp gemini(model \\ "google:gemini-3.1-flash-image"),
+    do: Preferences.new(image_model: model)
 
   defp keep(material, bytes, ctx \\ @ctx) do
     {:ok, material} = Materials.put(material, bytes, ctx)
@@ -73,7 +80,7 @@ defmodule Bezalel.Study.DrawImageTest do
              DrawImage.run(%{"prompt" => "Bezalel carving acacia wood, in ink"}, @ctx)
 
     assert_received {:generate, "openai:gpt-image-2", "Bezalel carving acacia wood, in ink", opts}
-    assert opts[:api_key] == "sk-test"
+    assert opts[:api_key] == "openai-key"
     assert opts[:size] == "1024x1024"
     refute Keyword.has_key?(opts, :source_image)
 
@@ -126,8 +133,75 @@ defmodule Bezalel.Study.DrawImageTest do
 
     assert {:error, message} = DrawImage.run(%{"prompt" => "a menorah"}, @ctx)
     assert message =~ "needs an OpenAI API key"
-    assert message =~ "Settings"
+    assert message =~ "Settings (OpenAI, API key)"
     refute_received {:generate, _, _, _}
+  end
+
+  test "Pictures by a Gemini model: Gemini draws, on the Gemini key, in the shape asked" do
+    assert {:ok, {:images, [image], _text}} =
+             DrawImage.run(%{"prompt" => "a menorah", "size" => "portrait"}, @ctx, gemini())
+
+    assert_received {:generate, "google:gemini-3.1-flash-image", "a menorah", opts}
+    assert opts[:api_key] == "google-key"
+    assert opts[:aspect_ratio] == "2:3"
+    assert opts[:provider_options][:response_modalities] == ["IMAGE"]
+    # OpenAI's options would only be dropped with a warning.
+    refute Keyword.has_key?(opts, :size) or Keyword.has_key?(opts, :output_format)
+
+    {:ok, drawing} = Materials.fetch(image.ref, @ctx)
+    assert drawing.meta.model == "google:gemini-3.1-flash-image"
+  end
+
+  test "Gemini draws from a reference picture sent with the words" do
+    photo = keep(Materials.new("photo bytes", name: "lampstand.png"), "photo bytes")
+
+    assert {:ok, {:images, [image], _text}} =
+             DrawImage.run(
+               %{"prompt" => "This lampstand in gold", "references" => [photo.id]},
+               @ctx,
+               gemini("google:gemini-3-pro-image")
+             )
+
+    assert_received {:generate, "google:gemini-3-pro-image", %ReqLLM.Context{} = context, opts}
+    assert opts[:aspect_ratio] == "1:1"
+    refute Keyword.has_key?(opts, :source_image)
+
+    assert [%ReqLLM.Message{role: :user, content: [words, picture]}] = context.messages
+    assert words.text == "This lampstand in gold"
+
+    assert {picture.type, picture.data, picture.media_type} ==
+             {:image, "photo bytes", "image/png"}
+
+    {:ok, drawing} = Materials.fetch(image.ref, @ctx)
+    assert drawing.derived_from == [photo.id]
+  end
+
+  test "without the chosen provider's key it names that key, even with another provider's" do
+    use_key({Fake, :openai_only})
+
+    assert {:error, message} = DrawImage.run(%{"prompt" => "a menorah"}, @ctx, gemini())
+    assert message =~ "Gemini 3.1 Flash Image"
+    assert message =~ "needs a Gemini API key"
+    assert message =~ "Settings (Gemini, API key)"
+    assert message =~ "Pictures by"
+    refute_received {:generate, _, _, _}
+  end
+
+  test "the image models a user can choose, and the default" do
+    assert DrawImage.default_model() == "openai:gpt-image-2"
+    assert %Preferences{}.image_model == DrawImage.default_model()
+
+    assert Enum.map(DrawImage.models(), &{&1.id, &1.provider}) == [
+             {"openai:gpt-image-2", :openai},
+             {"google:gemini-3.1-flash-image", :google},
+             {"google:gemini-3-pro-image", :google}
+           ]
+
+    # Each is a model req_llm can resolve, and makes pictures.
+    for %{id: id} <- DrawImage.models() do
+      assert {:ok, model} = ReqLLM.model(id)
+      assert :image in model.modalities.output
+    end
   end
 
   test "without a working materials store it says so before spending anything" do

@@ -1,6 +1,6 @@
 defmodule Bezalel.Study.Prompt do
   @moduledoc """
-  The system prompt for Bezalel's study agent, in three parts:
+  The system prompt for Bezalel's study agent, in these parts:
 
     * `fixed/1`, the part no user edits: Bezalel is a Bible-study
       companion that uses the study tools (`Bezalel.Study.Tools.all/0`),
@@ -14,6 +14,10 @@ defmodule Bezalel.Study.Prompt do
     * the approach: persona, audience, hermeneutics, how to treat
       traditions, answer style. The user's own (`Bezalel.Study.Preferences`,
       `approach`), else `default_approach/0`, a neutral one;
+    * with `opts[:ask_model]` (the host offers rho's `ask_model` tool),
+      `other_models/0`: when the user asks another model to push back or
+      give an opinion ("have Gemini push back", "ask GPT"), ask it once
+      and answer each of its points;
     * the host's surface section (`opts[:surface]`), e.g. the phone app's
       formatting for a narrow column. Core has no platform formatting.
 
@@ -100,6 +104,19 @@ defmodule Bezalel.Study.Prompt do
   - **When you don't know.** Say that the text allows more than one reading, that a question needs more context, or that you'll look it up. That is a better answer than a confident guess.
   """
 
+  @other_models """
+  ## Other models
+
+  `ask_model` asks another model. Use it only when the user asks for one: "have Gemini push back", "ask GPT what it thinks", "get Claude to check this". Call it once, with the model they named; purpose "critique" when they want pushback, a check or a review of your answer, "second_opinion" when they want another view; `include_conversation` true; and in `prompt`, which answer or question to look at. Then answer each point it raises: revise where it's right, stand your ground with reasons where it isn't, and check with the tools where a point turns on the evidence. Credit what you take from it to that model. One round: don't ask it again about your response unless the user asks. A message marked as from another model is that model's, not the user's.
+  """
+
+  @doc """
+  The rule for asking another model (`system_prompt/2` with `ask_model:
+  true`): only when the user asks, once, then answer each of its points.
+  """
+  @spec other_models() :: String.t()
+  def other_models, do: @other_models
+
   @doc "The approach Bezalel uses when the user hasn't written their own: neutral, descriptive, credited."
   @spec default_approach() :: String.t()
   def default_approach, do: @default_approach
@@ -148,14 +165,17 @@ defmodule Bezalel.Study.Prompt do
 
   @doc """
   The system prompt for `prefs`: `fixed/1`, then the approach
-  (`prefs.approach`, else `default_approach/0`), then `opts[:surface]`, the
-  host's own section (how its screen renders answers), when given.
+  (`prefs.approach`, else `default_approach/0`), then `other_models/0`
+  when `opts[:ask_model]` is true (the host offers `ask_model`), then
+  `opts[:surface]`, the host's own section (how its screen renders
+  answers), when given.
   """
   @spec system_prompt(Preferences.t(), keyword()) :: String.t()
   def system_prompt(prefs, opts \\ []) do
     approach = prefs.approach || default_approach()
+    other_models = if opts[:ask_model], do: @other_models
 
-    [fixed(prefs), String.trim_trailing(approach) <> "\n", opts[:surface]]
+    [fixed(prefs), String.trim_trailing(approach) <> "\n", other_models, opts[:surface]]
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.join("\n")
   end

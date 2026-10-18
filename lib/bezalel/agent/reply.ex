@@ -15,6 +15,18 @@ defmodule Bezalel.Agent.Reply do
   Pictures in a turn or a tool result are listed in `images` (stored
   inline) and `materials` (by reference: a `draw_image` drawing).
 
+  **Another model** (`Rho.Consult`'s events). A pushback
+  (`Bezalel.Agent.Pushback`) is a reply of its own: the critic's
+  critique streams into `consult` (`%{model, purpose, text, status,
+  error, entry}`: rho's out-of-turn `consult_*` events, `call_id` nil)
+  and leads the blocks as a CONSULT block, then the lead model's answer
+  to it follows as usual. A failed or stopped consult ends the reply
+  (`status` `:error` or `:stopped`); a done one waits for the answer.
+  Its `model_message` entry, once stored, is in `seen` like the reply's
+  other entries (the chat leaves it to the stream while it runs). A
+  model the lead asks itself (rho's `ask_model` tool) is a CONSULT block
+  in place of that TOOL CALL, its text streaming in as it comes.
+
   No file I/O: the host app keeps one per conversation with a reply in
   flight. The loop writes the reply to the conversation's session as it
   goes; once stored, `Bezalel.Library.Transcript` rebuilds it with this same
@@ -46,7 +58,18 @@ defmodule Bezalel.Agent.Reply do
           pending: [String.t()],
           retry: String.t() | nil,
           error: String.t() | nil,
-          reason: atom() | nil
+          reason: atom() | nil,
+          consult: consult() | nil
+        }
+
+  @typedoc "Another model's message as it streams: `status` `:running`, `:ok`, `:error` or `:stopped`."
+  @type consult :: %{
+          model: String.t(),
+          purpose: String.t(),
+          text: String.t(),
+          status: :running | :ok | :error | :stopped,
+          error: String.t() | nil,
+          entry: String.t() | nil
         }
 
   defstruct [
@@ -67,7 +90,8 @@ defmodule Bezalel.Agent.Reply do
     pending: [],
     retry: nil,
     error: nil,
-    reason: nil
+    reason: nil,
+    consult: nil
   ]
 
   # A header line longer than this (about one line on a phone) is cut; the
@@ -115,12 +139,63 @@ defmodule Bezalel.Agent.Reply do
   def apply(r, %{type: :message_end, entry: %{"message" => %{"role" => "toolResult"}} = entry}),
     do: r |> saw(entry) |> add_images(entry)
 
+  # Another model's message stored (a pushback's critique): one of this
+  # reply's entries, and the consult's text as stored.
   def apply(r, %{type: :message_end, entry: %{"type" => "custom_message"} = entry}) do
-    r = saw(r, entry)
+    case Session.attribution(entry) do
+      %{model: model, purpose: purpose} ->
+        consult = r.consult || %{model: model, purpose: purpose, status: :ok, error: nil}
 
-    if Session.notice_kind(entry) == :error,
-      do: %{r | error: r.error || Session.text(entry["content"])},
-      else: r
+        consult =
+          Map.merge(consult, %{text: Session.text(entry["content"]), entry: entry["id"]})
+
+        %{saw(r, entry) | consult: consult}
+
+      nil ->
+        notice(r, entry)
+    end
+  end
+
+  def apply(r, %{type: :consult_start, call_id: nil, model: model, purpose: purpose}) do
+    consult = %{
+      model: model,
+      purpose: purpose,
+      text: "",
+      status: :running,
+      error: nil,
+      entry: nil
+    }
+
+    %{r | consult: consult}
+  end
+
+  def apply(r, %{type: :consult_start, call_id: id, model: model, purpose: purpose}),
+    do: update_tool(r, id, &Map.put(&1, :consult, %{model: model, purpose: purpose, text: ""}))
+
+  def apply(%{consult: %{} = c} = r, %{type: :consult_delta, call_id: nil, kind: :text, delta: d}),
+      do: %{r | consult: %{c | text: c.text <> d}}
+
+  def apply(r, %{type: :consult_delta, call_id: id, kind: :text, delta: delta}) when id != nil do
+    update_tool(r, id, fn
+      %{consult: %{} = c} = item -> %{item | consult: %{c | text: c.text <> delta}}
+      item -> item
+    end)
+  end
+
+  def apply(r, %{type: :consult_end, call_id: nil} = event) do
+    consult =
+      Map.merge(
+        r.consult || %{model: event.model, purpose: event.purpose, entry: nil},
+        %{status: event.status, error: event[:error], text: event[:text] || ""}
+      )
+
+    r = %{r | consult: consult}
+
+    case event.status do
+      :ok -> r
+      :stopped -> %{r | status: :stopped, reason: :stopped}
+      :error -> %{r | status: :error, error: r.error || consult_error(consult)}
+    end
   end
 
   # The message being streamed is dropped (a retry, or an overflow
@@ -138,7 +213,8 @@ defmodule Bezalel.Agent.Reply do
       args: args,
       result: nil,
       error: false,
-      card: nil
+      card: nil,
+      consult: asked(name, args)
     }
 
     %{r | items: r.items ++ [item]}
@@ -158,7 +234,8 @@ defmodule Bezalel.Agent.Reply do
     items =
       Enum.map(r.items, fn
         %{id: "tool-" <> ^id} = item ->
-          %{item | result: event.text, error: event.is_error, card: card}
+          item = %{item | result: event.text, error: event.is_error, card: card}
+          answered(item)
 
         item ->
           item
@@ -229,22 +306,48 @@ defmodule Bezalel.Agent.Reply do
   @doc """
   The blocks in the design's shape (`%{"id", "type", "first", "rest"}`, plus
   `"cut" => true` when `first` is a cut-short header and `rest` the whole
-  text): each call's THINKING and TOOL CALLs in order, then the SUMMARY
-  (with the text still streaming).
+  text): another model's message first when this reply answers one (a
+  pushback's CONSULT block), then each call's THINKING and TOOL CALLs in
+  order (a model the lead asked, `ask_model`, as a CONSULT block), then
+  the SUMMARY (with the text still streaming).
 
   `first` is a plain line (`header/1`); `rest` is Markdown, the model's or
-  the tool's own, which the chat renders. THINKING and SUMMARY carry the
-  model's whole text as `"text"` (what Copy copies).
+  the tool's own, which the chat renders. THINKING, SUMMARY and CONSULT
+  carry the model's whole text as `"text"` (what Copy copies); a CONSULT
+  block also has the consulted `"model"` (a rho model spec) and its
+  `"purpose"` (`"critique"`, `"second_opinion"`, …), for its title
+  (`Bezalel.Agent.Pushback.title/2`).
   """
   @spec blocks(t()) :: [map()]
   def blocks(r) do
+    consult = if r.consult, do: [consult_block("consult", r.consult)], else: []
+
     items =
       for item <- r.items, block = item_block(item), do: block
 
     case String.trim(join(r.summary, r.text)) do
-      "" -> items
-      summary -> items ++ [block("sum", "SUMMARY", summary)]
+      "" -> consult ++ items
+      summary -> consult ++ items ++ [block("sum", "SUMMARY", summary)]
     end
+  end
+
+  @doc """
+  Another model's message as a CONSULT block (`blocks/1`): `consult` has
+  its `model`, `purpose` and `text` (empty while it is still coming).
+  """
+  @spec consult_block(String.t(), %{model: String.t(), purpose: String.t(), text: String.t()}) ::
+          map()
+  def consult_block(id, %{model: model, purpose: purpose, text: text}) do
+    b =
+      case String.trim(text) do
+        "" ->
+          %{"id" => id, "type" => "CONSULT", "first" => "Running…", "rest" => "", "text" => ""}
+
+        text ->
+          block(id, "CONSULT", text)
+      end
+
+    Map.merge(b, %{"model" => model, "purpose" => purpose})
   end
 
   @doc """
@@ -283,6 +386,10 @@ defmodule Bezalel.Agent.Reply do
       text -> block(id, "THINKING", text)
     end
   end
+
+  # A model the lead asked (ask_model), unless the call failed: its text.
+  defp item_block(%{kind: :tool, consult: %{} = consult, error: false} = item),
+    do: consult_block(item.id, consult)
 
   defp item_block(%{kind: :tool} = item) do
     %{"id" => item.id, "type" => "TOOL CALL", "first" => call_label(item), "rest" => result(item)}
@@ -436,6 +543,41 @@ defmodule Bezalel.Agent.Reply do
   # chat leaves them to the stream while it runs.
   defp saw(r, %{"id" => id}), do: %{r | seen: r.seen ++ [id]}
   defp saw(r, _entry), do: r
+
+  defp notice(r, entry) do
+    r = saw(r, entry)
+
+    if Session.notice_kind(entry) == :error,
+      do: %{r | error: r.error || Session.text(entry["content"])},
+      else: r
+  end
+
+  defp update_tool(r, call_id, fun) do
+    id = "tool-#{call_id}"
+    %{r | items: Enum.map(r.items, &if(&1.id == id, do: fun.(&1), else: &1))}
+  end
+
+  # rho's ask_model: the model asked and why, from the call's arguments.
+  defp asked("ask_model", %{"model" => model} = args) when is_binary(model),
+    do: %{model: model, purpose: args["purpose"] || "second_opinion", text: ""}
+
+  defp asked(_name, _args), do: nil
+
+  # Its result is "<model> (<purpose>):\n\n<text>": the text is the answer.
+  defp answered(%{consult: %{} = c, error: false, result: result} = item) do
+    text =
+      case String.split(result, "\n\n", parts: 2) do
+        [head, text] -> if String.ends_with?(head, "):"), do: text, else: result
+        [_] -> result
+      end
+
+    %{item | consult: %{c | text: text}}
+  end
+
+  defp answered(item), do: item
+
+  defp consult_error(%{error: error}) when is_binary(error) and error != "", do: error
+  defp consult_error(%{model: model}), do: "#{model} didn't answer."
 
   defp discard_attempt(r) do
     id = "think-#{r.turn}"

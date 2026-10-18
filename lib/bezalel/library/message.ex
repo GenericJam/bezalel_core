@@ -1,8 +1,9 @@
 defmodule Bezalel.Library.Message do
   @moduledoc """
   A message as the chat shows it, read from the conversation's session
-  (`Bezalel.Library.Transcript`): a user message, or an agent reply (every
-  session entry between two user messages).
+  (`Bezalel.Library.Transcript`): a user message, an agent reply (every
+  session entry between two user messages), or another model's message
+  (`role: :consult`: a pushback's critique, `Bezalel.Agent.Pushback`).
 
   `id` is the session id of its first entry and `entries` all of them (a
   delete takes them all). A user message has `text`. A reply has `blocks`
@@ -29,6 +30,14 @@ defmodule Bezalel.Library.Message do
   user's attachment from before materials), each `%{key, entry, index,
   mime}`: the `index`th image part of entry `entry`, `key` unique across
   sessions.
+
+  Another model's message (rho's attributed `model_message` entry,
+  `Rho.Session.attribution/1`) has `role: :consult`, the consulted `model`
+  (a rho model spec), its `purpose` (`"critique"` for a pushback) and its
+  `text`; `blocks` holds it as one CONSULT block
+  (`Bezalel.Agent.Reply.blocks/1`), for a chat that draws it as it drew it
+  live. The reply after it is the lead model's answer to it.
+  `Bezalel.Agent.Pushback.title/2` names it ("Pushback · Gemini 3 Pro").
   """
 
   @type image :: %{key: String.t(), entry: String.t(), index: non_neg_integer(), mime: String.t()}
@@ -44,7 +53,7 @@ defmodule Bezalel.Library.Message do
 
   @type t :: %__MODULE__{
           id: String.t(),
-          role: :user | :agent,
+          role: :user | :agent | :consult,
           text: String.t() | nil,
           blocks: [map()],
           passage: String.t() | nil,
@@ -54,6 +63,7 @@ defmodule Bezalel.Library.Message do
           images: [image()],
           materials: [material()],
           model: String.t() | nil,
+          purpose: String.t() | nil,
           entries: [String.t()]
         }
 
@@ -65,6 +75,7 @@ defmodule Bezalel.Library.Message do
     :card,
     :image,
     :model,
+    :purpose,
     blocks: [],
     citations: [],
     images: [],
