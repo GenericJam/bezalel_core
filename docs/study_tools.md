@@ -31,7 +31,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Ancient`, `Bezalel.Study.Ancient.Passages`, `Bezalel.Study.Ancient.Registry`, `Bezalel.Study.Ancient.Scrolls` | Ancient-source citations (with the scrolls pack's fragment locators), search folding and excerpts, and their corpus registry (6 corpora, 241 works, 132 of them Dead Sea Scrolls manuscripts) as data |
 | `Bezalel.Study.BiblicalScrolls` | The biblical Dead Sea Scrolls' readings by verse (scrolls pack) |
 | `Bezalel.Study.Citation`, `Bezalel.Study.Citations` | A source a result rests on, and every URL template that builds one ([Sources](#sources)) |
-| `Bezalel.Agent`, `Bezalel.Agent.Reply`, `Bezalel.Agent.Card` | What the session keeps of a tool's data (`keep_details/2`), a reply's fold and sources, the passage card |
+| `Bezalel.Agent.Details`, `Bezalel.Agent.Reply`, `Bezalel.Agent.Card` | What the session keeps of a tool's data (`keep_details/2`, `kept_card/1`, `kept_citations/1`), a reply's fold and sources, the passage card |
 
 ## Pack access
 

@@ -68,8 +68,17 @@ defmodule Bezalel.Study.CitationsTest do
       assert Citations.strongs("G0026").url == "https://biblehub.com/greek/26.htm"
     end
 
+    test "BDB for an extended number (H9000, no Bible Hub page) is STEP's" do
+      assert Citations.bdb("H9000").url == "https://www.stepbible.org/?q=strong=H9000"
+    end
+
     test "LSJ by lemma at lsj.gr" do
       assert URI.decode(Citations.lsj("G0026", "ἀγάπη").url) == "https://lsj.gr/wiki/ἀγάπη"
+    end
+
+    test "LSJ: the first of several lemmas; STEP when the pack has none" do
+      assert URI.decode(Citations.lsj("G0730", "ἄρρην, ἄρσην").url) == "https://lsj.gr/wiki/ἄρρην"
+      assert Citations.lsj("G2199", "").url == "https://www.stepbible.org/?q=strong=G2199"
     end
 
     test "STEP's brief lexicon by padded Strong's number" do
@@ -218,6 +227,10 @@ defmodule Bezalel.Study.CitationsTest do
 
       assert Citations.ancient("mishnah_avodah_zarah", "Mishnah Avodah Zarah 1:1–2").url ==
                "https://www.sefaria.org/Mishnah_Avodah_Zarah.1.1"
+
+      # Sefaria has no 'Mishnah_Pirkei_Avot'.
+      assert Citations.ancient("mishnah_pirkei_avot", "Mishnah Pirkei Avot 1:1").url ==
+               "https://www.sefaria.org/Pirkei_Avot.1.1"
     end
 
     test "1 Enoch's stored Wikisource page; 4 Ezra as 2 Esdras at eBible" do
@@ -228,6 +241,10 @@ defmodule Bezalel.Study.CitationsTest do
 
       assert Citations.ancient("4_ezra", "4 Ezra 10:1").url ==
                "https://ebible.org/eng-kjv/2ES10.htm#V1"
+
+      # KJV 2 Esdras lacks 4 Ezra 7:36–105: the page is anchored by the KJV verse.
+      assert Citations.ancient("4_ezra", "4 Ezra 7:106", alternate_reference: "KJV 2 Esdras 7:36").url ==
+               "https://ebible.org/eng-kjv/2ES07.htm#V36"
     end
 
     test "the ancient pack's scrolls: Israel Museum, Cambridge, Leon Levy" do

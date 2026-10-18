@@ -389,6 +389,7 @@ defmodule Bezalel.Study.Ancient.Passages do
       citation:
         Citations.ancient(row["work_key"], row["reference"],
           source_url: row["source_url"],
+          alternate_reference: row["alternate_reference"],
           english: english != nil
         )
     }

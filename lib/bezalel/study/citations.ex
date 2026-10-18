@@ -314,7 +314,10 @@ defmodule Bezalel.Study.Citations do
 
   # ── Lexicons ─────────────────────────────────────────────────────────────
 
-  @doc "A Hebrew entry of Brown-Driver-Briggs, at Bible Hub (the same BDB text)."
+  @doc """
+  A Hebrew entry of Brown-Driver-Briggs, at Bible Hub (the same BDB text);
+  STEPBible's entry for an extended number (H9000…), which Bible Hub lacks.
+  """
   @spec bdb(String.t(), String.t() | nil) :: Citation.t()
   def bdb(strongs, word \\ nil) do
     {"H", n} = strongs_number(strongs)
@@ -323,21 +326,40 @@ defmodule Bezalel.Study.Citations do
       work: "bdb",
       label: Enum.join(Enum.reject(["BDB H#{n}", word], &blank?/1), " "),
       locator: "H#{n}",
-      url: "https://biblehub.com/bdb/#{n}.htm"
+      url:
+        if(classic?("H", n),
+          do: "https://biblehub.com/bdb/#{n}.htm",
+          else: "https://www.stepbible.org/?q=strong=H#{n}"
+        )
     }
   end
 
-  @doc "A Greek entry of LSJ (STEPBible's formatted LSJ in the packs), at lsj.gr by its lemma."
+  @doc """
+  A Greek entry of LSJ (STEPBible's formatted LSJ in the packs), at lsj.gr
+  by its lemma: the first, when the pack lists several ('ἄρρην, ἄρσην');
+  STEPBible's entry when it has none.
+  """
   @spec lsj(String.t(), String.t()) :: Citation.t()
   def lsj(strongs, lemma) do
     {"G", n} = strongs_number(strongs)
 
-    %Citation{
-      work: "lsj",
-      label: "LSJ #{lemma}",
-      locator: "G#{n}",
-      url: "https://lsj.gr/wiki/" <> URI.encode(lemma, &URI.char_unreserved?/1)
-    }
+    case lemma |> to_string() |> String.split([",", ";", " "], trim: true) do
+      [first | _] ->
+        %Citation{
+          work: "lsj",
+          label: "LSJ #{first}",
+          locator: "G#{n}",
+          url: "https://lsj.gr/wiki/" <> URI.encode(first, &URI.char_unreserved?/1)
+        }
+
+      [] ->
+        %Citation{
+          work: "lsj",
+          label: "LSJ G#{n}",
+          locator: "G#{n}",
+          url: "https://www.stepbible.org/?q=strong=G#{n}"
+        }
+    end
   end
 
   @doc """
@@ -612,7 +634,9 @@ defmodule Bezalel.Study.Citations do
   ('antiquities', 'Antiquities 18.63–64'). Options: `:source_url` (the
   row's pinned dataset URL: Philo's work number and 1 Enoch's Wikisource
   page come from it), `:english` (false when the tool gave the original
-  only: the citation is then `:assistant`).
+  only: the citation is then `:assistant`), `:alternate_reference` (the
+  row's other numbering: 4 Ezra's KJV 2 Esdras verse, which the KJV page
+  is anchored by; 4 Ezra 7:106 is 2 Esdras 7:36).
   """
   @spec ancient(String.t(), String.t(), keyword()) :: Citation.t()
   def ancient(work_key, reference, opts \\ []) do
@@ -622,6 +646,21 @@ defmodule Bezalel.Study.Citations do
     work_key
     |> ancient_citation(reference, english?, source_url)
     |> Map.put(:dataset_url, source_url)
+    |> kjv_anchor(work_key, opts[:alternate_reference])
+  end
+
+  defp kjv_anchor(citation, "4_ezra", "KJV " <> esdras) do
+    case verse_of(esdras) do
+      {"2 Esdras", chapter, verse} -> %{citation | url: esdras_url(chapter, verse)}
+      _ -> citation
+    end
+  end
+
+  defp kjv_anchor(citation, _work_key, _alternate), do: citation
+
+  defp esdras_url(chapter, verse) do
+    number = chapter |> Integer.to_string() |> String.pad_leading(2, "0")
+    "https://ebible.org/eng-kjv/2ES#{number}.htm#V#{verse}"
   end
 
   defp ancient_citation(work_key, reference, english?, _source_url)
@@ -662,13 +701,17 @@ defmodule Bezalel.Study.Citations do
 
   defp ancient_citation("mishnah_" <> _, reference, english?, _source_url) do
     {tractate, chapter, mishnah} = verse_of(String.replace_prefix(reference, "Mishnah ", ""))
+    # Sefaria files Avot as 'Pirkei_Avot', every other tractate as 'Mishnah_<Tractate>'.
+    title =
+      if tractate == "Pirkei Avot",
+        do: "Pirkei_Avot",
+        else: "Mishnah_" <> String.replace(tractate, " ", "_")
 
     %Citation{
       work: "mishnah",
       label: reference,
       locator: reference,
-      url:
-        "https://www.sefaria.org/Mishnah_#{String.replace(tractate, " ", "_")}.#{chapter}.#{mishnah}"
+      url: "https://www.sefaria.org/#{title}.#{chapter}.#{mishnah}"
     }
     |> translated(english?)
   end
@@ -680,13 +723,12 @@ defmodule Bezalel.Study.Citations do
 
   defp ancient_citation("4_ezra", reference, english?, _source_url) do
     {_, chapter, verse} = verse_of(reference)
-    number = chapter |> Integer.to_string() |> String.pad_leading(2, "0")
 
     %Citation{
       work: "4ezra",
       label: "#{reference} (KJV 2 Esdras)",
       locator: reference,
-      url: "https://ebible.org/eng-kjv/2ES#{number}.htm#V#{verse}"
+      url: esdras_url(chapter, verse)
     }
     |> translated(english?)
   end
