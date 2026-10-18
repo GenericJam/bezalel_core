@@ -480,6 +480,50 @@ defmodule Bezalel.UsageTest do
       assert message =~ "Claude's usage limit is used up."
     end
 
+    @tag :tmp_dir
+    test "a throttle's 429 doesn't stand for a used-up limit, and a later call supersedes one",
+         %{tmp_dir: dir} do
+      now = 1_800_000_000
+      opts = [now: now + 20, auth: auth(anthropic: @oauth)]
+      five_hours = Integer.to_string(now + 4 * 3600)
+
+      throttle = %{
+        status: 429,
+        body: %{"type" => "error", "error" => %{"type" => "rate_limit_error"}},
+        error: "This request would exceed your account's rate limit.",
+        headers: [
+          {"retry-after", "5"},
+          {"anthropic-ratelimit-unified-reset", five_hours},
+          {"anthropic-ratelimit-unified-5h-utilization", "0.3"},
+          {"anthropic-ratelimit-unified-5h-reset", five_hours}
+        ]
+      }
+
+      # rho keeps the 429 with Claude's unified reset, four hours away; the
+      # windows the same response reported say there's room.
+      :ok = Rho.Usage.record(dir, @claude, throttle, now)
+      state = Rho.Usage.load(dir)
+      assert %{"resets_at" => reset} = Rho.Usage.rate_limited(state, :anthropic)
+      assert reset == now + 4 * 3600
+
+      assert preflight(state, @claude, opts) == :ok
+
+      assert %{level: :ok, text: "Claude · 5-hour limit 30% · resets in 3h 59m"} =
+               Usage.meter(state, @claude, opts)
+
+      assert %{kind: :rate_limited, until: nil, action: :retry} =
+               explain(Rho.LLM.describe({:http, 429, throttle.error}), state: state, now: now)
+
+      # A 429 with no windows is the latest word until a call or a Refresh says more.
+      bare = Map.put(throttle, :headers, [{"anthropic-ratelimit-unified-reset", five_hours}])
+      :ok = Rho.Usage.record(dir, @claude, bare, now + 10)
+      assert {:exhausted, _} = preflight(Rho.Usage.load(dir), @claude, opts)
+
+      ok = %{status: 200, headers: [{"anthropic-ratelimit-unified-5h-utilization", "0.31"}]}
+      :ok = Rho.Usage.record(dir, @claude, Map.put(ok, :usage, %{input_tokens: 1}), now + 15)
+      assert preflight(Rho.Usage.load(dir), @claude, opts) == :ok
+    end
+
     test "a key stored in place of a used-up sign-in isn't held back by the sign-in's windows" do
       now = 1_800_000_000
       # The weekly window the Claude sign-in left at 100 %, three days from resetting.

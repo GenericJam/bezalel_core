@@ -226,7 +226,7 @@ defmodule Bezalel.Usage do
 
     with {:ok, provider} <- Auth.provider_for_model(model),
          :subscription <- credential_kind(provider, auth),
-         %{resets_at: at} when at > now + @grace_s <- Rho.Usage.exhausted(state, provider, now) do
+         %{resets_at: at} when at > now + @grace_s <- used_up(state, provider, now) do
       {:exhausted, limit_reached(ctx(state, now, opts), provider, nil, "", nil)}
     else
       _ -> :ok
@@ -431,20 +431,15 @@ defmodule Bezalel.Usage do
     })
   end
 
-  defp explanation(:rate_limited, provider, _kind, ctx, text) do
-    %{state: state, now: now} = ctx
-    at = until(nil, nil, state, provider, now)
+  # A throttle: the loop already waited it out as long as it would. rho's
+  # record of the 429 may carry a far reset (Claude's unified one), which
+  # isn't when a throttle lifts, so no time is promised here.
+  defp explanation(:rate_limited, provider, _kind, _ctx, text) do
     who = if provider, do: company(provider), else: "The provider"
 
-    lifts =
-      if at,
-        do: "It lifts at #{ctx.clock.(at)} (in #{Rho.Usage.duration(at - now)}).",
-        else: "Wait a moment and try again."
-
     base(:rate_limited, "Too many requests", provider, text, %{
-      message: "#{who} is limiting how fast requests can be made. #{lifts}",
-      action: if(at, do: :wait, else: :retry),
-      until: at
+      message: "#{who} is limiting how fast requests can be made. Wait a moment and try again.",
+      action: :retry
     })
   end
 
@@ -613,12 +608,39 @@ defmodule Bezalel.Usage do
   end
 
   defp exhausted(state, provider, now) do
-    case Rho.Usage.exhausted(state, provider, now) do
+    case used_up(state, provider, now) do
       %{resets_at: at, window: window} ->
         label = if window, do: window_label(window), else: "Usage limit"
         %{label: label, resets_at: at, resets_in: Rho.Usage.duration(at - now)}
 
       nil ->
+        nil
+    end
+  end
+
+  # `Rho.Usage.exhausted/3`, but a 429 with no window at 100 % counts only
+  # while it is the latest word on the provider: rho never clears it, and
+  # its reset can be the 5-hour window's (Claude's unified reset) even for
+  # a short throttle. A later call's headers or a Refresh (a newer
+  # `checked_at`) supersede it; a 429 that reported windows itself is
+  # judged by them (its `at` equals their `checked_at`).
+  defp used_up(state, provider, now) do
+    full =
+      for {_id, %{"used" => used, "resets_at" => at} = w} <- Rho.Usage.windows(state, provider),
+          is_number(used) and used >= 100 and is_integer(at) and at > now,
+          do: %{window: w["label"], resets_at: at}
+
+    checked = (Rho.Usage.limits(state, provider) || %{})["checked_at"]
+
+    case {full, Rho.Usage.rate_limited(state, provider)} do
+      {[_ | _], _} ->
+        Enum.max_by(full, & &1.resets_at)
+
+      {[], %{"resets_at" => at, "at" => seen}}
+      when is_integer(at) and at > now and (checked == nil or seen > checked) ->
+        %{window: nil, resets_at: at}
+
+      _ ->
         nil
     end
   end
