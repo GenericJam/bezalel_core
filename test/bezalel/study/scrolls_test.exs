@@ -62,6 +62,16 @@ defmodule Bezalel.Study.ScrollsTest do
       assert Ancient.fragment_keys("ii") == ["ii", "fii", "2"]
       assert Ancient.parse_fragment("5:3–9") == %{label: "5", lines: {3, 9}}
       assert Ancient.parse_fragment("frg. 4") == %{label: "frg. 4", lines: nil}
+      # A compound label ending in a fragment number is one label, in either form.
+      assert Ancient.parse_fragment("frg. 2 i + 3") == %{label: "frg. 2 i + 3", lines: nil}
+      assert Ancient.parse_fragment("frg. 2 i + 3 7") == %{label: "frg. 2 i + 3", lines: {7, 7}}
+
+      assert Ancient.parse_fragment("frg. 2 i + 3 7–11") ==
+               %{label: "frg. 2 i + 3", lines: {7, 11}}
+
+      assert Ancient.parse_fragment("f2i+3") == %{label: "f2i+3", lines: nil}
+      assert Ancient.parse_fragment("f2i+3 7-11") == %{label: "f2i+3", lines: {7, 11}}
+      assert Ancient.parse_fragment("frg. 7 + 5 ii 3") == %{label: "frg. 7 + 5 ii", lines: {3, 3}}
       assert Ancient.parse_fragment("4 9-3") == nil
       assert Ancient.parse_fragment("") == nil
     end
@@ -248,6 +258,48 @@ defmodule Bezalel.Study.ScrollsTest do
                  )
 
         assert message =~ "can't be read (no dss_biblical_verses, dss_biblical_manuscripts)"
+      end)
+    end
+  end
+
+  # The fixture packs without the ancient pack, for the duration of `fun`.
+  defp without_ancient(fun) do
+    fixtures = Application.fetch_env!(:bezalel_core, :packs_dir)
+    dir = Path.join(System.tmp_dir!(), "bezalel-no-ancient-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+
+    for file <- File.ls!(fixtures),
+        file != "ancient.sqlite",
+        do: File.cp!(Path.join(fixtures, file), Path.join(dir, file))
+
+    Application.put_env(:bezalel_core, :packs_dir, dir)
+
+    try do
+      fun.()
+    after
+      Application.put_env(:bezalel_core, :packs_dir, fixtures)
+      File.rm_rf!(dir)
+    end
+  end
+
+  describe "without the ancient pack" do
+    test "a Qumran search reads the scrolls pack and names the missing pack" do
+      without_ancient(fn ->
+        for corpus <- ["qumran", "all"] do
+          text = ok(SearchAncientSources.run(%{"query" => "בני אור", "corpus" => corpus}, %{}))
+          assert text =~ "1QM 1:1–20"
+          assert text =~ "The ancient study pack (ancient sources) isn't downloaded"
+        end
+
+        assert SearchAncientSources.run(%{"query" => "temple", "corpus" => "josephus"}, %{}) ==
+                 {:error, DB.missing(:ancient)}
+
+        qumran_off = Preferences.new(excluded_sources: ["ancient:qumran"])
+
+        assert {:error, message} =
+                 SearchAncientSources.result(%{"query" => "בני אור"}, qumran_off)
+
+        assert message == DB.missing(:ancient)
       end)
     end
   end

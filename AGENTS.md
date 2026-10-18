@@ -13,7 +13,9 @@ too unless this file says otherwise.
 
 - **Here:** the study tools (`Bezalel.Study.Tools.*`, `Rho.Tool` modules),
   pack access (`Bezalel.Study.DB`), reference parsing, the corpus registry,
-  the genre guidance and the system prompt; the agent's surface: rho's loop
+  the genre guidance and the system prompt; the study library's sources and
+  licences (`Bezalel.Study.Credits`, which every app's credits page lays out;
+  edit it with the phone app's `data/SOURCES.md`); the agent's surface: rho's loop
   events folded into a reply's blocks and passage card (`Bezalel.Agent.Reply`,
   `Bezalel.Agent.Card`, `Bezalel.Agent.Patterns`) and a conversation's
   messages read off its rho session, with the branch moves behind Delete and
