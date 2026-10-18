@@ -250,6 +250,8 @@ defmodule Bezalel.Agent.PushbackTest do
     reply = fold(pushback())
     assert {reply.status, reply.reason, reply.consult.status} == {:done, :consult_failed, :error}
     assert reply.error =~ "quota gone"
+    # Its own reply never starts another critique of the same answer.
+    assert Pushback.auto(loop, reply, @critic, task_supervisor: sup) == :skip
 
     refute_receive {:rho, _, %{type: :agent_start}}, 100
     assert [%{model: @lead}, %{model: @lead}, %{model: @critic}] = FakeLLM.requests(llm)

@@ -189,12 +189,20 @@ defmodule Bezalel.Agent.Pushback do
     end
   end
 
+  # The lead's own ask_model critique that came back (a failed call, a
+  # TOOL CALL in the chat, used no round).
   defp asked_critique?(entries) do
+    answered =
+      for %{"message" => %{"role" => "toolResult", "isError" => false} = m} <- entries,
+          into: MapSet.new(),
+          do: m["toolCallId"]
+
     Enum.any?(entries, fn
       %{"message" => %{"role" => "assistant"} = m} ->
         Enum.any?(
           Session.tool_calls(m),
-          &(&1["name"] == "ask_model" and (&1["arguments"] || %{})["purpose"] == @purpose)
+          &(&1["name"] == "ask_model" and (&1["arguments"] || %{})["purpose"] == @purpose and
+              MapSet.member?(answered, &1["id"]))
         )
 
       _ ->
@@ -331,6 +339,9 @@ defmodule Bezalel.Agent.Pushback do
   def auto(loop, reply, model, opts \\ [])
 
   def auto(_loop, _reply, nil, _opts), do: :skip
+
+  # A pushback's own reply (its critique failed, or the lead answered it).
+  def auto(_loop, %Reply{consult: %{}}, _model, _opts), do: :skip
 
   def auto(loop, %Reply{status: :done}, model, opts) do
     case idle_target(loop) do
