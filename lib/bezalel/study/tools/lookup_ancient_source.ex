@@ -1,9 +1,18 @@
 defmodule Bezalel.Study.Tools.LookupAncientSource do
   @moduledoc """
   `lookup_ancient_source`: an ancient source by citation ('Antiquities
-  18.116', 'CD 6:11', 'm. Sukkah 4:9'), the passages of the ancient pack
-  overlapping it, in citation order. No full-text search, so it works on a
-  device whose SQLite lacks FTS5.
+  18.116', 'CD 6:11', 'm. Sukkah 4:9', '4Q174 1–2 i 10'), the passages of
+  the work's pack (ancient, or scrolls for the Qumran manuscripts of
+  `Bezalel.Study.Ancient.Scrolls`) overlapping it, in citation order. No
+  full-text search, so it works on a device whose SQLite lacks FTS5.
+
+  A scrolls-pack manuscript is cited by fragment or column label and line
+  (`Ancient.parse_fragment/1`); the label is looked up in the pack
+  (`section_number`, the label's `Ancient.fragment_key/1`; `book_number`,
+  its position in the manuscript) to give the sort range, so 'frg. 1–2 i'
+  and 'f1_2i', '11QMelch ii 18' and '11Q13 2:18' cite the same lines. An
+  unknown label lists the manuscript's labels; without the scrolls pack the
+  citation is the missing-pack error.
 
   Ported from studybible-mcp's `handle_lookup_ancient_source`,
   `StudyBibleDB.lookup_ancient_passages` and `format_ancient_source_lookup`
@@ -38,7 +47,11 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
     original language: 'Antiquities 18.116', 'Ant. 15.320', 'War 6.316', 'Life 1',
     'Onkelos Gen 49:10', 'CD 6:11', 'Opif. 26', '1 Enoch 1:9', '4 Ezra 7:28',
     'm. Sukkah 4:9'. A work name or abbreviation is followed by a locator in that
-    work's numbering; a range returns the overlapping passages in order. Each
+    work's numbering; a range returns the overlapping passages in order. A Dead
+    Sea Scroll is cited by siglum or name, then fragment or column and line, as
+    the ETCBC transcription labels them: '1QM 5:3', '11QMelch ii 18', '4Q174
+    frg. 1–2 i 10', '4Q246 frg. 1 ii 1', 'War Scroll 4Q491 frg. 11 i 12'; Hebrew
+    and Aramaic only, [ ] is modern reconstruction. Each
     passage carries a date and edition tag (with a canon-status label unless the
     user turned labels off) and any editorial ⚠ notes; caveats and sources are
     printed once. An unknown or ambiguous citation gets a short list of works or
@@ -54,7 +67,7 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
         "citation" => %{
           "type" => "string",
           "description" =>
-            "Work and locator, e.g. 'Antiquities 18.116', 'Ant. 18.116-119', 'War 6.316', 'Josephus, Life 1'"
+            "Work and locator, e.g. 'Antiquities 18.116', 'Ant. 18.116-119', 'War 6.316', 'Josephus, Life 1', '11Q13 2:18', '4Q174 frg. 1-2 i 10'"
         },
         "corpus" => %{
           "type" => "string",
@@ -175,9 +188,97 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
       {:ok, match} ->
         with :ok <- Sources.check(args.prefs, Sources.ancient(match.corpus.key)),
-             {:ok, found} <- DB.with_pack(:ancient, &lookup(&1, match, limit, args)),
+             {:ok, found} <-
+               DB.with_pack(Ancient.pack(match.work), &cited(&1, match, limit, args)),
              do: found
     end
+  end
+
+  # A fragment citation needs its label resolved against the pack first.
+  defp cited(conn, %{fragment: %{} = fragment} = match, limit, args) do
+    case fragment_range(conn, match, fragment) do
+      {:ok, range} -> lookup(conn, %{match | sort_range: range}, limit, args)
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  defp cited(conn, match, limit, args), do: lookup(conn, match, limit, args)
+
+  # The sort range of a fragment citation: its label's (or a label range's)
+  # ordinal × 1000 + the cited lines, from the passages' `section_number`
+  # keys and `book_number` ordinals.
+  defp fragment_range(conn, match, %{label: label, lines: lines}) do
+    {first, last} = if lines, do: lines, else: {0, 999}
+
+    case label_ordinal(conn, match, label) do
+      nil ->
+        with nil <- lines,
+             [from, to] <- label_range(label),
+             low when low != nil <- label_ordinal(conn, match, from),
+             high when high != nil and high >= low <- label_ordinal(conn, match, to) do
+          {:ok, {low * 1000, high * 1000 + 999}}
+        else
+          _ -> {:error, unknown_label(conn, match, label)}
+        end
+
+      ordinal ->
+        {:ok, {ordinal * 1000 + first, ordinal * 1000 + last}}
+    end
+  end
+
+  defp label_ordinal(conn, match, label) do
+    Enum.find_value(Ancient.fragment_keys(label), fn key ->
+      row =
+        DB.one(
+          conn,
+          """
+          SELECT book_number FROM ancient_source_passages
+          WHERE corpus = ? AND work_key = ? AND section_number = ? LIMIT 1
+          """,
+          [match.corpus.key, match.work.key, key]
+        )
+
+      row && row["book_number"]
+    end)
+  end
+
+  # 'frg. 3–5' as 'frg. 3' to 'frg. 5'; nil unless the label has one dash.
+  defp label_range(label) do
+    case String.split(label, "–") do
+      [from, to] when from != "" and to != "" ->
+        fragment? = String.starts_with?(Ancient.fragment_key(from), "f")
+
+        [
+          from,
+          if(fragment? and not String.starts_with?(Ancient.fragment_key(to), "f"),
+            do: "frg. " <> to,
+            else: to
+          )
+        ]
+
+      _ ->
+        nil
+    end
+  end
+
+  defp unknown_label(conn, match, label) do
+    labels =
+      conn
+      |> DB.all(
+        """
+        SELECT reference FROM ancient_source_passages
+        WHERE corpus = ? AND work_key = ? ORDER BY sort_start
+        """,
+        [match.corpus.key, match.work.key]
+      )
+      |> Enum.map(&Ancient.reference_label(match.work, &1["reference"]))
+
+    {shown, rest} = Enum.split(labels, 30)
+    more = if rest == [], do: "", else: " and #{length(rest)} more"
+
+    "#{match.work.reference_title} has no fragment or column '#{label}'. Its fragments and " <>
+      "columns, as ETCBC labels them: #{Enum.join(shown, ", ")}#{more}. Cite one with an " <>
+      "optional line, e.g. '#{match.work.reference_title} #{List.first(labels)} 1'."
   end
 
   # A citation of the work's first imported passage, else its grammar's example.
@@ -185,15 +286,22 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
     work = match.work
 
     first =
-      case DB.with_pack(:ancient, &first_passage(&1, match.corpus.key, work.key)) do
+      case DB.with_pack(Ancient.pack(work), &first_passage(&1, match.corpus.key, work.key)) do
         {:ok, row} -> row
         {:error, _} -> nil
       end
 
     locator =
-      if first,
-        do: Ancient.format_range(work.locator, first["sort_start"], first["sort_start"]),
-        else: work.locator.example
+      cond do
+        first == nil ->
+          work.locator.example
+
+        Ancient.fragment_locator?(work) ->
+          Ancient.reference_label(work, first["reference"]) <> " 1"
+
+        true ->
+          Ancient.format_range(work.locator, first["sort_start"], first["sort_start"])
+      end
 
     "'#{Ancient.display_title(work)} #{locator}'"
   end
@@ -221,7 +329,7 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
       )
 
     if present == nil do
-      {:error, "The #{corpus.label} corpus is not in this device's ancient pack."}
+      {:error, "The #{corpus.label} corpus is not in this device's #{Ancient.pack(work)} pack."}
     else
       work_where = "corpus = ? AND work_key = ?"
       overlap = "#{work_where} AND sort_start <= ? AND sort_end >= ?"
@@ -235,7 +343,11 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
         work: Ancient.display_title(work),
         sort_range: %{start: start, end: end_},
         window: window && %{start: elem(window, 0), end: elem(window, 1)},
-        locator: Ancient.format_range(work.locator, start, end_),
+        locator:
+          if(Ancient.fragment_locator?(work),
+            do: match.locator_text,
+            else: Ancient.format_range(work.locator, start, end_)
+          ),
         prefs: args.prefs
       }
 
@@ -336,9 +448,18 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
     gaps = Enum.map_join(r.gap_notes, &" ⚠ #{&1["citation"]}: #{&1["note"]}")
 
-    "No passage covers #{r.heading}. Imported #{r.work} runs " <>
-      "#{r.work} #{Ancient.format_range(work.locator, r.first, r.last)}" <>
-      if(nearest != [], do: "; nearest passages: #{Enum.join(nearest, ", ")}.", else: ".") <>
+    runs =
+      if Ancient.fragment_locator?(work),
+        do: "",
+        else:
+          " Imported #{r.work} runs #{r.work} #{Ancient.format_range(work.locator, r.first, r.last)}"
+
+    "No passage covers #{r.heading}.#{runs}" <>
+      if(nearest != [],
+        do:
+          "#{if runs == "", do: " Nearest", else: "; nearest"} passages: #{Enum.join(nearest, ", ")}.",
+        else: if(runs == "", do: "", else: ".")
+      ) <>
       if(work.coverage_note != "", do: " #{work.coverage_note}", else: "") <> gaps
   end
 
@@ -347,9 +468,12 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
     count = r.total
     shown = length(r.passages)
 
-    note =
-      "#{corpus.label}, #{work.title} (#{work.locator.name} #{r.locator}): #{count} overlapping " <>
-        "passage#{if count != 1, do: "s"}"
+    cited =
+      if Ancient.fragment_locator?(work),
+        do: "#{corpus.label}, #{work.title}, #{work.reference_title} #{r.locator}",
+        else: "#{corpus.label}, #{work.title} (#{work.locator.name} #{r.locator})"
+
+    note = "#{cited}: #{count} overlapping passage#{if count != 1, do: "s"}"
 
     header =
       ["## #{r.heading}", "", "*#{note}*", ""] ++
@@ -363,8 +487,11 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
     Passages.render(header, r.passages, nil, r.prefs, fn passage, shown ->
       resume =
-        " Continue from #{r.work} " <>
-          "#{Ancient.format_range(work.locator, passage.sort_start, passage.sort_start)}."
+        if Ancient.fragment_locator?(work),
+          do: " Continue from #{passage.reference}.",
+          else:
+            " Continue from #{r.work} " <>
+              "#{Ancient.format_range(work.locator, passage.sort_start, passage.sort_start)}."
 
       "*Stopped at the 12,000-character response budget after #{shown} passages.#{resume}*"
     end)

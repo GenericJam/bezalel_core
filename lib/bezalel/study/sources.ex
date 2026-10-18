@@ -2,8 +2,9 @@ defmodule Bezalel.Study.Sources do
   @moduledoc """
   The sources a user can switch off (`Bezalel.Study.Preferences`,
   `excluded_sources`): each ancient corpus, the editorial verdicts, each
-  theologian, the notes and reference works, the ANE background and the
-  method layers (Kline's Torah weave, Fee & Stuart's genre guidance).
+  theologian, the biblical Dead Sea Scrolls' readings, the notes and
+  reference works, the ANE background and the method layers (Kline's Torah
+  weave, Fee & Stuart's genre guidance).
 
   An excluded source's rows are left out of every result. A tool whose
   every source is excluded is withheld from the model (`withheld_tools/1`);
@@ -67,6 +68,16 @@ defmodule Bezalel.Study.Sources do
       tools: [],
       partial_tools: @ancient_tools ++ ["compare_biblical_versions"],
       default_on: false
+    },
+    %{
+      key: "manuscripts:dss",
+      label: "Dead Sea Scrolls (biblical manuscripts)",
+      group: "Biblical manuscripts",
+      description:
+        "What the biblical scrolls from Qumran and the other Judaean Desert sites read at a " <>
+          "verse (Abegg–Bowley–Cook transcription, CC BY-NC 4.0), shown beside the MT and LXX.",
+      tools: [],
+      partial_tools: ["compare_biblical_versions"]
     },
     %{
       key: "notes:study_notes",
@@ -143,7 +154,7 @@ defmodule Bezalel.Study.Sources do
     }
   ]
 
-  @doc "Every source, grouped for display: ancient sources, editorial, theologians, notes, background, methods."
+  @doc "Every source, grouped for display: ancient sources, editorial, theologians, biblical manuscripts, notes, background, methods."
   @spec all() :: [Source.t()]
   def all, do: Enum.map(entries(), &to_source/1)
 

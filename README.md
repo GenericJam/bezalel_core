@@ -34,9 +34,10 @@ Claude or another client rather than an Elixir library, use studybible-mcp.
 | core | `lookup_verse`, `word_study`, `search_lexicon`, `search_by_strongs`, `get_cross_references`, `parse_morphology`, `lookup_name`, `find_similar_passages`, `get_torah_weave` |
 | graph | `people_in_passage`, `explore_genealogy`, `explore_person_events`, `explore_place`, `find_connection`, `graph_enriched_search` |
 | notes | `get_study_notes`, `get_bible_dictionary`, `get_key_terms`, `get_ane_context`, `get_theology_context`, `get_textual_variant` |
-| lxx | `compare_biblical_versions` (with core) |
+| lxx | `compare_biblical_versions` (with core; the scrolls pack adds its DSS witnesses) |
 | translations | the NET text the verse tools quote (the BSB is in core) |
 | ancient | `search_ancient_sources`, `lookup_ancient_source` |
+| scrolls | the Dead Sea Scrolls: 30 major non-biblical works (132 Qumran manuscripts) for the ancient tools, and the biblical manuscripts' readings for `compare_biblical_versions` |
 | none | `list_research_sources` |
 
 Each tool is a `Rho.Tool` module (`Bezalel.Study.Tools.*`; `Bezalel.Study.Tools.all/0`
@@ -108,10 +109,15 @@ with your attributions. How the settings work:
 [docs/study_tools.md](docs/study_tools.md#preferences).
 
 The packs (`core.sqlite`, `notes.sqlite`, `lxx.sqlite`, `ancient.sqlite`,
-`graph.sqlite`, and `translations.sqlite` from the build that adds the NET)
-are published at https://bezalel.genericjam.com/packs/manifest.json,
-zstd-compressed with their checksums; how they're built: bezalel_mob's
-[data/README.md](https://github.com/GenericJam/bezalel_mob/blob/master/data/README.md).
+`graph.sqlite`, and, from the data version that adds them,
+`translations.sqlite` and `scrolls.sqlite`) are published at
+https://bezalel.genericjam.com/packs/manifest.json, zstd-compressed with
+their checksums; how they're built: bezalel_mob's
+[data/README.md](https://github.com/GenericJam/bezalel_mob/blob/master/data/README.md)
+for the first five, this repository's [data/README.md](data/README.md) for
+the last two. The scrolls pack's text is ETCBC/dss (Martin G. Abegg Jr.,
+James E. Bowley and Edward M. Cook), CC BY-NC 4.0: non-commercial use, with
+that credit shown; no English translation is included.
 
 ## Development
 
