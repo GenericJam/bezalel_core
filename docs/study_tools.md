@@ -12,8 +12,8 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | Module | What |
 |---|---|
 | `Bezalel.Study.Tools` | `all/0`, every tool module; `withheld/1`, the tool names to withhold under a user's preferences |
-| `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core), `SearchAncientSources`, `LookupAncientSource` (ancient), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. `LookupVerse` and `WordStudy`'s `run/2` also hand `result/1` to rho as the result's details (`{:ok, {:details, markdown, result}}`): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card. The Mermaid diagrams of the graph tools stay in the Markdown only |
-| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`) |
+| `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. `LookupVerse` and `WordStudy`'s `run/2` also hand `result/1` to rho as the result's details (`{:ok, {:details, markdown, result}}`): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card. The Mermaid diagrams of the graph tools stay in the Markdown only |
+| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
 | `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB) with their labels, links and acknowledgements |
@@ -25,7 +25,8 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Args`, `Bezalel.Study.Patterns` | Argument reading; the regexes, compiled at run time (mob_dev rule) |
 | `Bezalel.Study.Graph` | Person lookup, family and Mermaid helpers shared by the graph tools |
 | `Bezalel.Study.Aquifer` | Dictionary and key-term search and article Markdown |
-| `Bezalel.Study.Ancient`, `Bezalel.Study.Ancient.Passages`, `Bezalel.Study.Ancient.Registry` | Ancient-source citations, search folding and excerpts, and their corpus registry (6 corpora, 109 works) as data |
+| `Bezalel.Study.Ancient`, `Bezalel.Study.Ancient.Passages`, `Bezalel.Study.Ancient.Registry`, `Bezalel.Study.Ancient.Scrolls` | Ancient-source citations (with the scrolls pack's fragment locators), search folding and excerpts, and their corpus registry (6 corpora, 241 works, 132 of them Dead Sea Scrolls manuscripts) as data |
+| `Bezalel.Study.BiblicalScrolls` | The biblical Dead Sea Scrolls' readings by verse (scrolls pack) |
 
 ## Pack access
 
@@ -65,9 +66,46 @@ readable) and hands the call's queries its connection (`translation.conn`, used 
 (`src/study_bible_mcp/research_sources.json` at the pin, MIT), copied to
 `priv/study/research_sources.json` and read at compile time, so it needs no pack.
 
+### The Dead Sea Scrolls (scrolls pack)
+
+The scrolls pack is built here, by `data/`'s `mix bezalel.data.scrolls` from
+ETCBC/dss (the Abegg–Bowley–Cook transcription, CC BY-NC 4.0), in two parts
+(`data/README.md`; why these works and these choices:
+[decisions/2026-10-18-dead-sea-scrolls-pack.md](../decisions/2026-10-18-dead-sea-scrolls-pack.md)):
+
+- **Major non-biblical works**: 30 compositions in 132 Qumran manuscripts
+  (`Bezalel.Study.Ancient.Scrolls`), in the ancient pack's own tables, so the
+  ancient tools read them with the same SQL, folding and excerpts; they are
+  works of the `qumran` corpus beside CD, 1QS, 1QSa and 1QpHab (which stay in
+  the ancient pack). Each manuscript is a work cited by its siglum or
+  conventional name ('4Q174', '4QFlor'), the copies of one composition
+  collected under its title ('Songs of the Sabbath Sacrifice 4Q405 …'), never
+  merged into a composite. A passage is one fragment or column as ETCBC labels
+  it; the locator is that label and a line ('1QM 5:3', '11QMelch ii 18',
+  '4Q174 frg. 1–2 i 10'), resolved against the pack: `Ancient.parse_fragment/1`
+  reads the citation, `Ancient.fragment_keys/1` the keys to look the label up
+  by (`section_number`), and the label's position (`book_number`) × 1000 + the
+  line is the sort key the overlap query uses. `search_ancient_sources` over
+  `qumran` or `all` searches both packs and ranks a stage's rows together;
+  without the scrolls pack (or with one whose tables can't be read,
+  `DB.check_tables/3`) it searches the ancient pack and says what it left
+  out, and `lookup_ancient_source` of a scrolls work is the missing- or
+  damaged-pack error.
+- **Biblical manuscripts**: every verse of the Hebrew Bible ETCBC assigns to
+  a word of a biblical scroll, per manuscript (265 sigla, 11,919 readings of
+  8,020 verses in 36 books; `dss_biblical_verses`), with the fragment and line
+  locator, the text with its brackets, and how many letters survive outside
+  `[ ]`. `compare_biblical_versions` shows them as `DSS` witnesses beside the
+  MT and LXX (default on, source `manuscripts:dss`): the tool already groups
+  witnesses by canonical verse with each edition's own numbering, which is
+  what a reading of 4QDeutj at Deuteronomy 32:8 is; `get_textual_variant`
+  stays Heiser's curated cases. A reading wholly inside `[ ]` says that
+  nothing legible survives; ETCBC's Hebrew numbering is mapped to the packs'
+  English one and named ('Hebrew numbering Psa.22.17').
+
 ### Full-text search on the phone
 
-The ancient pack's `ancient_source_passages_fts` is an FTS5 table. The host exqlite
+The ancient pack's `ancient_source_passages_fts` is an FTS5 table (the scrolls pack's too). The host exqlite
 build has FTS5 (its Makefile sets `-DSQLITE_ENABLE_FTS5=1`). Before mob_dev 0.7.29 /
 mob_new 0.6.13 (MOB-487) the phone's NIF was built from the same `sqlite3.c` with only
 `-DSQLITE_THREADSAFE=1`, so phones had no FTS5. Since MOB-487 the device builds take
@@ -196,7 +234,10 @@ settings screen; `keys/0`:
   `ancient:philo`, `ancient:pseudepigrapha`, `ancient:rabbinic` (one per registry
   corpus). Off: the corpus is left out of a search of `all` (and josephus stops being
   the default corpus); naming it, or citing one of its works, is an error saying the
-  user switched it off.
+  user switched it off. `ancient:qumran` covers the scrolls pack's works too.
+- Biblical manuscripts: `manuscripts:dss`, on by default: the Dead Sea Scrolls'
+  readings in `compare_biblical_versions`. Off: the DSS rows are left out of a default
+  comparison; asking for `versions: ["DSS"]` is the switched-off error.
 - Editorial: `editorial:verdicts`, off by default. studybible-mcp's maintainer's
   judgements: the curated "contrast" links on ancient passages, the verdict sentences
   and the `contrast` field of the ⚠ notes, the confessional sentence of a corpus caveat
@@ -321,7 +362,11 @@ table keeps; `--pack <name>` cuts one). Tests in `test/bezalel/study/` run again
 those, never the real packs; they port studybible-mcp's handler tests (and its
 theology, research-sources, broad-entry, textual-variant, biblical-versions and
 ancient-corpus tests) and add the Exodus 31 cases. `translations.sqlite` holds the NET
-of exactly the verses the core fixture's `bsb_verses` has. The ported cases that assert
+of exactly the verses the core fixture's `bsb_verses` has. `translations.sqlite` and
+`scrolls.sqlite` are cut by this repository's `data/` (`mix bezalel.data.fixtures`):
+the scrolls fixture keeps 11Q13, 4Q174 and 4Q246 whole, 1QM column 1 and fragment 3,
+4Q405 frg. 23 i, and the biblical readings of Deut 32:8, Isa 53:11, Ps 22:16, Deut
+1:10, Josh 5:0 and Mal 4:1 (`scrolls_test.exs`). The ported cases that assert
 studybible-mcp's wording pass `Preferences` with the BSB and a limit of four (their
 defaults); `preferences_test.exs`, `source_filters_test.exs` and `translations_test.exs`
 cover the settings, the source filters and verdicts, the labels, the translations and

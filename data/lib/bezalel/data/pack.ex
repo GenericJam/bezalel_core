@@ -1,7 +1,8 @@
 defmodule Bezalel.Data.Pack do
   @moduledoc """
-  Writes the `translations` pack, following the conventions of the phone
-  app's `data/scripts/make_packs.py`: a standalone SQLite file with page size
+  Writes the packs built here (`translations`, and `scrolls` through
+  `build/5`), following the conventions of the phone app's
+  `data/scripts/make_packs.py`: a standalone SQLite file with page size
   4096, rows inserted in canonical order, ANALYZE statistics, VACUUMed,
   `PRAGMA integrity_check` must say ok, and a `pack_meta(key, value)` table.
   """
@@ -58,19 +59,9 @@ defmodule Bezalel.Data.Pack do
   """
   @spec write(Path.t(), [map()], %{String.t() => [map()]}, %{String.t() => String.t()}) :: :ok
   def write(path, translations, verses, meta) do
-    File.mkdir_p!(Path.dirname(path))
-    File.rm(path)
-    {:ok, conn} = Sqlite3.open(path)
+    pack = %{name: @name, description: @description, tables: @tables}
 
-    try do
-      Enum.each(
-        ["PRAGMA page_size = 4096", "PRAGMA journal_mode = OFF", "PRAGMA synchronous = OFF"],
-        &exec!(conn, &1)
-      )
-
-      exec!(conn, "BEGIN")
-      Enum.each(@schema, &exec!(conn, &1))
-
+    build(path, pack, @schema, meta, fn conn ->
       insert!(conn, "translations", @translation_columns, translations, fn translation ->
         Enum.map(@translation_columns, &Map.fetch!(translation, &1))
       end)
@@ -82,12 +73,37 @@ defmodule Bezalel.Data.Pack do
           [key | Enum.map(@verse_columns, &Map.fetch!(row, &1))]
         end)
       end
+    end)
+  end
+
+  @doc """
+  Writes the pack at `path` (replacing it): runs `schema`'s statements (the
+  `pack_meta` table among them), `fill.(conn)` to insert the rows, then the
+  `pack_meta` rows: `meta` merged over `pack`, `description`, `tables` (from
+  `pack`) and `sqlite_version`. Then ANALYZE, VACUUM and the integrity check.
+  """
+  @spec build(Path.t(), map(), [String.t()], %{String.t() => String.t()}, (term() -> term())) ::
+          :ok
+  def build(path, pack, schema, meta, fill) do
+    File.mkdir_p!(Path.dirname(path))
+    File.rm(path)
+    {:ok, conn} = Sqlite3.open(path)
+
+    try do
+      Enum.each(
+        ["PRAGMA page_size = 4096", "PRAGMA journal_mode = OFF", "PRAGMA synchronous = OFF"],
+        &exec!(conn, &1)
+      )
+
+      exec!(conn, "BEGIN")
+      Enum.each(schema, &exec!(conn, &1))
+      fill.(conn)
 
       meta =
         Map.merge(meta, %{
-          "pack" => @name,
-          "description" => @description,
-          "tables" => Enum.join(@tables, " "),
+          "pack" => pack.name,
+          "description" => pack.description,
+          "tables" => Enum.join(pack.tables, " "),
           "sqlite_version" => sqlite_version(conn)
         })
 
@@ -123,7 +139,9 @@ defmodule Bezalel.Data.Pack do
     version
   end
 
-  defp query(conn, sql, args \\ []) do
+  @doc "The rows of `sql` with `args` on an open connection."
+  @spec query(term(), String.t(), list()) :: [list()]
+  def query(conn, sql, args \\ []) do
     {:ok, statement} = Sqlite3.prepare(conn, sql)
 
     try do
@@ -135,7 +153,9 @@ defmodule Bezalel.Data.Pack do
     end
   end
 
-  defp insert!(conn, table, columns, rows, values) do
+  @doc "Inserts `rows` into `table`'s `columns`, `values.(row)` giving each row's values in order."
+  @spec insert!(term(), String.t(), [atom()], Enumerable.t(), (term() -> list())) :: :ok
+  def insert!(conn, table, columns, rows, values) do
     placeholders = Enum.map_join(columns, ", ", fn _column -> "?" end)
     sql = "INSERT INTO #{table} (#{Enum.join(columns, ", ")}) VALUES (#{placeholders})"
     {:ok, statement} = Sqlite3.prepare(conn, sql)
@@ -151,7 +171,9 @@ defmodule Bezalel.Data.Pack do
     end
   end
 
-  defp exec!(conn, sql) do
+  @doc "Runs `sql`; raises on an error."
+  @spec exec!(term(), String.t()) :: :ok
+  def exec!(conn, sql) do
     case Sqlite3.execute(conn, sql) do
       :ok -> :ok
       {:error, reason} -> raise "SQLite: #{reason} in #{sql}"

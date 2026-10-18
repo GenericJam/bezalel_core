@@ -1,8 +1,9 @@
 defmodule Bezalel.Study.Tools.SearchAncientSources do
   @moduledoc """
   `search_ancient_sources`: full-text search of the ancient-source corpora
-  (ancient pack, FTS5 table `ancient_source_passages_fts`), with corpus,
-  period and curated-biblical-link filters.
+  (FTS5 table `ancient_source_passages_fts` of the ancient pack, and of the
+  scrolls pack for the Qumran works it holds), with corpus, period and
+  curated-biblical-link filters.
 
   Ported from studybible-mcp's `handle_search_ancient_sources`,
   `StudyBibleDB.search_ancient_sources` and `format_ancient_source_results`
@@ -22,6 +23,14 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   corpora (a search of 'all' covers the rest; with josephus off the default
   corpus is 'all'), and decide the scripture labels and editorial verdicts
   (`Bezalel.Study.Ancient.Passages`).
+
+  Changed for Bezalel: a search of `qumran` or `all` also reads the scrolls
+  pack (the Qumran manuscripts of `Bezalel.Study.Ancient.Scrolls`; same
+  tables, search columns and tokenizer) when it is on the device: each pack
+  is searched stage by stage as before, and a stage's rows from both are
+  ranked together by bm25, then corpus, work and position. Without the pack
+  the ancient pack's four Qumran works are searched and the result says the
+  rest need it (`missing_packs`).
   """
   @behaviour Rho.Tool
 
@@ -38,8 +47,11 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     """
     Find an ancient source passage by searching its words: Jewish texts of the
     Second Temple world to c. AD 200 (Josephus on Herod, the temple, John the
-    Baptist and the Jewish revolt; Targum Onkelos; the Qumran rules; Philo;
-    1 Enoch and 4 Ezra; the Mishnah). Each result carries a date and edition tag
+    Baptist and the Jewish revolt; Targum Onkelos; the Dead Sea Scrolls'
+    major works: the Qumran rules, War Scroll, Hodayot, Temple Scroll, MMT,
+    pesharim, Songs of the Sabbath Sacrifice, Melchizedek, 4Q246, 4Q521,
+    Genesis Apocryphon, Aramaic Enoch, Jubilees and more, each copy by its
+    siglum; Philo; 1 Enoch and 4 Ezra; the Mishnah). Each result carries a date and edition tag
     (with a canon-status label unless the user turned labels off), and each
     corpus's caveat and the sources are printed once at the end.
 
@@ -72,7 +84,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           "enum" => Ancient.keys() ++ ["all"],
           "default" => "josephus",
           "description" =>
-            "Corpus to search, or 'all'. targum = Onkelos; qumran = CD, 1QS, 1QSa, 1QpHab; pseudepigrapha = 1 Enoch, 4 Ezra; rabbinic = Mishnah. Default: josephus"
+            "Corpus to search, or 'all'. targum = Onkelos; qumran = the Dead Sea Scrolls' major non-biblical works (CD, 1QS, 1QSa, 1QpHab, and the scrolls pack's manuscripts, e.g. 1QM, 1QHa, 11Q19, 4Q394-399, 4Q174, 11Q13, 4Q246, 1Q20, 4Q201); pseudepigrapha = 1 Enoch, 4 Ezra; rabbinic = Mishnah. Default: josephus"
         },
         "biblical_reference" => %{
           "type" => "string",
@@ -105,7 +117,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   The search and its filters, then either the passages found (`match`
   `"all"` or `"any"`, `prefix_match` when only prefix-stripped Hebrew
   matched) or `status` `:no_match` / `:no_link` (with the link coverage).
-  `prefs` are the preferences it ran under.
+  `prefs` are the preferences it ran under; `missing_packs` the packs the
+  search would have read but the device lacks (`[:scrolls]`).
   """
   @type t :: %{
           required(:query) => String.t(),
@@ -114,6 +127,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           required(:period) => String.t() | nil,
           required(:terms) => [String.t()],
           required(:prefs) => Preferences.t(),
+          required(:missing_packs) => [DB.pack()],
           required(:status) => :ok | :no_match | :no_link,
           optional(:match) => String.t(),
           optional(:prefix_match) => boolean(),
@@ -208,25 +222,67 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           biblical_reference: reference,
           period: period,
           terms: terms,
-          prefs: prefs
+          prefs: prefs,
+          missing_packs: []
         }
 
         with {:ok, found} <-
-               DB.with_pack(:ancient, &find(&1, base, corpus, link_range, limit)),
+               DB.with_pack(:ancient, &search_packs(&1, base, corpus, link_range, limit)),
              do: found
     end
   end
 
-  defp find(conn, base, corpus, link_range, limit) do
+  defp search_packs(ancient, base, corpus, link_range, limit) do
+    with_scrolls(ancient, corpus, base.prefs, fn conns, missing ->
+      find(conns, %{base | missing_packs: missing}, corpus, link_range, limit)
+    end)
+  end
+
+  # The scrolls pack holds most Qumran works: a search of 'qumran' or 'all'
+  # (with Qumran on) reads it too when it is on the device, and notes that it
+  # isn't otherwise (or can't be read). `fun` gets the connections and the
+  # packs missing.
+  defp with_scrolls(ancient, corpus, prefs, fun) do
+    wanted = corpus in [nil, "qumran"] and Sources.enabled?(prefs, Sources.ancient("qumran"))
+
+    cond do
+      not wanted ->
+        fun.([ancient], [])
+
+      DB.available?(:scrolls) ->
+        case DB.with_pack(:scrolls, &with_readable_scrolls(ancient, &1, fun)) do
+          {:ok, result} -> result
+          {:error, _unreadable} -> fun.([ancient], [:scrolls])
+        end
+
+      true ->
+        fun.([ancient], [:scrolls])
+    end
+  end
+
+  @tables ~w(ancient_source_passages ancient_source_passages_fts ancient_source_biblical_links
+              ancient_source_notes)
+
+  # A damaged scrolls pack is searched as if it were missing.
+  defp with_readable_scrolls(ancient, scrolls, fun) do
+    case DB.check_tables(scrolls, :scrolls, @tables) do
+      :ok -> fun.([ancient, scrolls], [])
+      {:error, _damaged} -> fun.([ancient], [:scrolls])
+    end
+  end
+
+  defp find(conns, base, corpus, link_range, limit) do
     {corpus_condition, corpus_params} = scope(corpus, base.prefs)
     verdicts = Sources.enabled?(base.prefs, "editorial:verdicts")
 
     present =
-      DB.one(
-        conn,
-        "SELECT 1 FROM ancient_source_passages p WHERE #{corpus_condition} LIMIT 1",
-        corpus_params
-      )
+      Enum.find_value(conns, fn conn ->
+        DB.one(
+          conn,
+          "SELECT 1 FROM ancient_source_passages p WHERE #{corpus_condition} LIMIT 1",
+          corpus_params
+        )
+      end)
 
     cond do
       present == nil ->
@@ -236,20 +292,20 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         {:error,
          "#{scope} not in this device's ancient pack (the ancient_source_passages table is empty)."}
 
-      not fts5?(conn) ->
+      not Enum.all?(conns, &fts5?/1) ->
         {:error,
          "Searching ancient sources needs full-text search (SQLite FTS5), which this " <>
            "device's SQLite build lacks. lookup_ancient_source still reads a passage by " <>
            "its citation (e.g. 'Antiquities 18.116')."}
 
-      not linked?(conn, {corpus_condition, corpus_params}, link_range, verdicts) ->
-        {:ok, Map.merge(base, no_link(conn, corpus_condition, corpus_params, verdicts))}
+      not Enum.any?(conns, &linked?(&1, {corpus_condition, corpus_params}, link_range, verdicts)) ->
+        {:ok, Map.merge(base, no_link(conns, corpus_condition, corpus_params, verdicts))}
 
       true ->
         {where, params} =
           filters(corpus_condition, corpus_params, base.period, link_range, verdicts)
 
-        {:ok, stages(conn, base, corpus, where, params, limit)}
+        {:ok, stages(conns, base, corpus, where, params, limit)}
     end
   end
 
@@ -278,23 +334,25 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     ) != nil
   end
 
-  defp no_link(conn, corpus_condition, corpus_params, verdicts) do
+  defp no_link(conns, corpus_condition, corpus_params, verdicts) do
     coverage =
-      DB.one(
-        conn,
-        """
-        SELECT COUNT(*) AS link_count, COUNT(DISTINCT bl.passage_id) AS linked_passage_count
-        FROM ancient_source_biblical_links bl
-        JOIN ancient_source_passages p ON p.id = bl.passage_id
-        WHERE #{corpus_condition}#{if verdicts, do: "", else: " AND bl.relation != 'contrast'"}
-        """,
-        corpus_params
-      )
+      Enum.map(conns, fn conn ->
+        DB.one(
+          conn,
+          """
+          SELECT COUNT(*) AS link_count, COUNT(DISTINCT bl.passage_id) AS linked_passage_count
+          FROM ancient_source_biblical_links bl
+          JOIN ancient_source_passages p ON p.id = bl.passage_id
+          WHERE #{corpus_condition}#{if verdicts, do: "", else: " AND bl.relation != 'contrast'"}
+          """,
+          corpus_params
+        )
+      end)
 
     %{
       status: :no_link,
-      link_count: coverage["link_count"],
-      linked_passage_count: coverage["linked_passage_count"]
+      link_count: coverage |> Enum.map(& &1["link_count"]) |> Enum.sum(),
+      linked_passage_count: coverage |> Enum.map(& &1["linked_passage_count"]) |> Enum.sum()
     }
   end
 
@@ -339,7 +397,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
 
   # Every term, then any term; only then, for a Hebrew term, the same with
   # the prefix-stripped variants column.
-  defp stages(conn, base, corpus, where, params, limit) do
+  defp stages(conns, base, corpus, where, params, limit) do
     exact = "{text original_text_folded}"
     widened = "{text original_text_folded original_prefix_variants}"
     terms = base.terms
@@ -356,7 +414,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
       |> Enum.find_value(fn {columns, match, operator} ->
         terms_query = Enum.map_join(terms, operator, &~s("#{&1}"))
 
-        case stage_rows(conn, {where, params, limit}, "#{columns} : (#{terms_query})") do
+        case stage_rows(conns, {where, params, limit}, "#{columns} : (#{terms_query})") do
           [] -> nil
           rows -> {rows, match, columns == widened}
         end
@@ -368,8 +426,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
 
       {rows, match, prefix_match} ->
         passages =
-          conn
-          |> Passages.annotate(rows)
+          rows
+          |> annotate()
           |> Enum.map(
             &Passages.passage(&1, query: base.query, default_corpus: corpus, prefs: base.prefs)
           )
@@ -383,19 +441,43 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     end
   end
 
-  defp stage_rows(conn, {where, params, limit}, match) do
-    DB.all(
-      conn,
-      """
-      SELECT p.*, bm25(ancient_source_passages_fts) AS rank
-      FROM ancient_source_passages_fts
-      JOIN ancient_source_passages p ON p.id = ancient_source_passages_fts.passage_id
-      WHERE #{Enum.join(where, " AND ")}
-      ORDER BY rank, p.corpus, p.work_title, p.sort_start
-      LIMIT ?
-      """,
-      [match | params] ++ [limit]
-    )
+  # The best `limit` rows of every pack searched, in one ranking (bm25 per
+  # pack, then corpus, work and position), each with its connection.
+  defp stage_rows(conns, {where, params, limit}, match) do
+    conns
+    |> Enum.flat_map(fn conn ->
+      conn
+      |> DB.all(
+        """
+        SELECT p.*, bm25(ancient_source_passages_fts) AS rank
+        FROM ancient_source_passages_fts
+        JOIN ancient_source_passages p ON p.id = ancient_source_passages_fts.passage_id
+        WHERE #{Enum.join(where, " AND ")}
+        ORDER BY rank, p.corpus, p.work_title, p.sort_start
+        LIMIT ?
+        """,
+        [match | params] ++ [limit]
+      )
+      |> Enum.map(&{conn, &1})
+    end)
+    |> Enum.sort_by(fn {_conn, row} ->
+      {row["rank"], row["corpus"], row["work_title"], row["sort_start"]}
+    end)
+    |> Enum.take(limit)
+  end
+
+  # Each pack's rows annotated from that pack, in the ranking's order.
+  defp annotate(rows) do
+    annotated =
+      rows
+      |> Enum.with_index()
+      |> Enum.group_by(fn {{conn, _row}, _index} -> conn end)
+      |> Enum.flat_map(fn {conn, group} ->
+        indexes = Enum.map(group, &elem(&1, 1))
+        conn |> Passages.annotate(Enum.map(group, &elem(elem(&1, 0), 1))) |> Enum.zip(indexes)
+      end)
+
+    annotated |> Enum.sort_by(&elem(&1, 1)) |> Enum.map(&elem(&1, 0))
   end
 
   @doc "The Markdown the model reads for a `result/1`."
@@ -407,7 +489,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
       "#{r.biblical_reference}. Biblical links are curated narrative " <>
       "overlaps, never inferred from wording; #{r.link_count} " <>
       "links currently cover #{r.linked_passage_count} #{label} " <>
-      "passages. Search without biblical_reference to find passages by wording."
+      "passages. Search without biblical_reference to find passages by wording." <>
+      missing_note(r, " ")
   end
 
   def render(%{status: :no_match} = r) do
@@ -418,7 +501,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     scope = if filters == [], do: "", else: " with filters #{Enum.join(filters, ", ")}"
 
     "No #{label(default_corpus(r))} passage contains any of the search terms " <>
-      "(#{Enum.join(r.terms, ", ")})#{scope}."
+      "(#{Enum.join(r.terms, ", ")})#{scope}." <> missing_note(r, " ")
   end
 
   def render(r) do
@@ -433,6 +516,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           do: ["*No passage contains all terms; showing passages matching any term.*", ""],
           else: []
         ) ++
+        if(r.missing_packs != [], do: ["*#{missing_note(r, "")}*", ""], else: []) ++
         if r.prefix_match,
           do: [
             "*No exact match: these passages match only after stripping Hebrew/Aramaic prefix " <>
@@ -454,6 +538,17 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
       if(r.prefix_match, do: " (prefix match)", else: "")
     )
   end
+
+  # Searching Qumran without the scrolls pack covers only the ancient pack's four works.
+  defp missing_note(%{missing_packs: [_ | _]}, lead) do
+    lead <>
+      "The scrolls study pack (Dead Sea Scrolls) isn't downloaded on this device (or can't be " <>
+      "read), so only " <>
+      "CD, 1QS, 1QSa and 1QpHab of the Qumran works were searched; tell the user the other " <>
+      "scrolls need that pack."
+  end
+
+  defp missing_note(_result, _lead), do: ""
 
   defp default_corpus(%{corpus: "all"}), do: nil
   defp default_corpus(%{corpus: corpus}), do: corpus

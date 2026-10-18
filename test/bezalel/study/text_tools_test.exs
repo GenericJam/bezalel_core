@@ -243,9 +243,14 @@ defmodule Bezalel.Study.TextToolsTest do
                "'Hezekiah' is not a book covered by compare_biblical_versions."
 
       assert ok(CompareBiblicalVersions, %{"reference" => "Psalm 30:1"}) ==
-               "No MT or LXX text found for Psalm 30:1 (canonical MT/English numbering)."
+               "No MT or LXX or DSS text found for Psalm 30:1 (canonical MT/English numbering)."
 
-      assert ok(CompareBiblicalVersions, %{"reference" => "Psalm 82:1a"}) =~ "No MT or LXX text"
+      assert ok(CompareBiblicalVersions, %{
+               "reference" => "Psalm 30:1",
+               "versions" => ["MT", "LXX"]
+             }) == "No MT or LXX text found for Psalm 30:1 (canonical MT/English numbering)."
+
+      assert ok(CompareBiblicalVersions, %{"reference" => "Psalm 82:1a"}) =~ "No MT or LXX"
     end
 
     test "argument errors" do
@@ -257,14 +262,14 @@ defmodule Bezalel.Study.TextToolsTest do
                  "reference" => "Psalm 82:6",
                  "versions" => versions
                }) ==
-                 "'versions' must be a non-empty list containing MT and/or LXX."
+                 "'versions' must be a non-empty list containing MT, LXX and/or DSS."
       end
 
       assert error(CompareBiblicalVersions, %{
                "reference" => "Psalm 82:6",
                "versions" => ["mt", "Vulgate"]
              }) ==
-               "Unsupported biblical version(s): VULGATE. Use MT and/or LXX."
+               "Unsupported biblical version(s): VULGATE. Use MT, LXX and/or DSS."
 
       assert error(CompareBiblicalVersions, %{"reference" => "Psalm 82:6", "numbering" => "Greek"}) =~
                "Unsupported numbering 'greek'."

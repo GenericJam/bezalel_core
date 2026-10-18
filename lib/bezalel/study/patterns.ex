@@ -61,6 +61,12 @@ defmodule Bezalel.Study.Patterns do
     locator_trailing: {~S"[\s.;,]+$", "u"},
     roman: {~S"^(?=[mdclxvi])m{0,3}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$", "iu"},
     ascii_digits: {~S"^[0-9]+$", ""},
+    # Fragment locators of the scrolls pack's manuscripts (Ancient.parse_fragment).
+    fragment_word: {~S"^\s*(?:fragments?|frags?|frgs?|frg|fr)\b\.?", "iu"},
+    column_word: {~S"\b(?:columns?|cols?)\b\.?", "iu"},
+    fragment_dash: {~S"[_\x{2010}-\x{2015}\x{2212}]", "u"},
+    fragment_label: {~S"^[0-9a-z][0-9a-z+()?-]*$", ""},
+    fragment_lines: {~S"^[0-9]+(?:–[0-9]+)?$", "u"},
     locator_strip_left: {~S"\A[ .,]+", ""},
     locator_strip_right: {~S"[ .,]+\z", ""},
     line_breaks: {~S"\r\n|[\n\r\x{0b}\x{0c}\x{1c}-\x{1e}\x{85}\x{2028}\x{2029}]", "u"},

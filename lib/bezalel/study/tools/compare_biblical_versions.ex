@@ -27,9 +27,11 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Ancient, Args, DB, Format, Patterns, Preferences, Sources}
+  alias Bezalel.Study.{Ancient, Args, BiblicalScrolls, DB, Format, Patterns, Preferences, Sources}
 
   @max_verses 10
+  @versions ["MT", "LXX", "DSS"]
+  @dss_source "manuscripts:dss"
 
   @nt_books ~w(Mat Mrk Luk Jhn Act Rom 1Co 2Co Gal Eph Php Col 1Th 2Th 1Ti 2Ti Tit Phm Heb Jas
                1Pe 2Pe 1Jn 2Jn 3Jn Jud Rev)
@@ -131,9 +133,9 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   @impl true
   def description do
     """
-    Compare the Masoretic Text (MT) and Septuagint (LXX) side by side for an Old Testament or Septuagint verse, range, or chapter. Not for the New Testament. Returns at most ten verses per call and names the verse to continue from.
+    Compare the Masoretic Text (MT), the Septuagint (LXX) and the biblical Dead Sea Scrolls (DSS) side by side for an Old Testament or Septuagint verse, range, or chapter. Not for the New Testament. Returns at most ten verses per call and names the verse to continue from.
 
-    Rows are grouped by canonical MT/English reference and keep each edition's own reference, so Hebrew/Greek versification differences stay explicit (Psalm 82:6 = Greek Psa.81.6). MT: Westminster Leningrad Codex with STEPBible word glosses (not a translation). LXX: Rahlfs, with Brenton's English only where Brenton translated the same recension. Brenton translated his own Greek, not Rahlfs: where it differs the row warns and shows his Greek, and his English should be quoted as a rendering of that text; most Apocrypha rows carry the KJV Apocrypha instead. LXX-only verses (e.g. the Prayer of Azariah) need numbering='lxx'. Sources, licences, and the TVTMS verse-mapping credit are listed once at the end.\
+    Rows are grouped by canonical MT/English reference and keep each edition's own reference, so Hebrew/Greek versification differences stay explicit (Psalm 82:6 = Greek Psa.81.6). MT: Westminster Leningrad Codex with STEPBible word glosses (not a translation). LXX: Rahlfs, with Brenton's English only where Brenton translated the same recension. Brenton translated his own Greek, not Rahlfs: where it differs the row warns and shows his Greek, and his English should be quoted as a rendering of that text; most Apocrypha rows carry the KJV Apocrypha instead. LXX-only verses (e.g. the Prayer of Azariah) need numbering='lxx'. DSS: every biblical scroll from Qumran and the other Judaean Desert sites that preserves the verse (Abegg–Bowley–Cook transcription, Hebrew/Aramaic, no English), each with its siglum and name (4Q37 = 4QDeutj), fragment and line, and how many letters survive outside [ ], the editors' reconstruction, which is never evidence; a verse with no DSS row survives in no scroll. Sources, licences, and the TVTMS verse-mapping credit are listed once at the end.\
     """
   end
 
@@ -150,9 +152,10 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
         },
         "versions" => %{
           "type" => "array",
-          "items" => %{"type" => "string", "enum" => ["MT", "LXX"]},
-          "default" => ["MT", "LXX"],
-          "description" => "Editions to return, in display order. Default: MT and LXX"
+          "items" => %{"type" => "string", "enum" => @versions},
+          "default" => @versions,
+          "description" =>
+            "Editions to return, in display order. Default: MT, LXX and DSS (the Dead Sea Scrolls)"
         },
         "numbering" => %{
           "type" => "string",
@@ -233,7 +236,9 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   @typedoc """
   A comparison. `numbering` is the one used ("lxx" for an LXX-only book);
   `lxx_only` the LXX-only verses at the requested Greek positions (for a
-  canonical lookup); `cap_note` says where a cut comparison continues. No
+  canonical lookup); `cap_note` says where a cut comparison continues;
+  `dss` whether the Dead Sea Scrolls witnesses were read (`:missing`: the
+  scrolls pack isn't on the device), `dss_source_url` their source. No
   rows: nothing matched. `prefs` are the preferences it ran under (they
   decide the canon and verdict lines).
   """
@@ -246,6 +251,8 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
           rows: [row()],
           lxx_only: [%{edition: String.t(), edition_reference: String.t()}],
           cap_note: String.t(),
+          dss: :on | :off | :missing,
+          dss_source_url: String.t() | nil,
           prefs: Preferences.t()
         }
 
@@ -263,11 +270,14 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
     reference = Args.reference(args)
 
     with :ok <- present(reference),
-         {:ok, versions} <- versions(Map.get(args, "versions", ["MT", "LXX"])),
+         {:ok, versions} <- versions(Map.get(args, "versions", @versions)),
          {:ok, numbering} <- numbering(Map.get(args, "numbering", "canonical")),
          {:ok, book, start, finish} <- book(reference),
          numbering = if(book in @lxx_only_books, do: "lxx", else: numbering),
-         {:ok, {rows, lxx_only}} <- fetch(book, start, finish, versions, numbering),
+         {:ok, dss} <- dss_status(versions, Map.has_key?(args, "versions"), prefs),
+         versions = if(dss == :off, do: versions -- ["DSS"], else: versions),
+         {:ok, {rows, lxx_only, groups}} <- fetch(book, start, finish, versions, numbering),
+         {:ok, rows, dss, dss_url} <- add_dss(rows, groups, dss, {book, start, finish}, versions),
          :ok <- needs_lxx(rows, book, versions, reference) do
       {rows, cap_note} = cap(reference, rows, numbering)
 
@@ -281,10 +291,137 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
          rows: rows,
          lxx_only: lxx_only,
          cap_note: cap_note,
+         dss: dss,
+         dss_source_url: dss_url,
          prefs: prefs
        }}
     end
   end
+
+  # Whether the DSS witnesses are shown: `:on`; `:off` (not asked for, or
+  # switched off by the user when not asked for by name); `:missing` (the
+  # scrolls pack isn't on the device, said in a note). Asked for alone, a
+  # switched-off source or a missing pack is the error.
+  defp dss_status(versions, explicit, prefs) do
+    cond do
+      "DSS" not in versions -> {:ok, :off}
+      not Sources.enabled?(prefs, @dss_source) and explicit -> Sources.check(prefs, @dss_source)
+      not Sources.enabled?(prefs, @dss_source) -> {:ok, :off}
+      DB.available?(:scrolls) -> {:ok, :on}
+      versions == ["DSS"] -> {:error, DB.missing(:scrolls)}
+      true -> {:ok, :missing}
+    end
+  end
+
+  # The DSS readings of the passage (canonical numbering: `groups` nil) or
+  # of the canonical verses of the Greek passage's verse groups (`groups`:
+  # `{group, canonical reference}` in order, whichever versions are shown),
+  # merged into the rows.
+  # A scrolls pack that can't be read is noted as missing (an error when
+  # DSS was asked for alone).
+  defp add_dss(rows, _groups, dss, _passage, _versions) when dss != :on,
+    do: {:ok, rows, dss, nil}
+
+  defp add_dss(rows, groups, :on, {book, start, finish}, versions) do
+    result = DB.with_pack(:scrolls, &dss_readings(&1, groups, {book, start, finish}))
+
+    case result do
+      {:ok, {:ok, dss_rows, url}} -> {:ok, merge_dss(rows, dss_rows, groups, versions), :on, url}
+      {_, {:error, message}} when versions == ["DSS"] -> {:error, message}
+      {:error, message} when versions == ["DSS"] -> {:error, message}
+      _damaged -> {:ok, rows, :missing, nil}
+    end
+  end
+
+  defp dss_readings(conn, groups, {book, start, finish}) do
+    with :ok <- BiblicalScrolls.check(conn) do
+      readings =
+        if groups,
+          do: BiblicalScrolls.at(conn, group_references(groups)),
+          else: BiblicalScrolls.range(conn, book, verse_bound(start), verse_bound(finish))
+
+      {:ok, Enum.map(readings, &dss_row/1), BiblicalScrolls.source_url(conn)}
+    end
+  end
+
+  defp group_references(groups),
+    do: groups |> Enum.map(&elem(&1, 1)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+  defp verse_bound({chapter, verse, _suffix}), do: {chapter, verse}
+
+  # Canonical numbering sorts every row by verse; Greek numbering keeps the
+  # LXX groups' order and puts each verse's DSS rows after the group's rows
+  # (also when the group shows no MT or LXX row).
+  defp merge_dss(rows, dss_rows, nil, versions) do
+    order = version_order(versions)
+
+    (rows ++ dss_rows)
+    |> Enum.sort_by(
+      &{&1.canonical_chapter, &1.canonical_verse, &1.canonical_verse_suffix, order.(&1),
+       &1.edition, Map.get(&1, :position, 0)}
+    )
+    |> Enum.map(&Map.delete(&1, :position))
+  end
+
+  defp merge_dss(rows, dss_rows, groups, _versions) do
+    by_reference = Enum.group_by(dss_rows, & &1.canonical_reference)
+    by_group = Enum.group_by(rows, &group/1)
+
+    {merged, _} =
+      Enum.flat_map_reduce(groups, MapSet.new(), fn {key, reference}, seen ->
+        shown = Map.get(by_group, key, [])
+
+        if reference && not MapSet.member?(seen, reference),
+          do: {shown ++ Map.get(by_reference, reference, []), MapSet.put(seen, reference)},
+          else: {shown, seen}
+      end)
+
+    Enum.map(merged, &Map.delete(&1, :position))
+  end
+
+  defp dss_row(reading) do
+    name = if reading.name, do: " (#{reading.name})", else: ""
+
+    %{
+      version: "DSS",
+      edition: BiblicalScrolls.edition(),
+      language: reading.language,
+      canonical_reference: reading.reference,
+      canonical_book: reading.book,
+      canonical_chapter: reading.chapter,
+      canonical_verse: reading.verse,
+      canonical_verse_suffix: "",
+      edition_reference: "#{reading.siglum}#{name} #{reading.locator}",
+      text: reading.text,
+      translation: nil,
+      translation_label: "none",
+      translation_note: nil,
+      license: BiblicalScrolls.license(),
+      source_url: nil,
+      mapping_method: dss_mapping(reading),
+      morphology: [],
+      apocrypha: nil,
+      kjv_apocrypha: false,
+      brenton: brenton(:not_applicable),
+      dss: %{
+        siglum: reading.siglum,
+        name: reading.name,
+        site: reading.site,
+        locator: reading.locator,
+        letters: reading.letters,
+        preserved_letters: reading.preserved_letters,
+        source_reference: reading.source_reference,
+        mt_verse: reading.mt_verse
+      },
+      position: {reading.sort_order, reading.occurrence}
+    }
+  end
+
+  defp dss_mapping(%{mt_verse: false} = reading),
+    do: "ETCBC numbering #{reading.source_reference}; no such MT verse"
+
+  defp dss_mapping(%{reference: same, source_reference: same}), do: "identity"
+  defp dss_mapping(reading), do: "Hebrew numbering #{reading.source_reference}"
 
   defp present(""), do: {:error, "Please provide a verse reference (e.g., 'Psalm 24:1')."}
   defp present(_reference), do: :ok
@@ -304,17 +441,18 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   defp versions(requested) when is_list(requested) and requested != [] do
     versions = requested |> Enum.map(&(&1 |> python_str() |> String.upcase())) |> Enum.uniq()
 
-    case Enum.reject(versions, &(&1 in ["MT", "LXX"])) do
+    case Enum.reject(versions, &(&1 in @versions)) do
       [] ->
         {:ok, versions}
 
       unsupported ->
         {:error,
-         "Unsupported biblical version(s): #{Enum.join(unsupported, ", ")}. Use MT and/or LXX."}
+         "Unsupported biblical version(s): #{Enum.join(unsupported, ", ")}. Use MT, LXX and/or DSS."}
     end
   end
 
-  defp versions(_), do: {:error, "'versions' must be a non-empty list containing MT and/or LXX."}
+  defp versions(_),
+    do: {:error, "'versions' must be a non-empty list containing MT, LXX and/or DSS."}
 
   defp numbering(value) do
     case value |> python_str() |> String.downcase() do
@@ -388,7 +526,12 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
           |> Enum.sort_by(&{order.(&1), &1.edition, &1.position})
         end)
 
-      {:ok, {Enum.map(rows, &Map.delete(&1, :position)), []}}
+      groups =
+        Enum.map(keys, fn key ->
+          {key, Enum.find(lxx_rows, &(group(&1) == key)).canonical_reference}
+        end)
+
+      {:ok, {Enum.map(rows, &Map.delete(&1, :position)), [], groups}}
     end
   end
 
@@ -414,7 +557,7 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
         )
         |> Enum.map(&Map.delete(&1, :position))
 
-      {:ok, {rows, lxx_only}}
+      {:ok, {rows, lxx_only, nil}}
     end
   end
 
@@ -671,9 +814,9 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
     message =
       "No #{Enum.join(result.versions, " or ")} text found for #{result.reference} (#{scheme} numbering)."
 
-    case lxx_only_note(result.lxx_only) do
-      "" -> message
-      note -> "#{message}\n\n#{note}"
+    case [lxx_only_note(result.lxx_only), dss_note(result)] |> Enum.reject(&(&1 == "")) do
+      [] -> message
+      notes -> Enum.join([message | notes], "\n\n")
     end
   end
 
@@ -687,7 +830,9 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
       "## Biblical Version Comparison: #{result.reference}" <>
         if(result.numbering == "lxx", do: " (Septuagint edition numbering)", else: "")
 
-    header = [title, ""] ++ if(note != "", do: ["*#{note}*", ""], else: [])
+    header =
+      [title, ""] ++
+        Enum.flat_map([note, dss_note(result)], &if(&1 != "", do: ["*#{&1}*", ""], else: []))
 
     {lines, _group} =
       Enum.flat_map_reduce(result.rows, nil, fn row, current ->
@@ -698,9 +843,15 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
         {heading ++ row_lines(row, result), group}
       end)
 
-    (header ++ lines ++ sources(result.rows, result.prefs))
+    (header ++ lines ++ sources(result.rows, result.prefs, result.dss_source_url))
     |> Enum.join("\n")
     |> String.trim_trailing()
+  end
+
+  defp row_lines(%{version: "DSS"} = row, result) do
+    [row_header(row)] ++
+      if(result.include_original, do: ["**#{row.language}:** #{row.text}"], else: []) ++
+      [preservation(row.dss), "**English:** none (any English is the assistant's own).", ""]
   end
 
   defp row_lines(row, result) do
@@ -710,6 +861,33 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
       english_lines(row) ++
       morphology_lines(row.morphology, result.include_morphology) ++ [""]
   end
+
+  defp preservation(%{preserved_letters: 0}) do
+    "*Nothing legible survives here outside the editors' reconstruction: every letter is in [ ], " <>
+      "which is not evidence of what the scroll read.*"
+  end
+
+  defp preservation(%{letters: letters, preserved_letters: letters}),
+    do: "*Every letter preserved (#{letters}).*"
+
+  defp preservation(dss) do
+    "*Preserved: #{dss.preserved_letters} of #{dss.letters} letters; the rest, in [ ], is " <>
+      "the editors' reconstruction, not evidence.*"
+  end
+
+  # Whether the DSS witnesses are missing or absent.
+  defp dss_note(%{dss: :missing}),
+    do:
+      "Dead Sea Scrolls readings need the scrolls study pack, which isn't downloaded on this " <>
+        "device; tell the user if they matter."
+
+  defp dss_note(%{dss: :on, rows: [_ | _] = rows}) do
+    if Enum.any?(rows, &(&1.version == "DSS")),
+      do: "",
+      else: "No biblical Dead Sea Scroll (ETCBC/dss) preserves any of these verses."
+  end
+
+  defp dss_note(_result), do: ""
 
   defp row_header(row) do
     mapping =
@@ -769,12 +947,12 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   # Provenance once: each edition's licence, English and source, the
   # verse-mapping credit, the canon and verdict lines (by `prefs`), and the
   # Brenton and KJV notes.
-  defp sources(rows, prefs) do
+  defp sources(rows, prefs, dss_url) do
     editions = rows |> Enum.map(&{&1.version, &1.edition}) |> Enum.uniq()
     outside = rows |> Enum.map(& &1.apocrypha) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     ["---", "**Sources**"] ++
-      Enum.map(editions, &edition_line(&1, rows)) ++
+      Enum.map(editions, &edition_line(&1, rows, dss_url)) ++
       when_any(rows, &(&1.brenton.status == :differs), [
         "- Brenton's Greek: public domain. #{@brenton_greek_source_url}"
       ]) ++
@@ -789,7 +967,14 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
 
   defp when_any(rows, fun, lines), do: if(Enum.any?(rows, fun), do: lines, else: [])
 
-  defp edition_line({version, edition}, rows) do
+  defp edition_line({"DSS", edition}, _rows, url) do
+    "- DSS #{edition}: Hebrew and Aramaic, #{BiblicalScrolls.transcription()}: " <>
+      "#{BiblicalScrolls.license()}. English: none. Manuscript names: Leon Levy Dead Sea " <>
+      "Scrolls Digital Library (IAA). [ ] marks modern reconstruction, never evidence. " <>
+      (url || "https://github.com/ETCBC/dss")
+  end
+
+  defp edition_line({version, edition}, rows, _url) do
     [first | _] =
       of_edition = Enum.filter(rows, &({&1.version, &1.edition} == {version, edition}))
 

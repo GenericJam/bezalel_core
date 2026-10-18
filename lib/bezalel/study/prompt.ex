@@ -72,11 +72,11 @@ defmodule Bezalel.Study.Prompt do
     {"get_textual_variant",
      "where the manuscripts differ at a verse: readings and witnesses, kept apart from critical judgments and interpretations. Give the evidence before any conclusion, and say whose conclusion it is."},
     {"compare_biblical_versions",
-     "the Hebrew (Masoretic) text and the Greek Septuagint side by side, each with its own numbering. Brenton's English translates a different Greek edition; the tool warns where that matters."},
+     "the Hebrew (Masoretic) text, the Greek Septuagint and the biblical Dead Sea Scrolls side by side, each with its own numbering. Brenton's English translates a different Greek edition; the tool warns where that matters. A scroll's [ ] is modern reconstruction, never evidence of what it read: say how much of a verse survives before resting anything on it."},
     {"get_torah_weave",
      "the verses paired with a Torah passage under Moshe Kline's Woven Torah hypothesis, one scholar's structural proposal."},
     {"search_ancient_sources",
-     "Jewish texts of the Second Temple world and after (Josephus, Philo, Qumran, 1 Enoch, 4 Ezra, Targum Onkelos, the Mishnah), found by their wording. Give each passage's work, date and edition as the tool labels them."},
+     "Jewish texts of the Second Temple world and after (Josephus, Philo, the Dead Sea Scrolls' major works, 1 Enoch, 4 Ezra, Targum Onkelos, the Mishnah), found by their wording. Give each passage's work, date and edition as the tool labels them."},
     {"lookup_ancient_source", "one of those ancient sources read by its citation."},
     {"list_research_sources",
      "free journals, libraries and text archives for following a question further, with search links: places to look, not endorsements."}

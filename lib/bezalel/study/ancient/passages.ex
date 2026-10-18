@@ -251,10 +251,11 @@ defmodule Bezalel.Study.Ancient.Passages do
 
     if window == nil or corpus == nil or not corpus.line_numbered or work == nil,
       do: {row["original_text"], nil},
-      else: cut_lines(row, window, work.locator.scale)
+      else: cut_lines(row, window, work)
   end
 
-  defp cut_lines(row, {low, high}, scale) do
+  defp cut_lines(row, {low, high}, work) do
+    scale = work.locator.scale
     text = row["original_text"]
     base = row["sort_start"] - rem(row["sort_start"], scale)
     lines = splitlines(text)
@@ -268,7 +269,7 @@ defmodule Bezalel.Study.Ancient.Passages do
     if kept == [] or length(kept) == length(lines) do
       {text, nil}
     else
-      {Enum.join(kept, "\n"), lines_note(div(base, scale), kept)}
+      {Enum.join(kept, "\n"), lines_note(work, row, div(base, scale), kept)}
     end
   end
 
@@ -277,11 +278,21 @@ defmodule Bezalel.Study.Ancient.Passages do
     if Regex.match?(Patterns.get(:ascii_digits), number), do: String.to_integer(number)
   end
 
-  defp lines_note(column, kept) do
+  defp lines_note(work, row, column, kept) do
     first = kept |> hd() |> String.split(" ", parts: 2) |> hd()
     last = kept |> List.last() |> String.split(" ", parts: 2) |> hd()
-    shown = if first == last, do: "#{column}:#{first}", else: "#{column}:#{first}–#{last}"
-    "Lines #{shown} shown (the cited line ±#{@line_context}); cite the column for all of it."
+    lines = if first == last, do: first, else: "#{first}–#{last}"
+
+    label =
+      if Ancient.fragment_locator?(work), do: Ancient.reference_label(work, row["reference"])
+
+    if label && not Regex.match?(Patterns.get(:ascii_digits), label) do
+      "Lines #{lines} of #{work.reference_title} #{label} shown (the cited line " <>
+        "±#{@line_context}); cite the fragment for all of it."
+    else
+      "Lines #{label || column}:#{lines} shown (the cited line ±#{@line_context}); " <>
+        "cite the column for all of it."
+    end
   end
 
   # --- Passages -------------------------------------------------------------

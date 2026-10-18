@@ -6,6 +6,10 @@ defmodule Bezalel.Study.Ancient.Registry do
   grammars. Generated from the Python registry (`CORPORA`); the passages
   themselves are in the ancient pack. Display order is the registry's.
 
+  Added for Bezalel: the `qumran` corpus also lists the Dead Sea Scrolls
+  manuscripts of `Bezalel.Study.Ancient.Scrolls`, whose passages are in the
+  scrolls pack (`Bezalel.Study.Ancient.pack/1`), and its caveat covers them.
+
   Changed for Bezalel: each Python caveat is split into `caveat`, the
   neutral provenance (always shown), and `verdict`, the maintainer's
   confessional judgement (shown only with the `editorial:verdicts` source,
@@ -319,7 +323,7 @@ defmodule Bezalel.Study.Ancient.Registry do
       aliases: ["Dead Sea Scrolls", "Qumran", "DSS"],
       key: "qumran",
       caveat:
-        "Sectarian texts of a strict priestly movement (c. 150–50 BC). [ ] marks modern reconstruction, never evidence; any English is the assistant's own.",
+        "Texts from the Qumran caves (copied c. 250 BC–AD 68) and the Cairo Genizah's Damascus Document: the rules, hymns and commentaries of a strict priestly movement (c. 150–50 BC) and older Jewish writings it kept (Enoch, Jubilees, Tobit, Aramaic Levi). [ ] marks modern reconstruction, never evidence; any English is the assistant's own.",
       verdict: nil,
       example_citation: "CD 6:11",
       heading_label: "Editorial heading",
@@ -2328,6 +2332,15 @@ defmodule Bezalel.Study.Ancient.Registry do
       ]
     }
   ]
+
+  # The scrolls pack's manuscripts follow CD, 1QS, 1QSa and 1QpHab.
+  @corpora Enum.map(@corpora, fn
+             %{key: "qumran"} = corpus ->
+               %{corpus | works: corpus.works ++ Bezalel.Study.Ancient.Scrolls.works()}
+
+             corpus ->
+               corpus
+           end)
 
   @doc "Every corpus, in registry order."
   def corpora, do: @corpora

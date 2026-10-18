@@ -361,14 +361,144 @@ defmodule Bezalel.Study.Ancient do
 
   defp collapse(first, last, _scale), do: {first, last}
 
+  # --- Fragment locators ----------------------------------------------------
+
+  @typedoc "A parsed fragment locator: the label as cited and the lines, if any."
+  @type fragment :: %{label: String.t(), lines: {pos_integer(), pos_integer()} | nil}
+
+  @doc "The pack a work's passages are in: `:ancient`, or the work's `pack` (`:scrolls`)."
+  @spec pack(work()) :: :ancient | :scrolls
+  def pack(work), do: Map.get(work, :pack, :ancient)
+
+  @doc """
+  Is `work` cited by fragment or column label and line (the scrolls pack's
+  manuscripts, `Bezalel.Study.Ancient.Scrolls`) rather than by numbers that
+  map to sort keys on their own?
+  """
+  @spec fragment_locator?(work()) :: boolean()
+  def fragment_locator?(work), do: Map.get(work.locator, :kind) == :fragment
+
+  @doc """
+  The key a fragment or column label is looked up by: lower case, a leading
+  'frag.'/'frg.' as 'f', without 'col.' words or spaces, every dash and
+  underscore a hyphen. The ETCBC label 'f1_2i' and the citation
+  'frg. 1–2 col. i' are both 'f1-2i'; a column '5' stays '5'.
+  """
+  @spec fragment_key(String.t()) :: String.t()
+  def fragment_key(label) do
+    label
+    |> String.downcase()
+    |> String.replace(Patterns.get(:fragment_word), "f")
+    |> String.replace(Patterns.get(:column_word), "")
+    |> String.replace(Patterns.get(:whitespace), "")
+    |> String.replace(Patterns.get(:fragment_dash), "-")
+  end
+
+  @doc """
+  The keys to try, in order, for a cited label: its own key; then, cited
+  without 'f' or 'frg.', as a fragment ('1–2 i' → 'f1-2i'); then a Roman
+  column number as Arabic ('ii' → '2').
+  """
+  @spec fragment_keys(String.t()) :: [String.t()]
+  def fragment_keys(label) do
+    key = fragment_key(label)
+    fragment = if String.starts_with?(key, "f"), do: [], else: ["f" <> key]
+
+    column =
+      case roman_to_int(key) do
+        number when is_integer(number) and number > 0 -> [Integer.to_string(number)]
+        _ -> []
+      end
+
+    Enum.uniq([key | fragment] ++ column)
+  end
+
+  @doc """
+  The fragment or column of a scrolls-pack passage reference: '4Q174 frg.
+  1–2 i 1–19' → 'frg. 1–2 i', '1QM 5:1–17' → '5'.
+  """
+  @spec reference_label(work(), String.t()) :: String.t()
+  def reference_label(work, reference) do
+    rest = String.replace_prefix(reference, work.reference_title <> " ", "")
+
+    case String.split(rest, ":") do
+      [label, _lines] -> label
+      _ -> rest |> String.split(" ") |> Enum.drop(-1) |> Enum.join(" ")
+    end
+  end
+
+  @doc """
+  A fragment locator ('1–2 i 10', 'f1_2i 10–12', '5:3', 'v 3', 'A1'): the
+  label and the optional line or line range after it (after the last colon,
+  else the last word if it is a number or range). Nil when there is no
+  label, the label isn't one ('1-2i', letters, digits, '+', '-', '(?)'), or
+  a line range is reversed or past line 999 (line 0 is the space above
+  line 1, where ETCBC numbers it).
+  """
+  @spec parse_fragment(String.t()) :: fragment() | nil
+  def parse_fragment(text) do
+    text =
+      Patterns.get(:locator_trailing)
+      |> Regex.replace(String.trim(text), "")
+      |> then(&Regex.replace(Patterns.get(:locator_dash), &1, "–"))
+
+    {label, lines} = split_lines(text)
+    key = fragment_key(label)
+
+    with true <- Regex.match?(Patterns.get(:fragment_label), key),
+         {:ok, lines} <- fragment_lines(lines) do
+      %{label: String.trim(label), lines: lines}
+    else
+      _ -> nil
+    end
+  end
+
+  defp split_lines(text) do
+    case String.split(text, ":") do
+      [_one] ->
+        words = String.split(text)
+
+        label = words |> Enum.drop(-1) |> Enum.join(" ")
+
+        # 'frg. 4' is a fragment, not line 4 of 'frg.'.
+        if match?([_, _ | _], words) and fragment_key(label) not in ["", "f"] and
+             Regex.match?(Patterns.get(:fragment_lines), List.last(words)),
+           do: {label, List.last(words)},
+           else: {text, nil}
+
+      parts ->
+        {parts |> Enum.drop(-1) |> Enum.join(":"), String.trim(List.last(parts))}
+    end
+  end
+
+  defp fragment_lines(nil), do: {:ok, nil}
+
+  defp fragment_lines(text) do
+    if Regex.match?(Patterns.get(:fragment_lines), text) do
+      case text |> String.split("–") |> Enum.map(&String.to_integer/1) do
+        [line] when line in 0..999 -> {:ok, {line, line}}
+        [first, last] when first in 0..999 and last in first..999//1 -> {:ok, {first, last}}
+        _ -> :error
+      end
+    else
+      :error
+    end
+  end
+
   # --- Citations ------------------------------------------------------------
 
-  @typedoc "A work whose name prefixes a citation; `sort_range` nil if the locator didn't parse."
+  @typedoc """
+  A work whose name prefixes a citation; `sort_range` nil if the locator
+  didn't parse. A work cited by fragment (`fragment_locator?/1`) has no sort
+  range until its pack resolves the label: `fragment` holds the parsed
+  locator instead (nil if it didn't parse).
+  """
   @type match :: %{
           corpus: corpus(),
           work: work(),
           locator_text: String.t(),
           sort_range: sort_range() | nil,
+          fragment: fragment() | nil,
           name_length: non_neg_integer()
         }
 
@@ -392,7 +522,7 @@ defmodule Bezalel.Study.Ancient do
 
     case Enum.flat_map(corpora, &work_matches(&1, text)) do
       [] -> :unknown_work
-      candidates -> pick(candidates, Enum.filter(candidates, & &1.sort_range))
+      candidates -> pick(candidates, Enum.filter(candidates, &(&1.sort_range || &1.fragment)))
     end
   end
 
@@ -434,11 +564,14 @@ defmodule Bezalel.Study.Ancient do
       best ->
         locator_text = text |> binary_part(end_, byte_size(text) - end_) |> strip_locator()
 
+        fragment? = fragment_locator?(work)
+
         match = %{
           corpus: corpus,
           work: work,
           locator_text: locator_text,
-          sort_range: parse_locator(work.locator, locator_text),
+          sort_range: if(not fragment?, do: parse_locator(work.locator, locator_text)),
+          fragment: if(fragment?, do: parse_fragment(locator_text)),
           name_length: end_
         }
 

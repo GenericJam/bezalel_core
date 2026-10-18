@@ -87,7 +87,7 @@ defmodule Bezalel.Study.PreferencesTest do
           do: assert("theology:#{author}" in keys)
 
       for key <-
-            ~w(editorial:verdicts notes:study_notes notes:translation_notes_uw notes:translation_notes_sil notes:dictionary notes:key_terms ane:context crossrefs:themes method:torah_weave method:genre_guidance),
+            ~w(editorial:verdicts manuscripts:dss notes:study_notes notes:translation_notes_uw notes:translation_notes_sil notes:dictionary notes:key_terms ane:context crossrefs:themes method:torah_weave method:genre_guidance),
           do: assert(key in keys)
 
       assert keys == Enum.uniq(keys)
@@ -99,6 +99,7 @@ defmodule Bezalel.Study.PreferencesTest do
                "Ancient sources",
                "Editorial",
                "Theologians",
+               "Biblical manuscripts",
                "Notes and reference",
                "Background",
                "Methods"
