@@ -302,6 +302,32 @@ defmodule Bezalel.Study.ScrollsTest do
         assert message == DB.missing(:ancient)
       end)
     end
+
+    test "a damaged scrolls pack, or one without Qumran, is named along with the missing pack" do
+      without_ancient(fn ->
+        dir = Application.fetch_env!(:bezalel_core, :packs_dir)
+        scrolls = Path.join(dir, "scrolls.sqlite")
+        {:ok, conn} = Exqlite.Sqlite3.open(scrolls)
+        :ok = Exqlite.Sqlite3.execute(conn, "DELETE FROM ancient_source_passages")
+        :ok = Exqlite.Sqlite3.close(conn)
+
+        assert {:error, message} =
+                 SearchAncientSources.run(%{"query" => "בני אור", "corpus" => "qumran"}, %{})
+
+        assert message =~ "The Qumran corpus is not in this device's scrolls pack"
+
+        File.rm!(scrolls)
+        {:ok, conn} = Exqlite.Sqlite3.open(scrolls)
+        :ok = Exqlite.Sqlite3.execute(conn, "CREATE TABLE pack_meta (key TEXT, value TEXT)")
+        :ok = Exqlite.Sqlite3.close(conn)
+
+        assert {:error, message} =
+                 SearchAncientSources.run(%{"query" => "בני אור", "corpus" => "qumran"}, %{})
+
+        assert message =~ DB.missing(:ancient)
+        assert message =~ "The scrolls study pack on this device can't be read"
+      end)
+    end
   end
 
   describe "without the scrolls pack" do

@@ -242,17 +242,18 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
              DB.with_pack(:ancient, &search_packs(&1, base, corpus, link_range, limit)),
            do: found
     else
-      with {:ok, found} <-
-             DB.with_pack(:scrolls, &search_scrolls_only(&1, base, corpus, link_range, limit)),
-           do: found
+      case DB.with_pack(:scrolls, &search_scrolls_only(&1, base, corpus, link_range, limit)) do
+        {:ok, found} -> found
+        {:error, unreadable} -> {:error, DB.missing(:ancient) <> " " <> unreadable}
+      end
     end
   end
 
-  # A damaged scrolls pack leaves nothing to search.
+  # A damaged scrolls pack leaves nothing to search: both packs are named.
   defp search_scrolls_only(scrolls, base, corpus, link_range, limit) do
     case DB.check_tables(scrolls, :scrolls, @tables) do
       :ok -> find([scrolls], %{base | missing_packs: [:ancient]}, corpus, link_range, limit)
-      {:error, _damaged} -> {:error, DB.missing(:ancient)}
+      {:error, damaged} -> {:error, DB.missing(:ancient) <> " " <> damaged}
     end
   end
 
@@ -311,8 +312,10 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         scope =
           if corpus, do: "The #{label(corpus)} corpus is", else: "No ancient-source corpus is"
 
+        pack = if :ancient in base.missing_packs, do: "scrolls", else: "ancient"
+
         {:error,
-         "#{scope} not in this device's ancient pack (the ancient_source_passages table is empty)."}
+         "#{scope} not in this device's #{pack} pack (the ancient_source_passages table is empty)."}
 
       not Enum.all?(conns, &fts5?/1) ->
         {:error,
