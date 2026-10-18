@@ -73,5 +73,36 @@
       "Jud": "29eea942119d955b4e7e9a1b0edadec72b602700160a55ec788e971c11b8d826",
       "Rev": "9e707d305356263c334b7e662ec23121ef2c9cae79e4451e9c65ad5246848229"
     }
+  },
+  "dss": {
+    "name": "ETCBC/dss: the Dead Sea Scrolls transcription of Martin G. Abegg Jr., James E. Bowley and Edward M. Cook, Text-Fabric release 2.0.1",
+    "repo": "https://github.com/ETCBC/dss",
+    "commit": "47ecc1738fad6e67df7d40a3e84d73e4a125e265",
+    "path": "tf/2.0.1",
+    "url": "https://raw.githubusercontent.com/ETCBC/dss/47ecc1738fad6e67df7d40a3e84d73e4a125e265/tf/2.0.1/",
+    "reviewed": "2026-10-18",
+    "licence": "CC BY-NC 4.0 (each file's header declares it), https://creativecommons.org/licenses/by-nc/4.0/",
+    "note": "The commit (tag v2.0.1) the ancient pack's CD, 1QS, 1QSa and 1QpHab were built from (studybible-mcp corpora/qumran.py).",
+    "files": {
+      "after.tf": "8032b08c993a20ce3516c7a9058a26db452c008aaa096506a60243cfd94c705e",
+      "alt.tf": "f2d661f9a273a338a09067d23a9eade17e93319309f7e5a6e3df9c99f124c389",
+      "biblical.tf": "7a91352439ceb3ac422d879febf232a0717023003e3c70fcfe7691e0d1f5ac69",
+      "book.tf": "8f075ca9c34167260a911c6bc33fe09088a6cb6abfa19fe50592df58a546d773",
+      "chapter.tf": "4b25d3fef227f30b85ba203f10145e0ae072be7547fed6282c64aeddfc78b4f8",
+      "cor.tf": "fd1f6897a43b242b5ca75823cadb8adfd9a74bff92aaec0a4412dd3c7a11b2d7",
+      "fragment.tf": "5d1a3177113f4623cb7960af4a589c3a7f375d611f24660d20ff6f74af570bae",
+      "glyph.tf": "b6dc988801e7145791db68c3004c0c39f30544c97bf3a473a3e18ab96e8d2b92",
+      "lang.tf": "5695457678db1aa14a384b986f78b691c19156c8214c058333b5f560f89a8220",
+      "line.tf": "41c82b80c5230491dc4081e266c7c2ebe01ce3ecfb12c696f3eda82ac1c39f0b",
+      "oslots.tf": "582165e4f8450677d457816b78225a2d35ad1617e9e97fb98abd9d70ebfd3818",
+      "otype.tf": "4f313ee84bb61c9a3adb1fa15acddac781807b7fa59df9d02fb38014174e069a",
+      "rec.tf": "6ff8311ff809584081f9dd66c5570e353a552b16583bcb30a6c245b5e6fcf335",
+      "rem.tf": "921e78e2dca9607254675b432faca8e44742e7aec571267c8ce9c4cb2326cdf9",
+      "scroll.tf": "e39d8d38b3f616a4054af682c6191ce1b9acd977f3369fb8f567b6182dbeaf2a",
+      "type.tf": "0df955242141dc68f2cf161e7abacf2758adad072196019d38990e23712e7a49",
+      "unc.tf": "cc7a591edc46c0b38c3aa279fb23051cf2701bccee46cd1f451f0e0cccbb952e",
+      "vac.tf": "f193cf146850d34030e6c12e19f7b6f8cf3f96eb586214532f554ed7c92555f9",
+      "verse.tf": "d8ad61f1cb0690792b31115c24105d240a4fc5fb0cbea719c1d7a8adc4eab251"
+    }
   }
 }

@@ -17,12 +17,17 @@ path). Read [README.md](README.md) first. bezalel_core's
    `pack_meta.licences`, and for a translation in its `translations` row
    (`copyright`, `licence`). A source whose licence doesn't allow the use
    isn't imported. NET: the verse text only; the NET translators' and study
-   notes are not licensed and must never be imported.
+   notes are not licensed and must never be imported. Scrolls: ETCBC/dss is
+   CC BY-NC 4.0 (non-commercial, credit shown); no English translation of
+   the scrolls is openly licensed, so none is imported.
 3. **Text is not altered.** Markup is removed and whitespace collapsed;
    small capitals become capitals. Anything else the source sends that isn't
    verse text (headings, labels, notes) is dropped by a rule naming its
    markup, never by matching words, and the report lists what was dropped.
-   Unknown markup stops the build.
+   Unknown markup stops the build. Scrolls: the text is ETCBC's signs with
+   its editorial marks rendered as studybible-mcp did (`Bezalel.Data.Scrolls`);
+   what is left out is left out by a feature or sign-type rule and counted in
+   `out/scrolls_report.txt`; an unknown sign type stops the build.
 4. **Nothing built is committed** except the fixtures in
    `../test/fixtures/packs/` (`mix bezalel.data.fixtures`). `out/`, `work/`,
    `_build/` and `deps/` are gitignored; the parent repo's pre-commit hook
@@ -47,6 +52,8 @@ mix compile --warnings-as-errors
 mix test
 ```
 
-Re-run `mix bezalel.data.net` and `mix bezalel.data.fixtures` when the
-importer changes, and run core's suite (`cd .. && mix test`) when the
-fixture changes.
+Re-run `mix bezalel.data.net` / `mix bezalel.data.scrolls` and `mix
+bezalel.data.fixtures --pack <pack>` when an importer changes, and run
+core's suite (`cd .. && mix test`) when a fixture changes. Which Dead Sea
+Scrolls are imported is core's `Bezalel.Study.Ancient.Scrolls`: a work added
+there is imported by the next `mix bezalel.data.scrolls`.

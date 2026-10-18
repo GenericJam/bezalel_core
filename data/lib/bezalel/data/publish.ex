@@ -10,7 +10,7 @@ defmodule Bezalel.Data.Publish do
     the same `raw_sha256` and downloads nothing;
   - the published manifest, for the base packs' descriptions, licences,
     `required` and tables;
-  - the packs built here (today `translations`), uploaded under
+  - the packs built here (`translations`, `scrolls`), uploaded under
     `packs/v<N>/`.
 
   Everything here is pure; `mix bezalel.data.publish` does the network.
@@ -24,11 +24,21 @@ defmodule Bezalel.Data.Publish do
   @entry_keys ~w(name description required licence url compression size sha256 raw_size raw_sha256 tables)
   @checked ~w(url size sha256 raw_size raw_sha256)
 
-  @translations %{
-    "description" => "NET Bible English text",
-    "licence" =>
-      "NET Bible® copyright ©1996, 2019 Biblical Studies Press, L.L.C.: " <>
-        "free non-commercial use by permission (netbible.com/copyright)"
+  @built_here %{
+    "translations" => %{
+      "description" => "NET Bible English text",
+      "licence" =>
+        "NET Bible® copyright ©1996, 2019 Biblical Studies Press, L.L.C.: " <>
+          "free non-commercial use by permission (netbible.com/copyright)"
+    },
+    "scrolls" => %{
+      "description" =>
+        "Dead Sea Scrolls: major non-biblical works and the biblical manuscripts' readings " <>
+          "(Hebrew and Aramaic)",
+      "licence" =>
+        "ETCBC/dss (Martin G. Abegg Jr., James E. Bowley, Edward M. Cook): CC BY-NC 4.0 " <>
+          "(non-commercial; https://creativecommons.org/licenses/by-nc/4.0/)"
+    }
   }
 
   @doc "Where the packs are served from."
@@ -75,16 +85,21 @@ defmodule Bezalel.Data.Publish do
     end
   end
 
+  @doc "The names of the packs built here, in manifest order."
+  @spec built_here() :: [String.t()]
+  def built_here, do: ~w(translations scrolls)
+
   @doc """
-  The `translations` entry for a pack file: `zst` the compressed bytes'
-  `%{size, sha256}`, `raw` the SQLite file's, `tables` from its pack_meta.
+  The manifest entry of pack `name` (one of `built_here/0`) for a pack
+  file: `zst` the compressed bytes' `%{size, sha256}`, `raw` the SQLite
+  file's, `tables` from its pack_meta. Every pack built here is optional.
   """
-  @spec translations_entry(pos_integer(), map(), map(), [String.t()]) :: map()
-  def translations_entry(version, zst, raw, tables) do
-    Map.merge(@translations, %{
-      "name" => "translations",
+  @spec entry(String.t(), pos_integer(), map(), map(), [String.t()]) :: map()
+  def entry(name, version, zst, raw, tables) do
+    Map.merge(Map.fetch!(@built_here, name), %{
+      "name" => name,
       "required" => false,
-      "url" => "#{@public_base}/#{key(version, "translations")}",
+      "url" => "#{@public_base}/#{key(version, name)}",
       "compression" => "zstd",
       "size" => zst.size,
       "sha256" => zst.sha256,

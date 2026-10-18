@@ -2,18 +2,19 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
   @shortdoc "Publishes the packs built here as the next data version"
 
   @moduledoc """
-  Publishes the packs built here (`out/translations.sqlite`) as the next
-  data version, on top of the frozen base, without uploading the base.
+  Publishes the packs built here (`out/translations.sqlite`,
+  `out/scrolls.sqlite`) as the next data version, on top of the frozen base,
+  without uploading the base.
 
       mix bezalel.data.publish [--dry-run] [--version N]
 
   1. Reads the published manifest (data version N - 1) and checks that it
      lists the five base packs exactly as `base.json` pins them, and that
      each is still served at its v1 URL with its size.
-  2. Compresses `out/translations.sqlite` (`zstd -19`, as the base packs
-     were) to `out/translations.sqlite.zst` and uploads it to
-     `packs/v<N>/translations.sqlite.zst`. An object already at that key is
-     accepted only if byte-identical (an interrupted publish resumes);
+  2. Checks each pack was built from `pins.json`'s sources, compresses it
+     (`zstd -19`, as the base packs were) to `out/<pack>.sqlite.zst` and
+     uploads it to `packs/v<N>/<pack>.sqlite.zst`. An object already at that
+     key is accepted only if byte-identical (an interrupted publish resumes);
      anything else stops the publish.
   3. Writes the manifest (`Bezalel.Data.Publish`) to `out/manifest.json`
      and uploads it to `packs/manifest.json` last.
@@ -27,7 +28,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   use Mix.Task
 
-  alias Bezalel.Data.{Books, Download, Net, Pack, Publish}
+  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls}
 
   @bucket "bezalel-packs"
   @manifest_key "packs/manifest.json"
@@ -62,16 +63,22 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
         if(dry_run, do: " — dry run, nothing is uploaded", else: "")
     )
 
-    raw_path = "out/translations.sqlite"
-    {zst_path, zst, raw, tables} = compress!(raw_path)
-    entry = Publish.translations_entry(version, zst, raw, tables)
-    put_pack!(Publish.key(version, "translations"), zst_path, zst, dry_run)
+    entries =
+      for name <- Publish.built_here() do
+        {zst_path, zst, raw, tables} = compress!(name)
+        put_pack!(Publish.key(version, name), zst_path, zst, dry_run)
+        Publish.entry(name, version, zst, raw, tables)
+      end
 
     built =
-      File.stat!(raw_path, time: :posix).mtime |> DateTime.from_unix!() |> DateTime.to_iso8601()
+      Publish.built_here()
+      |> Enum.map(&File.stat!("out/#{&1}.sqlite", time: :posix).mtime)
+      |> Enum.max()
+      |> DateTime.from_unix!()
+      |> DateTime.to_iso8601()
 
     manifest =
-      Publish.manifest(base, base_entries, [entry],
+      Publish.manifest(base, base_entries, entries,
         version: version,
         built: built,
         core_commit: commit
@@ -126,10 +133,12 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     Mix.shell().info("  base #{name}: #{url} (#{size} bytes, unchanged)")
   end
 
-  defp compress!(raw_path) do
+  defp compress!(name) do
+    raw_path = "out/#{name}.sqlite"
+    unless File.regular?(raw_path), do: Mix.raise("#{raw_path} isn't built")
     meta = raw_path |> Pack.read("SELECT key, value FROM pack_meta") |> Map.new(&List.to_tuple/1)
-    if meta["pack"] != "translations", do: Mix.raise("#{raw_path} is not the translations pack")
-    check_source!(meta)
+    if meta["pack"] != name, do: Mix.raise("#{raw_path} is not the #{name} pack")
+    check_source!(name, meta)
 
     zst_path = raw_path <> ".zst"
 
@@ -143,8 +152,8 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
      %{size: byte_size(raw), sha256: Net.sha256(raw)}, String.split(meta["tables"])}
   end
 
-  # The pack must have been built from the pinned NET responses.
-  defp check_source!(meta) do
+  # The pack must have been built from the pinned sources.
+  defp check_source!("translations", meta) do
     books = Download.pin!("net")["books"]
 
     digest =
@@ -153,6 +162,17 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     if meta["net_sha256"] != digest do
       Mix.raise(
         "out/translations.sqlite wasn't built from pins.json's NET; run mix bezalel.data.net"
+      )
+    end
+  end
+
+  defp check_source!("scrolls", meta) do
+    pin = Download.pin!("dss")
+    digest = pin["files"] |> Enum.sort() |> Net.digest()
+
+    if meta["dss_sha256"] != digest or meta["dss_source"] != Scrolls.provenance(pin).source_url do
+      Mix.raise(
+        "out/scrolls.sqlite wasn't built from pins.json's ETCBC/dss; run mix bezalel.data.scrolls"
       )
     end
   end

@@ -70,7 +70,7 @@ defmodule Bezalel.Data.PublishTest do
 
   test "the translations entry points at the new version and is optional" do
     entry =
-      Publish.translations_entry(2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, [
+      Publish.entry("translations", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, [
         "translations",
         "translation_verses"
       ])
@@ -91,12 +91,30 @@ defmodule Bezalel.Data.PublishTest do
     assert entry["licence"] =~ "non-commercial"
   end
 
+  test "the scrolls entry is optional and carries the CC BY-NC licence; packs built here are both" do
+    entry =
+      Publish.entry("scrolls", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, ["t"])
+
+    assert %{
+             "name" => "scrolls",
+             "required" => false,
+             "url" => "https://bezalel.genericjam.com/packs/v2/scrolls.sqlite.zst"
+           } = entry
+
+    assert entry["licence"] =~ "CC BY-NC 4.0"
+    assert Publish.built_here() == ["translations", "scrolls"]
+
+    assert_raise KeyError, fn ->
+      Publish.entry("core", 2, %{size: 1, sha256: @sha}, %{size: 1, sha256: @sha}, [])
+    end
+  end
+
   describe "manifest/4" do
     setup do
       {:ok, [base_entry]} = Publish.base_entries(@base, @published)
 
       new =
-        Publish.translations_entry(2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, [
+        Publish.entry("translations", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, [
           "t"
         ])
 
