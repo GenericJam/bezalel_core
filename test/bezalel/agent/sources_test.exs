@@ -4,8 +4,7 @@ defmodule Bezalel.Agent.SourcesTest do
   # each marked cited when the answer links it.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Agent.Details
-  alias Bezalel.Agent.{Card, Reply}
+  alias Bezalel.Agent.{Card, Details, Reply}
   alias Bezalel.Library.Transcript
   alias Bezalel.Study.{Citation, Citations}
   alias Rho.Session
