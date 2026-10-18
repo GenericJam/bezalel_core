@@ -2,6 +2,7 @@ defmodule Bezalel.Study.Ancient.Passages do
   @moduledoc """
   Ancient-source passages as the two ancient tools show them: search folding,
   match-centred excerpts, line windows, typed biblical links and ⚠ notes,
+  each passage's `Source:` line (`Bezalel.Study.Citations.ancient/3`),
   caveats, tiers and sources.
 
   Ported from studybible-mcp's `tools.py` (`_fold_with_positions`,
@@ -11,7 +12,7 @@ defmodule Bezalel.Study.Ancient.Passages do
   Python's `casefold` that matter here (final sigma, ß, Greek symbol forms).
   """
 
-  alias Bezalel.Study.{Ancient, DB, Patterns, Preferences, Sources}
+  alias Bezalel.Study.{Ancient, Citation, Citations, DB, Patterns, Preferences, Sources}
   alias Bezalel.Study.Ancient.Notes
 
   @english_excerpt 1500
@@ -337,7 +338,9 @@ defmodule Bezalel.Study.Ancient.Passages do
 
   @doc """
   A passage as data: its heading parts, tag and tiers, the English and
-  original excerpts, notes, links and provenance.
+  original excerpts, notes, links, provenance and `citation` (the
+  passage's page: `Bezalel.Study.Citations.ancient/3`, an AI-translation
+  citation when the passage has no English).
 
   Options: `:query` (centres the excerpts), `:default_corpus`,
   `:include_original`, `:full_text`, `:note_cut`, `:window`, `:prefs` (a
@@ -382,7 +385,12 @@ defmodule Bezalel.Study.Ancient.Passages do
           verdicts or link["relation"] != "contrast",
           do: link(link)
         ),
-      source: source(row, corpus, default_corpus, language)
+      source: source(row, corpus, default_corpus, language),
+      citation:
+        Citations.ancient(row["work_key"], row["reference"],
+          source_url: row["source_url"],
+          english: english != nil
+        )
     }
   end
 
@@ -467,12 +475,14 @@ defmodule Bezalel.Study.Ancient.Passages do
   # --- Markdown -------------------------------------------------------------
 
   @doc """
-  The Markdown of `passages` after `header` lines: each passage's block
-  until the response budget, then the caveats, tiers and sources of the
-  passages shown. `cut.(passage, shown_count)` is the line printed when the
-  budget stops the list; `suffix` is appended to each heading. `prefs`
-  decide the caveats: each corpus's canon status with scripture labels on,
-  and its verdict (credited to studybible-mcp) with `editorial:verdicts` on.
+  The Markdown of `passages` after `header` lines, with the citations of
+  the passages it shows: each passage's block (its `Source:` line under
+  its text) until the response budget, then the caveats, tiers and
+  sources of the passages shown. `cut.(passage, shown_count)` is the line
+  printed when the budget stops the list; `suffix` is appended to each
+  heading. `prefs` decide the caveats: each corpus's canon status with
+  scripture labels on, and its verdict (credited to studybible-mcp) with
+  `editorial:verdicts` on.
   """
   @spec render(
           [String.t()],
@@ -482,7 +492,7 @@ defmodule Bezalel.Study.Ancient.Passages do
           (passage(), non_neg_integer() -> String.t()),
           String.t()
         ) ::
-          String.t()
+          {String.t(), [Citation.t()]}
   def render(header, passages, default_corpus, prefs, cut, suffix \\ "") do
     {lines, shown, _seen} =
       Enum.reduce_while(passages, {header, [], MapSet.new()}, fn passage, {lines, shown, seen} ->
@@ -495,7 +505,12 @@ defmodule Bezalel.Study.Ancient.Passages do
         end
       end)
 
-    (lines ++ closing(shown, default_corpus, prefs)) |> Enum.join("\n") |> String.trim_trailing()
+    markdown =
+      (lines ++ closing(shown, default_corpus, prefs))
+      |> Enum.join("\n")
+      |> String.trim_trailing()
+
+    {markdown, Enum.map(shown, & &1.citation)}
   end
 
   # Python len: code points, not graphemes.
@@ -509,7 +524,9 @@ defmodule Bezalel.Study.Ancient.Passages do
 
     {[heading(p, suffix)] ++
        if(p.tag == "", do: [], else: ["*#{p.tag}*"]) ++
-       editorial_heading(p) ++ text_lines(p) ++ notes ++ links ++ ["", "---", ""], seen}
+       editorial_heading(p) ++
+       text_lines(p) ++
+       ["", Citation.source_line(p.citation)] ++ notes ++ links ++ ["", "---", ""], seen}
   end
 
   defp heading(p, suffix) do

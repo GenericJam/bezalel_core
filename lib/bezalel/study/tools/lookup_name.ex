@@ -12,7 +12,7 @@ defmodule Bezalel.Study.Tools.LookupName do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Preferences}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Preferences}
 
   @max_limit 20
 
@@ -69,7 +69,19 @@ defmodule Bezalel.Study.Tools.LookupName do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
+  end
+
+  @doc "The citations of every entry a `result/1` shows, in order."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{entries: entries}), do: Enum.flat_map(entries, &sources(&1.entry, &1.acai))
+
+  # An entry's sources: its TIPNR entry (STEPBible's proper names) and its
+  # ACAI entity, if any.
+  defp sources(entry, acai) do
+    [Citations.proper_name(entry["name"])] ++
+      if(acai, do: [Citations.acai(acai["id"], acai["name"])], else: [])
   end
 
   @typedoc """
@@ -206,7 +218,9 @@ defmodule Bezalel.Study.Tools.LookupName do
         ) ++
         ["**Type**: #{Format.title(entry["type"] || "unknown")}", ""] ++
         if(Format.present?(entry["description"]), do: [entry["description"], ""], else: []) ++
-        acai_lines(entry, acai) ++ relationships(entry) ++ key_references(entry),
+        acai_lines(entry, acai) ++
+        relationships(entry) ++
+        key_references(entry) ++ [Citation.source_line(sources(entry, acai)), ""],
       "\n"
     )
   end

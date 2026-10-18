@@ -4,7 +4,7 @@ defmodule Bezalel.Study.Tools.GetCrossReferencesTest do
   # TSK cross reference from their chapters.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.Preferences
+  alias Bezalel.Study.{Citation, Preferences}
   alias Bezalel.Study.Tools.GetCrossReferences
 
   # studybible-mcp's default was four; the ported cases keep it as the
@@ -29,8 +29,15 @@ defmodule Bezalel.Study.Tools.GetCrossReferencesTest do
     assert text =~
              ~r/\A## Cross-References for John 3:16\n\n_4 reference\(s\) returned \(cap limit=4;/
 
-    assert text =~ "Source: TSK = Treasury of Scripture Knowledge._"
-    assert text =~ "### TSK — 4\n- Rom 5:8  *(votes: 986)*\n"
+    assert text =~
+             "TSK = Treasury of Scripture Knowledge._\n" <>
+               "Source: [John 3:16 cross references](https://www.openbible.info/labs/cross-references/search?q=John+3%3A16)\n\n"
+
+    refute text =~ "Source: TSK"
+
+    assert text =~
+             "### TSK — 4\n- Rom 5:8  *(votes: 986)*\n" <>
+               "  Source: [Romans 5:8](https://netbible.org/bible/Romans+5:8)\n"
 
     assert targets(text) == [
              {"Rom.5.8", 986},
@@ -38,6 +45,35 @@ defmodule Bezalel.Study.Tools.GetCrossReferencesTest do
              {"Rom.8.32", 511},
              {"Jhn.3.15", 503}
            ]
+  end
+
+  test "the queried verse's TSK page and each target verse in the user's translation are the citations" do
+    assert {:ok, result} = GetCrossReferences.result(%{"reference" => "John 3:16"}, @four)
+
+    assert [
+             %Citation{
+               work: "tsk",
+               url: "https://www.openbible.info/labs/cross-references/search?q=John+3%3A16"
+             },
+             %Citation{work: "net", url: "https://netbible.org/bible/Romans+5:8"},
+             %Citation{work: "net", url: "https://netbible.org/bible/1+John+4:9"},
+             %Citation{work: "net"},
+             %Citation{work: "net", url: "https://netbible.org/bible/John+3:15"}
+           ] = GetCrossReferences.citations(result)
+
+    assert {:ok, bsb} =
+             GetCrossReferences.result(
+               %{"reference" => "John 3:16"},
+               Preferences.new(limit: 1, translation: "bsb")
+             )
+
+    assert [%Citation{work: "tsk"}, %Citation{url: "https://biblehub.com/romans/5-8.htm"}] =
+             GetCrossReferences.citations(bsb)
+
+    assert {:ok, {:details, _text, %{citations: [%Citation{work: "tsk"} | _]}}} =
+             GetCrossReferences.run(%{"reference" => "John 3:16"}, %{})
+
+    assert GetCrossReferences.citations(%{rows: []}) == []
   end
 
   test "the default cap is the user's limit: 8 by default, capped only by the rows there are" do
@@ -87,10 +123,30 @@ defmodule Bezalel.Study.Tools.GetCrossReferencesTest do
 
   test "a theme returns its curated chain" do
     text = ok(%{"theme" => "atonement"})
-    assert text =~ ~r/\A## Cross-References: atonement\n\n/
-    assert text =~ "- **Romans 3:25**: Propitiation by His blood\n"
+
+    assert text =~
+             ~r/\A## Cross-References: atonement\nSource: \[Thematic chains\]\(https:\/\/github\.com\/djayatillake\/studybible-mcp\)\n\n/
+
+    assert text =~
+             "- **Romans 3:25**: Propitiation by His blood\n" <>
+               "  Source: [Romans 3:25](https://netbible.org/bible/Romans+3:25)\n"
+
     assert text =~ "- **1 Peter 2:24**: Bore our sins in His body\n"
     assert ok(%{"theme" => "holy spirit"}) =~ "## Cross-References: holy spirit"
+
+    # A range is linked at its first verse, labelled as the chain gives it.
+    assert {:ok, result} = GetCrossReferences.result(%{"theme" => "salvation_by_grace"}, @four)
+
+    assert [
+             %Citation{work: "studybible"},
+             %Citation{work: "net", url: "https://netbible.org/bible/Genesis+15:6"},
+             %Citation{
+               work: "net",
+               label: "Romans 3:21-26",
+               url: "https://netbible.org/bible/Romans+3:21"
+             }
+             | _
+           ] = GetCrossReferences.citations(result)
   end
 
   test "no match, a bad source and no arguments" do

@@ -13,11 +13,15 @@ too unless this file says otherwise.
 
 - **Here:** the study tools (`Bezalel.Study.Tools.*`, `Rho.Tool` modules),
   pack access (`Bezalel.Study.DB`), reference parsing, the corpus registry,
-  the genre guidance and the system prompt; the study library's sources and
+  the genre guidance and the system prompt; the sources each result cites
+  (`Bezalel.Study.Citation`; every source URL is built in
+  `Bezalel.Study.Citations`, never in a tool); the study library's sources and
   licences (`Bezalel.Study.Credits`, which every app's credits page lays out;
   edit it with the phone app's `data/SOURCES.md`); the agent's surface: rho's loop
-  events folded into a reply's blocks and passage card (`Bezalel.Agent.Reply`,
-  `Bezalel.Agent.Card`, `Bezalel.Agent.Patterns`) and a conversation's
+  events folded into a reply's blocks, passage card and sources
+  (`Bezalel.Agent.Reply`, `Bezalel.Agent.Card`, `Bezalel.Agent.Patterns`; what
+  the session keeps of a tool's data, `Bezalel.Agent.keep_details/2`) and a
+  conversation's
   messages read off its rho session, with the branch moves behind Delete and
   Undo (`Bezalel.Library.Transcript`, `Bezalel.Library.Message`; no file I/O, the
   app reads and writes the file); materials (`Bezalel.Materials`: the record,

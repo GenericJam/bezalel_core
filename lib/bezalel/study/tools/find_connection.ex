@@ -6,13 +6,14 @@ defmodule Bezalel.Study.Tools.FindConnection do
 
   Ported from studybible-mcp's `handle_find_connection`, `graph_find_path`
   (a breadth-first search over every family edge, at most 15 steps),
-  `format_connection_path` and `mermaid_connection_path` (MIT). Same text;
-  an unknown person is an error. `result/1` returns the path as a list of
-  steps.
+  `format_connection_path` and `mermaid_connection_path` (MIT). Same text,
+  with a Theographic `Source:` line for the people (after the path, or under
+  the heading when there is none); an unknown person is an error.
+  `result/1` returns the path as a list of steps.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Graph}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Graph}
 
   @max_depth 15
 
@@ -55,7 +56,23 @@ defmodule Bezalel.Study.Tools.FindConnection do
 
   @impl true
   def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+    with {:ok, result} <- result(args),
+         do: Citations.details(render(result), result, citations(result))
+  end
+
+  @doc """
+  The Theographic citations of everyone a `result/1` shows: the path's
+  people in order, or the two people when there is no path.
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(result) do
+    people =
+      case result.steps do
+        [] -> [result.from, result.to]
+        [first | _] = steps -> [first.from | Enum.map(steps, & &1.to)]
+      end
+
+    people |> Enum.uniq_by(& &1.id) |> Enum.map(&Citations.person(&1.id, &1.name))
   end
 
   @typedoc """
@@ -207,18 +224,23 @@ defmodule Bezalel.Study.Tools.FindConnection do
 
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
-  def render(%{from: from, to: to, steps: []}) do
-    "## Connection: #{from.name} → #{to.name}\n\nNo family connection found in the Theographic database.\n"
+  def render(%{from: from, to: to, steps: []} = result) do
+    "## Connection: #{from.name} → #{to.name}\n\n#{Citation.source_line(citations(result))}\n\n" <>
+      "No family connection found in the Theographic database.\n"
   end
 
-  def render(%{from: from, to: to, steps: steps}) do
+  def render(%{from: from, to: to, steps: steps} = result) do
     lines =
       for step <- steps do
         relationship = step.relationship |> String.replace("_", " ") |> Format.title()
         "- #{step.from.name} → *#{relationship}* → #{step.to.name}"
       end
 
-    Enum.join(["## Connection: #{from.name} → #{to.name}\n" | lines] ++ [""], "\n") <>
+    Enum.join(
+      ["## Connection: #{from.name} → #{to.name}\n" | lines] ++
+        ["", Citation.source_line(citations(result)), ""],
+      "\n"
+    ) <>
       "\n### Relationship Diagram\n#{diagram(from.name, to.name, steps)}\n"
   end
 

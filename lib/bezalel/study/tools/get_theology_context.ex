@@ -26,10 +26,15 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
   `limit` and leave out the theologians they switched off
   (`Bezalel.Study.Sources`, `theology:<author>`): asking for one is an
   error, and the others' entries and themes are all there is.
+
+  Each entry's `Source:` line (`Bezalel.Study.Citations.theology/1`: its
+  stored URL, else the book it summarises, else studybible-mcp for a
+  synthesis note) takes the place of their `**Source**` and `**Source
+  URL**` lines, and `run/2` returns those citations as `details.citations`.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Preferences, Reference, Sources}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Preferences, Reference, Sources}
   require Args
 
   @provenance "*Provenance: these entries are original summaries of the named author's " <>
@@ -72,7 +77,7 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
     - Providence, God's sovereignty and human freedom, the problem of evil (Joseph, Daniel) — Lennox (themes: providence, divine_sovereignty_freedom)
     - Faithful witness in a hostile culture, Daniel — Lennox (theme: faithful_witness)
 
-    Each entry includes a Source URL when the source is freely available online: Owen's public-domain text (CCEL chapter pages; Monergism volume PDFs for the Exposition of Hebrews), Heiser's papers and Naked Bible podcast transcripts, and Burnett's article series. Stott, Lennox, and Bradley entries have no URL.
+    Each entry's Source line links the text when it is freely available online: Owen's public-domain text (CCEL chapter pages; Monergism volume PDFs for the Exposition of Hebrews), Heiser's papers and Naked Bible podcast transcripts, and Burnett's article series. Stott, Lennox, and Bradley entries cite the book instead.
 
     Query by verse reference, theme key, and/or author. For other authors, see
     `list_research_sources`.\
@@ -112,7 +117,8 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc """
@@ -128,6 +134,7 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
           source_work: String.t(),
           source_type: String.t(),
           url: String.t() | nil,
+          page_range: String.t() | nil,
           summary: String.t(),
           detail: String.t() | nil,
           matched_ref: String.t() | nil,
@@ -354,6 +361,7 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
       source_work: row["source_work"],
       source_type: row["source_type"],
       url: row["url"],
+      page_range: row["page_range"],
       summary: row["content_summary"],
       detail: row["content_detail"],
       matched_ref: row["matched_ref"],
@@ -406,23 +414,18 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
     header <> "\n\n" <> Enum.join(lines, "\n")
   end
 
+  defp citations(%{entries: entries}), do: Enum.map(entries, &cite/1)
+  defp citations(_themes), do: []
+
+  @doc "An entry's citation."
+  @spec cite(entry()) :: Citation.t()
+  def cite(entry), do: Citations.theology(entry)
+
   defp entry_lines(entry) do
-    author = Format.s(entry.source_author)
-    work = Format.s(entry.source_work)
-
-    source =
-      if author != "" and String.starts_with?(String.downcase(work), String.downcase(author)),
-        do: "*#{work}*",
-        else: "#{author} — *#{work}*"
-
-    source =
-      if Format.present?(entry.source_type), do: "#{source} (#{entry.source_type})", else: source
-
     heading =
       if Format.present?(entry.title), do: entry.title, else: Format.s(entry.chapter_or_episode)
 
-    ["### #{heading}", "**Source**: #{source}"] ++
-      field("**Source URL**", entry.url) ++
+    ["### #{heading}", Citation.source_line(cite(entry))] ++
       field("**Chapter/Episode**", entry.chapter_or_episode) ++
       field("**Matched Reference**", entry.matched_ref) ++
       field("**Themes**", Enum.join(entry.themes, ",")) ++

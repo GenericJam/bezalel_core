@@ -12,11 +12,14 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
   error with their "No study notes found" text; the pack's own absence is
   the pack error, in place of their "Aquifer data not available" message.
   `result/1` returns the notes untruncated. The note types the user
-  switched off (`Bezalel.Study.Sources`, `notes:<type>`) are left out.
+  switched off (`Bezalel.Study.Sources`, `notes:<type>`) are left out. Each
+  note carries a `Source:` line (`cite/1`: a Tyndale note on STEP Bible at
+  its first verse, an unfoldingWord note's book at Door43, an SIL note's
+  site), and `run/2` returns those citations as `details.citations`.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Preferences, Reference, Sources}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Preferences, Reference, Sources}
   require Args
 
   @books ~w(Gen Exo Lev Num Deu Jos Jdg Rut 1Sa 2Sa 1Ki 2Ki 1Ch 2Ch Ezr Neh Est Job Psa Pro
@@ -75,18 +78,22 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, Enum.map(result.notes, &cite/1))
   end
 
   @typedoc """
-  A note: its source (`resource_type`: study_notes, translation_notes_uw or
-  translation_notes_sil), heading and text, and the Aquifer references
-  ('43003016', book, chapter and verse numbers) it spans.
+  A note: its Aquifer content id, its source (`resource_type`: study_notes,
+  translation_notes_uw or translation_notes_sil), heading and text, its
+  book ('Jhn') and the Aquifer references ('43003016', book, chapter and
+  verse numbers) it spans.
   """
   @type note :: %{
+          content_id: String.t() | integer(),
           resource_type: String.t(),
           title: String.t(),
           content: String.t(),
+          book: String.t() | nil,
           start_ref: String.t() | nil,
           end_ref: String.t() | nil
         }
@@ -139,7 +146,7 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
     for row <- rows, Sources.enabled?(prefs, "notes:" <> row["resource_type"]), do: note(row)
   end
 
-  @columns "resource_type, title, content_plain, start_ref, end_ref"
+  @columns "content_id, resource_type, title, content_plain, book, start_ref, end_ref"
   @types "resource_type IN ('study_notes', 'translation_notes_uw', 'translation_notes_sil')"
 
   # With chapter_only, the chapter of any reference ('John 3:16' is John 3);
@@ -194,13 +201,26 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
 
   defp note(row) do
     %{
+      content_id: row["content_id"],
       resource_type: row["resource_type"],
       title: row["title"],
       content: row["content_plain"],
+      book: row["book"],
       start_ref: row["start_ref"],
       end_ref: row["end_ref"]
     }
   end
+
+  @doc "A note's citation, by its source."
+  @spec cite(note()) :: Citation.t()
+  def cite(%{resource_type: "study_notes"} = note),
+    do: Citations.tyndale_note(note.content_id, Format.s(note.title), note.start_ref)
+
+  def cite(%{resource_type: "translation_notes_uw"} = note),
+    do: Citations.uw_note(note.content_id, Format.s(note.title), note.book)
+
+  def cite(%{resource_type: "translation_notes_sil"} = note),
+    do: Citations.sil_note(note.content_id, Format.s(note.title))
 
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
@@ -225,6 +245,6 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
         do: [Format.truncate(note.content, 2000, "\n\n*[Note truncated]*")],
         else: []
 
-    title ++ content ++ [""]
+    title ++ content ++ ["", Citation.source_line(cite(note)), ""]
   end
 end

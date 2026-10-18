@@ -7,7 +7,7 @@ defmodule Bezalel.Study.Tools.ParseMorphology do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format}
 
   @fields [
     {"person", "Person"},
@@ -56,7 +56,8 @@ defmodule Bezalel.Study.Tools.ParseMorphology do
 
   @impl true
   def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+    with {:ok, result} <- result(args),
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc "The code as given and its morphology row."
@@ -83,7 +84,7 @@ defmodule Bezalel.Study.Tools.ParseMorphology do
 
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
-  def render(%{code: code, parsing: parsing}) do
+  def render(%{code: code, parsing: parsing} = result) do
     fields =
       for {key, label} <- @fields, Format.present?(parsing[key]), into: "" do
         "**#{label}**: #{parsing[key]}\n"
@@ -92,6 +93,12 @@ defmodule Bezalel.Study.Tools.ParseMorphology do
     "## Morphology: #{code}\n\n" <>
       "**Language**: #{Format.title(Format.s(parsing["language"]))}\n" <>
       "**Part of Speech**: #{Format.s(parsing["part_of_speech"])}\n" <>
-      fields <> "\n**Full Parsing**: #{Format.s(parsing["parsing"])}\n"
+      fields <>
+      "\n**Full Parsing**: #{Format.s(parsing["parsing"])}\n" <>
+      Citation.source_line(citations(result)) <> "\n"
   end
+
+  @doc "The source `render/1` shows: STEPBible's morphology codes, for the code."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{code: code}), do: [Citations.morphology(code)]
 end

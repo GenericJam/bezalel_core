@@ -11,12 +11,25 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
   means); a mention without a name shows its id instead of "None". A verse
   not in the pack still lists the verse's entities (there are none for a
   reference that isn't a verse). The verse is in the user's translation.
-  `result/1` returns the verse and the entities, each person with their
-  family.
+  A `Source:` line follows the verse (its translation and original), each
+  person (Theographic, with the family shown) and each list of places or
+  events. `result/1` returns the verse and the entities, each person with
+  their family.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Graph, Preferences, Reference, Translations, Verses}
+  alias Bezalel.Study.{
+    Args,
+    Citation,
+    Citations,
+    DB,
+    Format,
+    Graph,
+    Preferences,
+    Reference,
+    Translations,
+    Verses
+  }
 
   @impl true
   def name, do: "graph_enriched_search"
@@ -53,7 +66,55 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
+  end
+
+  @doc """
+  The citations of everything a `result/1` shows, in order: the verse (in
+  its translation, and its original on STEP), each person with the family
+  shown (Theographic), the places and the events.
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(result) do
+    verse_sources(result.verse, result.translation) ++
+      Enum.flat_map(result.people, &person_sources/1) ++
+      place_sources(result.places) ++ event_sources(result.events)
+  end
+
+  defp verse_sources(nil, _translation), do: []
+
+  defp verse_sources(view, translation) do
+    verse = {view.book, view.chapter, view.verse}
+    original = if view.original != "", do: [Citations.step(verse)], else: []
+
+    if view.translated,
+      do: [Citations.scripture(verse, translation) | original],
+      else: [Citations.step(verse)]
+  end
+
+  defp person_sources(%{id: id, name: name, family: family}) do
+    shown =
+      case family_shown(family) do
+        nil -> []
+        f -> f.parents ++ f.partners ++ f.children
+      end
+
+    [%{id: id, name: name} | shown]
+    |> Enum.uniq_by(& &1.id)
+    |> Enum.map(&Citations.person(&1.id, &1.name))
+  end
+
+  defp place_sources(places), do: Enum.map(places, &Citations.place(&1.id, &1.name))
+  defp event_sources(events), do: Enum.map(events, &Citations.event(&1.id, &1.name))
+
+  # The family a person's entry shows: parents, spouses and the first five
+  # children (`more`: how many children it leaves out).
+  defp family_shown(nil), do: nil
+
+  defp family_shown(family) do
+    {children, rest} = Enum.split(family.children, 5)
+    %{parents: family.parents, partners: family.partners, children: children, more: length(rest)}
   end
 
   @typedoc "A person mentioned, with the family of the person their name finds (nil if none)."
@@ -154,7 +215,7 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
         translation: translation,
         translation_note: note
       }) do
-    verse_lines = verse_lines(verse, note)
+    verse_lines = verse_lines(verse, note, translation)
 
     people_lines =
       if people == [],
@@ -165,8 +226,8 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
       ["## #{reference}#{Format.translation_label(List.wrap(verse), translation)}\n"] ++
         verse_lines ++
         people_lines ++
-        list("Places Mentioned", places) ++
-        list("Events", events) ++
+        list("Places Mentioned", places, place_sources(places)) ++
+        list("Events", events, event_sources(events)) ++
         if(people == [] and places == [] and events == [],
           do: ["*No entity data available for this verse in the Theographic database.*\n"],
           else: []
@@ -176,39 +237,45 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
   end
 
   # The verse's English (after the translation note, if any) and original.
-  defp verse_lines(nil, _note), do: []
+  defp verse_lines(nil, _note, _translation), do: []
 
-  defp verse_lines(view, note) do
+  defp verse_lines(view, note, translation) do
     if(note, do: ["*#{note}*\n"], else: []) ++
       [view.english, ""] ++
-      if(view.original != "", do: ["**Original**: #{view.original}", ""], else: [])
+      if(view.original != "", do: ["**Original**: #{view.original}", ""], else: []) ++
+      [Citation.source_line(verse_sources(view, translation)), ""]
   end
 
-  defp person_lines(%{name: name, family: family}) do
+  defp person_lines(%{name: name, family: family} = person) do
     parts =
-      if family do
-        {shown, rest} = Enum.split(family.children, 5)
-        more = if rest == [], do: "", else: " (+#{length(rest)} more)"
+      case family_shown(family) do
+        nil ->
+          []
 
-        Enum.reject(
-          [
-            family.parents != [] && "Parents: #{names(family.parents)}",
-            family.partners != [] && "Spouse: #{names(family.partners)}",
-            shown != [] && "Children: #{names(shown)}#{more}"
-          ],
-          &(&1 == false)
-        )
-      else
-        []
+        shown ->
+          more = if shown.more == 0, do: "", else: " (+#{shown.more} more)"
+
+          Enum.reject(
+            [
+              shown.parents != [] && "Parents: #{names(shown.parents)}",
+              shown.partners != [] && "Spouse: #{names(shown.partners)}",
+              shown.children != [] && "Children: #{names(shown.children)}#{more}"
+            ],
+            &(&1 == false)
+          )
       end
 
-    ["\n**#{name}**"] ++ if(parts == [], do: [], else: ["  " <> Enum.join(parts, " | ")])
+    ["\n**#{name}**"] ++
+      if(parts == [], do: [], else: ["  " <> Enum.join(parts, " | ")]) ++
+      ["  " <> Citation.source_line(person_sources(person))]
   end
 
   defp names(people), do: Enum.map_join(people, ", ", & &1.name)
 
-  defp list(_heading, []), do: []
+  defp list(_heading, [], _citations), do: []
 
-  defp list(heading, entities),
-    do: ["### #{heading}" | Enum.map(entities, &"- **#{&1.name}**")] ++ [""]
+  defp list(heading, entities, citations),
+    do:
+      ["### #{heading}" | Enum.map(entities, &"- **#{&1.name}**")] ++
+        ["", Citation.source_line(citations), ""]
 end

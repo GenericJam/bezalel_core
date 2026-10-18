@@ -8,11 +8,14 @@ defmodule Bezalel.Study.Tools.GetKeyTerms do
   error, in place of their "Aquifer data not available" message.
   `result/1` returns the entries untruncated. With the key terms switched
   off (`Bezalel.Study.Sources`, `notes:key_terms`) the tool is withheld, and
-  if called anyway answers with an error saying so.
+  if called anyway answers with an error saying so. Each entry carries a
+  `Source:` line, its heading in Aquifer's Markdown
+  (`Bezalel.Study.Citations.key_term/2`), and `run/2` returns those
+  citations as `details.citations`.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Aquifer, Args, Preferences, Sources}
+  alias Bezalel.Study.{Aquifer, Args, Citations, Preferences, Sources}
 
   @impl true
   def name, do: "get_key_terms"
@@ -51,7 +54,8 @@ defmodule Bezalel.Study.Tools.GetKeyTerms do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, Enum.map(result.terms, &cite/1))
   end
 
   @type t :: %{term: String.t(), terms: [Aquifer.article()]}
@@ -77,5 +81,9 @@ defmodule Bezalel.Study.Tools.GetKeyTerms do
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
   def render(%{term: term, terms: []}), do: "No key term found for '#{term}'."
-  def render(%{terms: terms}), do: Aquifer.render(terms, 3000, "\n\n*[Term entry truncated]*")
+
+  def render(%{terms: terms}),
+    do: Aquifer.render(terms, 3000, "\n\n*[Term entry truncated]*", &cite/1)
+
+  defp cite(term), do: Citations.key_term(to_string(term.content_id), term.title)
 end

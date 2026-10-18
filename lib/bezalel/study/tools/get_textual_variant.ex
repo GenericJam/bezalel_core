@@ -13,13 +13,28 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
   the tables are in the notes pack, so a missing pack is the pack error.
 
   `result/1` returns the cases and alignments as data.
+
+  Every witness, sourced statement and translation decision has its
+  `Source:` line (`citations/1`); a witness that is a Dead Sea Scroll (by
+  the scrolls pack's sigla and names, when it is on the device) also cites
+  its manuscript's page.
+
+  Changed for Bezalel: the dataset's "Heiser Literal Translation (HLT)"
+  decisions are an unpublished, AI-assisted draft, not Heiser's: they are
+  labelled so (their rationale's "the HLT" is "the draft") and cite the
+  verse's Hebrew, Greek and scroll witnesses to check them against
+  (`Bezalel.Study.Citations.hlt/2`).
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Patterns, Reference}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Patterns, Reference}
 
   # Cases that record how agreed text is read, not a manuscript variant.
   @interpretive_case_keys ["MT_preserved", "translation_choice"]
+
+  # The dataset's name for the unpublished draft, and what the tool calls it.
+  @draft_translation "Heiser Literal Translation"
+  @draft_label "Unpublished draft rendering (AI-assisted), not Heiser's"
 
   @impl true
   def name, do: "get_textual_variant"
@@ -73,7 +88,9 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
 
   @impl true
   def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+    with {:ok, result} <- result(args) do
+      Citations.details(render(result), result, citations(result))
+    end
   end
 
   @doc "Is a case with `case_key` translation/interpretation notes rather than a variant?"
@@ -93,8 +110,12 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
           citation: String.t() | nil,
           url: String.t() | nil,
           reading_key: String.t() | nil,
-          tradition: String.t() | nil
+          tradition: String.t() | nil,
+          scroll: scroll() | nil
         }
+
+  @typedoc "A Dead Sea Scroll witness's manuscript in the scrolls pack (`name` nil: no Leon Levy page)."
+  @type scroll :: %{siglum: String.t(), name: String.t() | nil}
 
   @type reading :: %{
           key: String.t(),
@@ -128,7 +149,12 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
           theological_interpretations: [statement()],
           author_claims: [statement()],
           translation_decisions: [
-            %{translation: String.t(), preferred_reading: String.t(), rationale: String.t() | nil}
+            %{
+              translation: String.t(),
+              draft: boolean(),
+              preferred_reading: String.t(),
+              rationale: String.t() | nil
+            }
           ]
         }
 
@@ -165,9 +191,69 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
            "takes one verse, e.g. 'Deuteronomy 32:8' or 'Hebrews 10:5'."}
 
       true ->
-        DB.with_pack(:notes, &record(&1, reference, normalized))
+        with {:ok, record} <- DB.with_pack(:notes, &record(&1, reference, normalized)),
+             do: {:ok, add_scrolls(record)}
     end
   end
+
+  # Each witness's Dead Sea Scroll manuscript (`scroll`), by its siglum or
+  # name in the scrolls pack ('4QDeutj', '1Q8 (1QIsa^b)'); none without
+  # the pack.
+  defp add_scrolls(%{cases: []} = record), do: record
+
+  defp add_scrolls(%{cases: cases} = record) do
+    manuscripts = scroll_manuscripts()
+
+    put = fn witnesses ->
+      Enum.map(witnesses, &Map.put(&1, :scroll, scroll(&1.witness, manuscripts)))
+    end
+
+    cases =
+      for c <- cases do
+        %{
+          c
+          | readings: Enum.map(c.readings, &%{&1 | witnesses: put.(&1.witnesses)}),
+            citation_evidence: put.(c.citation_evidence),
+            indirect_evidence: put.(c.indirect_evidence),
+            not_preserved_in: put.(c.not_preserved_in)
+        }
+      end
+
+    %{record | cases: cases}
+  end
+
+  defp scroll_manuscripts do
+    read = fn conn ->
+      with :ok <- DB.check_tables(conn, :scrolls, ["dss_biblical_manuscripts"]) do
+        conn |> DB.all("SELECT siglum, name FROM dss_biblical_manuscripts") |> scroll_index()
+      end
+    end
+
+    case DB.with_pack(:scrolls, read) do
+      {:ok, %{} = manuscripts} -> manuscripts
+      _missing -> %{}
+    end
+  end
+
+  # Each manuscript under its siglum and its name.
+  defp scroll_index(rows) do
+    for row <- rows,
+        key <- [row["siglum"], row["name"]],
+        Format.present?(key),
+        into: %{},
+        do: {scroll_key(key), %{siglum: row["siglum"], name: blank_nil(row["name"])}}
+  end
+
+  # 'Name' or 'Name (alias, note)': the name, then the parenthesis's first word.
+  defp scroll(witness, manuscripts) do
+    [main | rest] = String.split(witness, " (", parts: 2)
+    aside = Enum.map(rest, &(&1 |> String.split([")", " ", ","]) |> hd()))
+    Enum.find_value([main | aside], &manuscripts[scroll_key(&1)])
+  end
+
+  defp scroll_key(text), do: text |> String.replace("^", "") |> String.trim() |> String.downcase()
+
+  defp blank_nil(value), do: if(Format.present?(value), do: value)
 
   defp record(conn, reference, normalized) do
     quotations = quotations(conn, normalized)
@@ -314,13 +400,7 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
           """,
           [id]
         )
-        |> Enum.map(
-          &%{
-            translation: &1["translation"],
-            preferred_reading: &1["preferred_reading"],
-            rationale: &1["rationale"]
-          }
-        )
+        |> Enum.map(&decision/1)
     }
   end
 
@@ -346,6 +426,28 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
     }
   end
 
+  defp decision(row) do
+    draft = String.starts_with?(row["translation"] || "", @draft_translation)
+
+    %{
+      translation: if(draft, do: @draft_label, else: row["translation"]),
+      draft: draft,
+      preferred_reading: row["preferred_reading"],
+      rationale: if(draft, do: undraft(row["rationale"]), else: row["rationale"])
+    }
+  end
+
+  # The dataset's rationales call the draft "the HLT".
+  defp undraft(nil), do: nil
+
+  defp undraft(text),
+    do:
+      String.replace(
+        text,
+        ["the HLT", "The HLT", "HLT"],
+        &if(&1 == "the HLT", do: "the draft", else: "The draft")
+      )
+
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
   def render(%{reference: reference, cases: [], quotations: []}) do
@@ -360,11 +462,7 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
         do: "# Translation and interpretation notes for #{reference}",
         else: "# Textual variant record for #{reference}"
 
-    shown =
-      Enum.reduce(variants, %{}, fn c, acc ->
-        readings = MapSet.new(c.readings, &{&1.text, &1.original_text})
-        Map.update(acc, c.reference, readings, &MapSet.union(&1, readings))
-      end)
+    shown = shown(variants)
 
     lines =
       [title, ""] ++
@@ -373,6 +471,92 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
         quotation_lines(quotations)
 
     lines |> Enum.join("\n") |> String.trim_trailing()
+  end
+
+  @doc """
+  The citations of every witness, sourced statement and translation
+  decision `render/1` shows, in its order.
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{cases: cases}) do
+    {interpretive, variants} = Enum.split_with(cases, &(&1.kind == :interpretive))
+    shown = shown(variants)
+
+    Enum.flat_map(variants, fn c ->
+      (Enum.flat_map(c.readings, & &1.witnesses) ++ c.citation_evidence ++ c.indirect_evidence)
+      |> Enum.flat_map(&witness_citations/1)
+      |> Kernel.++(interpretation_citations(c))
+    end) ++
+      Enum.flat_map(interpretive, fn c ->
+        (Enum.flat_map(texts(c, shown[c.reference]), & &1.witnesses) ++ c.citation_evidence)
+        |> Enum.flat_map(&witness_citations/1)
+        |> Kernel.++(interpretation_citations(c))
+      end)
+  end
+
+  # The readings each verse's variants print, which its notes then skip.
+  defp shown(variants) do
+    Enum.reduce(variants, %{}, fn c, acc ->
+      readings = MapSet.new(c.readings, &{&1.text, &1.original_text})
+      Map.update(acc, c.reference, readings, &MapSet.union(&1, readings))
+    end)
+  end
+
+  defp texts(c, shown) do
+    Enum.reject(
+      c.readings,
+      &MapSet.member?(shown || MapSet.new(), {&1.text, &1.original_text})
+    )
+  end
+
+  defp interpretation_citations(c) do
+    Enum.flat_map(c.critical_judgments, &stored/1) ++
+      Enum.flat_map(c.translation_decisions, &decision_citations(&1, c)) ++
+      Enum.flat_map(c.author_claims, &stored/1) ++
+      Enum.flat_map(c.theological_interpretations, &stored/1)
+  end
+
+  # A witness's stored source, and its manuscript's page for a Dead Sea Scroll.
+  defp witness_citations(w), do: stored(w) ++ scroll_citations(w)
+
+  defp scroll_citations(%{scroll: %{siglum: siglum, name: name}}) do
+    label =
+      if name == nil or String.downcase(name) == String.downcase(siglum),
+        do: name || siglum,
+        else: "#{siglum} (#{name})"
+
+    [Citations.dss_manuscript(siglum, label, leon_levy: name != nil)]
+  end
+
+  defp scroll_citations(_witness), do: []
+
+  # A statement's or witness's stored citation and URL.
+  defp stored(item) do
+    cond do
+      Format.present?(item.citation) -> [Citations.textual(item.citation, item.url)]
+      Format.present?(item.url) -> [Citations.textual(item.url, item.url)]
+      true -> []
+    end
+  end
+
+  # A draft rendering cites the verse's originals and its scroll witnesses.
+  defp decision_citations(%{draft: true}, c) do
+    scrolls =
+      c.readings
+      |> Enum.flat_map(& &1.witnesses)
+      |> Enum.flat_map(&scroll_citations/1)
+      |> Citations.dedupe()
+
+    [Citations.hlt(c.reference, scrolls)]
+  end
+
+  defp decision_citations(_decision, _c), do: []
+
+  defp source_lines(citations) do
+    case Citation.source_line(citations) do
+      "" -> []
+      line -> ["  - " <> line]
+    end
   end
 
   defp variant_lines(c) do
@@ -439,11 +623,7 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
           "*Not manuscript evidence: these notes record how the verse is read and " <>
             "translated. The textual evidence at this verse is in the variant record above.*"
 
-    texts =
-      for reading <- c.readings,
-          not MapSet.member?(shown || MapSet.new(), {reading.text, reading.original_text}),
-          line <- text_lines(reading),
-          do: line
+    texts = Enum.flat_map(texts(c, shown), &text_lines/1)
 
     [
       "## Translation and interpretation notes at #{c.reference}",
@@ -462,7 +642,8 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
   defp agreeing_lines([]), do: []
 
   defp agreeing_lines(witnesses) do
-    ["\n**Witnesses agreeing with this text:** " <> Enum.map_join(witnesses, ", ", &dated/1)]
+    ["\n**Witnesses agreeing with this text:** " <> Enum.map_join(witnesses, ", ", &dated/1)] ++
+      source_lines(Enum.flat_map(witnesses, &witness_citations/1))
   end
 
   defp dated(w), do: if(Format.present?(w.date), do: "#{w.witness} (#{w.date})", else: w.witness)
@@ -503,12 +684,7 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
         if(note != "", do: " — #{note}", else: "") <>
         if(Format.present?(w.support), do: " (dataset label: `#{w.support}`)", else: "")
 
-    [line] ++ source_lines(w)
-  end
-
-  defp source_lines(item) do
-    if(Format.present?(item.citation), do: ["  - Citation: #{item.citation}"], else: []) ++
-      if Format.present?(item.url), do: ["  - Source: #{item.url}"], else: []
+    [line] ++ source_lines(witness_citations(w))
   end
 
   defp interpretation_lines(c) do
@@ -520,10 +696,11 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
       ) ++
       section(c.translation_decisions, "### Translation decisions", fn d ->
         ["- **#{d.translation}:** #{d.preferred_reading}"] ++
-          if Format.present?(d.rationale), do: ["  - Rationale: #{d.rationale}"], else: []
+          if(Format.present?(d.rationale), do: ["  - Rationale: #{d.rationale}"], else: []) ++
+          source_lines(decision_citations(d, c))
       end) ++
       section(c.author_claims, "### Author-specific claims", fn claim ->
-        ["- **#{claim.attribution}.** #{claim.text}" | source_lines(claim)]
+        ["- **#{claim.attribution}.** #{claim.text}" | source_lines(stored(claim))]
       end) ++
       section(c.theological_interpretations, "### Theological interpretations", &sourced/1)
   end
@@ -533,7 +710,7 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
 
   defp sourced(item) do
     attribution = if Format.present?(item.attribution), do: item.attribution, else: "Unattributed"
-    ["- **Attribution: #{attribution}.** #{item.text}" | source_lines(item)]
+    ["- **Attribution: #{attribution}.** #{item.text}" | source_lines(stored(item))]
   end
 
   defp quotation_lines([]), do: []

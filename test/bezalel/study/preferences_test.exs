@@ -165,12 +165,11 @@ defmodule Bezalel.Study.PreferencesTest do
           do: name
     end
 
-    test "the fixed part: purpose, provenance rules and the NET labelling rule" do
+    test "the fixed part: purpose, provenance rules and every tool" do
       fixed = Prompt.fixed(%Preferences{})
       assert fixed =~ "companion for studying the Bible"
       assert fixed =~ "Say where each claim comes from"
       assert fixed =~ "Don't invent"
-      assert fixed =~ "[NET](http://netbible.org)"
       assert Enum.sort(tools_named(fixed)) == Enum.sort(@names)
     end
 
@@ -265,11 +264,15 @@ defmodule Bezalel.Study.PreferencesCurrentTest do
 
     assert result.translation.key == "bsb"
     assert text =~ "## Genre:"
+    assert Enum.any?(result.citations, &(&1.url == "https://biblehub.com/exodus/31-3.htm"))
+    assert Enum.any?(result.citations, &(&1.work == "fee_stuart"))
 
     assert {:ok, {:details, default, other}} =
              LookupVerse.run(%{"reference" => "Exodus 31:3"}, %{session_id: "other"})
 
     assert other.translation.key == "net"
     refute default =~ "## Genre:"
+    assert Enum.any?(other.citations, &(&1.url == "https://netbible.org/bible/Exodus+31:3"))
+    refute Enum.any?(other.citations, &(&1.work == "fee_stuart"))
   end
 end

@@ -21,6 +21,8 @@ defmodule Bezalel.Study.Tools.LookupVerse do
 
   alias Bezalel.Study.{
     Args,
+    Citation,
+    Citations,
     DB,
     Format,
     Hermeneutics,
@@ -103,7 +105,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   @impl true
   def run(args, ctx) do
     with {:ok, result} <- result(args, Preferences.current(ctx)),
-         do: {:ok, {:details, render(result), result}}
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc """
@@ -438,7 +440,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
           include_morphology: result.include_morphology,
           include_words: result.single or result.include_morphology,
           heading_note: if(plain and index == 0, do: label, else: "")
-        )
+        ) <> source(verse_citations(view, result))
       end)
 
     text =
@@ -466,8 +468,49 @@ defmodule Bezalel.Study.Tools.LookupVerse do
 
   defp genre(genre) do
     "\n\n---\nGenre guidance after Fee & Stuart, *How to Read the Bible for All Its Worth* " <>
-      "(evangelical):\n\n" <> Hermeneutics.format_guidance(genre)
+      "(evangelical):\n\n" <>
+      Hermeneutics.format_guidance(genre) <> "\n\n" <> Citation.source_line(genre_citation(genre))
   end
+
+  @doc """
+  The sources `render/1` shows, in its order (a `Source:` line under each
+  verse): each verse in the quoted translation (unless only STEPBible's
+  gloss stands in for it) and its original on STEP Bible, then Fee &
+  Stuart when the genre guidance is shown.
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(result) do
+    Enum.flat_map(result.verses, &verse_citations(&1, result)) ++
+      if(result.genre_guidance && result.genre, do: [genre_citation(result.genre)], else: [])
+  end
+
+  # A verse's sources: the translation's verse page when its text is the
+  # translation's, and the Hebrew or Greek on STEP when the original (or
+  # STEPBible's gloss, standing in for the English) is shown.
+  defp verse_citations(view, result) do
+    english =
+      if view.translated, do: [Citations.scripture(view.reference, result.translation)], else: []
+
+    original =
+      if result.include_original or not view.translated,
+        do: [Citations.step(view.reference)],
+        else: []
+
+    english ++ original
+  end
+
+  defp genre_citation(genre) do
+    name =
+      case List.keyfind(Hermeneutics.guidelines(), genre, 0) do
+        {_, %{name: name}} -> name
+        nil -> genre
+      end
+
+    Citations.fee_stuart(name)
+  end
+
+  defp source([]), do: ""
+  defp source(citations), do: Citation.source_line(citations) <> "\n"
 
   defp torah_weave_hint(%{hints: %{torah_weave: false}}), do: ""
 

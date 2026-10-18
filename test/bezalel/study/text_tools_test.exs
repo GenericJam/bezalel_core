@@ -7,13 +7,18 @@ defmodule Bezalel.Study.TextToolsTest do
   # EXTRA_VERSES / LXX_EXTRA).
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.Preferences
+  alias Bezalel.Study.{Citation, Preferences}
   alias Bezalel.Study.Tools.{CompareBiblicalVersions, GetTextualVariant, GetTorahWeave}
 
-  defp ok(tool, args) do
-    assert {:ok, text} = tool.run(args, %{})
-    text
+  defp ok(tool, args), do: tool |> cited(args) |> elem(0)
+
+  # The Markdown and the citations a tool returns with it.
+  defp cited(tool, args) do
+    assert {:ok, {:details, text, %{citations: citations}}} = tool.run(args, %{})
+    {text, citations}
   end
+
+  @leon_levy "https://www.deadseascrolls.org.il/explore-the-archive/manuscript/"
 
   defp error(tool, args) do
     assert {:error, text} = tool.run(args, %{})
@@ -85,6 +90,17 @@ defmodule Bezalel.Study.TextToolsTest do
 
       assert error(GetTorahWeave, %{"reference" => ""}) ==
                "Please provide a Bible reference in Genesis–Deuteronomy."
+    end
+
+    test "each unit cites its page at chaver.com" do
+      {text, citations} = cited(GetTorahWeave, %{"reference" => "Genesis 1:1"})
+      url = "https://chaver.com/torah-weave/Genesis/genesis-unit-1/genesis-unit-1"
+
+      assert section(text, ~s[### Unit 1 · "Creation" (Genesis 1:1-2:3)]) =~
+               "\nSource: [Genesis unit 1: Creation](#{url})\n"
+
+      assert [%Citation{work: "torah_weave", url: ^url}] = citations
+      assert text =~ "*Source: Moshe Kline, Woven Torah hypothesis (chaver.com, CC BY 4.0)*"
     end
   end
 
@@ -186,6 +202,51 @@ defmodule Bezalel.Study.TextToolsTest do
 
       assert error(GetTextualVariant, %{"reference" => " "}) ==
                "Please provide a verse reference (OT or NT)."
+    end
+
+    test "the HLT decisions are an unpublished AI-assisted draft citing the originals, never Heiser's" do
+      {text, citations} = cited(GetTextualVariant, %{"reference" => "Deuteronomy 32:8"})
+      deutj = @leon_levy <> "4Q37-1"
+
+      decisions = section(text, "### Translation decisions")
+
+      assert decisions =~
+               "- **Unpublished draft rendering (AI-assisted), not Heiser's:** " <>
+                 "according to the number of the sons of God"
+
+      assert decisions =~
+               "  - Source: unpublished draft rendering (AI-assisted), not Heiser's; original: " <>
+                 "[Hebrew (MT)](https://www.stepbible.org/?q=version=THOT@reference=Deu.32.8), " <>
+                 "[Greek (LXX)](https://www.stepbible.org/?q=version=LXX@reference=Deu.32.8), " <>
+                 "[4Q37 (4QDeutj)](#{deutj})"
+
+      assert [%Citation{translation: :unpublished_draft, url: nil, original: original}] =
+               Enum.filter(citations, &(&1.work == "hlt"))
+
+      assert Enum.map(original, & &1.label) == ["Hebrew (MT)", "Greek (LXX)", "4Q37 (4QDeutj)"]
+
+      # The scroll witness itself cites its manuscript.
+      assert section(text, "#### DSS_4QDeutj") =~
+               "- **4QDeutj** (~150-100 BCE) (dataset label: `supports_variant`)\n" <>
+                 "  - Source: [4Q37 (4QDeutj)](#{deutj})"
+
+      assert %Citation{translation: :assistant} = Enum.find(citations, &(&1.url == deutj))
+
+      {:ok, %{cases: [deu]}} = GetTextualVariant.result(%{"reference" => "Deuteronomy 32:8"})
+
+      assert [%{draft: true, translation: "Unpublished draft rendering" <> _}] =
+               deu.translation_decisions
+
+      # Nowhere is the draft Heiser's, nor "the HLT" (its rationales' name for it).
+      for reference <- ["Deuteronomy 32:8", "Job 38:7", "Psalm 82:1", "Psalm 40:6", "Daniel 7:13"] do
+        text = ok(GetTextualVariant, %{"reference" => reference})
+        refute text =~ "Heiser Literal Translation", reference
+        refute text =~ "HLT", reference
+        assert text =~ "not Heiser's:**", reference
+      end
+
+      assert ok(GetTextualVariant, %{"reference" => "Job 38:7"}) =~
+               "  - Rationale: The draft makes"
     end
   end
 
@@ -417,6 +478,32 @@ defmodule Bezalel.Study.TextToolsTest do
 
       {:ok, short} = CompareBiblicalVersions.result(%{"reference" => "Psalm 82"})
       assert short.cap_note == ""
+    end
+
+    test "each row cites its edition: the MT and LXX on STEP, Brenton at eBible" do
+      {text, citations} = cited(CompareBiblicalVersions, %{"reference" => "Daniel 7:13"})
+      step = "https://www.stepbible.org/?q=version="
+      mt = step <> "THOT@reference=Dan.7.13"
+      lxx = step <> "LXX@reference=Dan.7.13"
+      brenton = "https://ebible.org/eng-Brenton/DAG07.htm#V13"
+
+      assert section(text, "#### MT STEPBible TAHOT / Westminster Leningrad Codex · Dan.7.13") =~
+               "\nSource: [Daniel 7:13 (Hebrew)](#{mt})\n"
+
+      # The Old Greek has no English here: any English is the assistant's.
+      assert section(text, "#### LXX Rahlfs Septuagint (1935), Old Greek · Dan.7.13") =~
+               "\nSource: [Daniel 7:13 (LXX)](#{lxx}) (original text: any English you give for it is your own"
+
+      assert section(text, "#### LXX Rahlfs Septuagint (1935), Theodotion · Dan.7.13") =~
+               "\nSource: [Daniel 7:13 (LXX)](#{lxx}) · [Daniel 7:13 (Brenton)](#{brenton})\n"
+
+      assert [
+               %Citation{work: "step", url: ^mt},
+               %Citation{work: "lxx", url: ^lxx, translation: :assistant},
+               %Citation{work: "brenton", url: ^brenton}
+             ] = citations
+
+      assert text =~ "**Sources**\n- MT STEPBible TAHOT"
     end
   end
 end

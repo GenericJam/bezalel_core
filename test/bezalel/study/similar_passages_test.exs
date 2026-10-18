@@ -5,7 +5,7 @@ defmodule Bezalel.Study.Tools.FindSimilarPassagesTest do
   # computed them.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.Preferences
+  alias Bezalel.Study.{Citation, Preferences}
   alias Bezalel.Study.Tools.FindSimilarPassages
 
   # studybible-mcp's default of four, and the BSB the vectors were computed from.
@@ -54,9 +54,39 @@ defmodule Bezalel.Study.Tools.FindSimilarPassagesTest do
     refute first =~ "⚡ **Genre**"
 
     [_, ezekiel] = String.split(ok(%{"reference" => "Psalm 22:18"}), "### 3. ")
-    preview = ezekiel |> String.split("\n\n") |> Enum.at(2)
+
+    [preview, source] =
+      ezekiel |> String.split("\n\n") |> Enum.at(2) |> String.split("\nSource: ")
+
     assert String.ends_with?(preview, "...")
     assert String.length(preview) == 503
+    # The Source line cites the verses whose text is shown, not the whole passage.
+    assert String.starts_with?(source, "[Ezekiel 27:1](https://biblehub.com/ezekiel/27-1.htm) · ")
+    refute source =~ "27-36.htm"
+  end
+
+  test "the source verse and each passage's verses are cited under them, in order" do
+    assert {:ok, result} = FindSimilarPassages.result(%{"reference" => "Psalm 22:18"}, @prefs)
+    text = FindSimilarPassages.render(result)
+
+    assert [
+             %Citation{work: "bsb", url: "https://biblehub.com/psalms/22-18.htm"} = psalm,
+             %Citation{work: "bsb", url: "https://biblehub.com/isaiah/3-18.htm"} | _
+           ] = citations = FindSimilarPassages.citations(result)
+
+    assert text =~ "clothing.\n" <> Citation.source_line(psalm) <> "\n\n---"
+
+    john = Enum.filter(citations, &String.starts_with?(&1.url, "https://biblehub.com/john/"))
+
+    assert Enum.map(john, & &1.url) ==
+             for(v <- 23..25, do: "https://biblehub.com/john/19-#{v}.htm")
+
+    assert text =~ "\n" <> Citation.source_line(john) <> "\n\n*(3 verses in this passage)*"
+
+    assert {:ok, {:details, _text, %{citations: [%Citation{url: net} | _]}}} =
+             FindSimilarPassages.run(%{"reference" => "John 3:16"}, %{})
+
+    assert net == "https://netbible.org/bible/John+3:16"
   end
 
   test "a verse not in the pack is not replaced by a neighbour" do

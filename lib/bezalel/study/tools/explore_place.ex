@@ -6,13 +6,14 @@ defmodule Bezalel.Study.Tools.ExplorePlace do
 
   Ported from studybible-mcp's `handle_explore_place`, `graph_find_place`,
   `graph_get_place_events`, `graph_get_place_people`,
-  `format_place_history` and `mermaid_place_network` (MIT). Same text; an
-  unknown place is an error. `result/1` returns the place with its events
-  and people.
+  `format_place_history` and `mermaid_place_network` (MIT). Same text,
+  with a Theographic `Source:` line under the place and under each list of
+  events or people; an unknown place is an error. `result/1` returns the
+  place with its events and people.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Graph}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Graph}
 
   @impl true
   def name, do: "explore_place"
@@ -50,8 +51,19 @@ defmodule Bezalel.Study.Tools.ExplorePlace do
 
   @impl true
   def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+    with {:ok, result} <- result(args),
+         do: Citations.details(render(result), result, citations(result))
   end
+
+  @doc "The Theographic citations of the place and every event and person a `result/1` shows."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{place: place, events: events, born_here: born, died_here: died}) do
+    [place_source(place)] ++ event_sources(events) ++ people_sources(born) ++ people_sources(died)
+  end
+
+  defp place_source(place), do: Citations.place(place.id, place.name)
+  defp event_sources(events), do: Enum.map(events, &Citations.event(&1.id, &1.title))
+  defp people_sources(people), do: Enum.map(people, &Citations.person(&1.id, &1.name))
 
   @typedoc "An event at the place: `start_year` negative for BC, nil when unknown."
   @type event :: %{id: String.t(), title: String.t(), start_year: integer() | nil}
@@ -156,10 +168,11 @@ defmodule Bezalel.Study.Tools.ExplorePlace do
       place_lines(place) ++
         section(
           "Events at this location",
-          Enum.map(events, &"- **#{&1.title}**#{Graph.year_suffix(&1.start_year)}")
+          Enum.map(events, &"- **#{&1.title}**#{Graph.year_suffix(&1.start_year)}"),
+          event_sources(events)
         ) ++
-        section("Born here", Enum.map(born, &"- #{&1.name}")) ++
-        section("Died here", Enum.map(died, &"- #{&1.name}")) ++
+        section("Born here", Enum.map(born, &"- #{&1.name}"), people_sources(born)) ++
+        section("Died here", Enum.map(died, &"- #{&1.name}"), people_sources(died)) ++
         if(events == [] and born == [] and died == [],
           do: ["No detailed history found in the Theographic database.\n"],
           else: []
@@ -178,15 +191,17 @@ defmodule Bezalel.Study.Tools.ExplorePlace do
       if(present_number?(place.latitude) and present_number?(place.longitude),
         do: ["**Coordinates**: #{decimals(place.latitude)}, #{decimals(place.longitude)}"],
         else: []
-      ) ++ [""]
+      ) ++ [Citation.source_line(place_source(place)), ""]
   end
 
   defp present_number?(value), do: is_number(value) and value != 0
 
   defp decimals(value), do: :erlang.float_to_binary(value * 1.0, decimals: 4)
 
-  defp section(_heading, []), do: []
-  defp section(heading, lines), do: ["### #{heading}" | lines] ++ [""]
+  defp section(_heading, [], _citations), do: []
+
+  defp section(heading, lines, citations),
+    do: ["### #{heading}" | lines] ++ ["", Citation.source_line(citations), ""]
 
   defp diagram(%{place: place, events: events, born_here: born, died_here: died}) do
     pid = Graph.mermaid_id(place.name)

@@ -1,5 +1,5 @@
 defmodule Bezalel.Agent.CardTest do
-  # The passage card's translation label, from a tool's data.
+  # The passage card's translation label and links, from a tool's data.
   use ExUnit.Case, async: true
 
   alias Bezalel.Agent.Card
@@ -8,7 +8,14 @@ defmodule Bezalel.Agent.CardTest do
   @bsb %{key: "bsb", abbreviation: "BSB", url: "https://bereanbible.com"}
 
   defp verse(n, translated?) do
-    %{chapter: 31, verse: n, english: "verse #{n}", words: [], translated: translated?}
+    %{
+      reference: "Exo.31.#{n}",
+      chapter: 31,
+      verse: n,
+      english: "verse #{n}",
+      words: [],
+      translated: translated?
+    }
   end
 
   defp lookup(verses, translation) do
@@ -20,13 +27,25 @@ defmodule Bezalel.Agent.CardTest do
     })
   end
 
-  test "labelled with the translation when any verse shown is its text, as the tool labels it" do
+  test "the NET label links the first quoted verse's page on netbible.org" do
     card = lookup([verse(2, false), verse(3, true)], @net)
     assert card["version"] == "NET"
-    assert card["version_url"] == "http://netbible.org"
+    assert card["version_url"] == "https://netbible.org/bible/Exodus+31:3"
   end
 
-  test "the BSB is labelled, with no link" do
+  test "each quoted verse has its page in its translation; a gloss-only verse has none" do
+    card = lookup([verse(2, false), verse(3, true)], @net)
+
+    assert Enum.map(card["verses"], & &1["url"]) == [
+             nil,
+             "https://netbible.org/bible/Exodus+31:3"
+           ]
+
+    bsb = lookup([verse(2, true)], @bsb)
+    assert [%{"url" => "https://biblehub.com/exodus/31-2.htm"}] = bsb["verses"]
+  end
+
+  test "the BSB is labelled, with no version link" do
     card = lookup([verse(2, true)], @bsb)
     assert card["version"] == "BSB"
     assert card["version_url"] == nil

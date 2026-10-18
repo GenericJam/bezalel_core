@@ -14,7 +14,20 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Hermeneutics, Preferences, Translations, Verses}
+  alias Bezalel.Study.{
+    Args,
+    Citation,
+    Citations,
+    DB,
+    Format,
+    Hermeneutics,
+    Preferences,
+    Translations,
+    Verses
+  }
+
+  # Characters of a passage's preview text shown.
+  @preview_chars 500
 
   @max_limit 20
   # Verses fetched for a passage's preview: ample for the 500 characters shown.
@@ -79,7 +92,8 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc """
@@ -187,7 +201,9 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
 
     "## Passages Similar to #{reference}#{label}\n\n" <>
       Format.translation_note(result.translation_note) <>
-      "**Source**: #{source.english}\n\n" <>
+      "**Source**: #{source.english}\n" <>
+      Citation.source_line(verse_citation(source, result.translation)) <>
+      "\n\n" <>
       "---\n\n" <>
       "⚠️ **Hermeneutical Caution**: Semantic similarity indicates shared vocabulary " <>
       "and concepts, but does NOT establish theological connection. Before using any " <>
@@ -199,10 +215,43 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
       "---\n\n" <>
       (passages
        |> Enum.with_index(1)
-       |> Enum.map_join(fn {passage, rank} -> passage_text(passage, rank, source_genre) end))
+       |> Enum.map_join(fn {passage, rank} ->
+         passage_text(passage, rank, source_genre, result.translation)
+       end))
   end
 
-  defp passage_text(passage, rank, source_genre) do
+  @doc """
+  The sources `render/1` shows, in its order: the source verse, then each
+  verse of each passage's preview text shown, in the quoted translation
+  (STEP Bible's for a verse shown in STEPBible's gloss). The similarity is
+  Bezalel's own and cites nothing.
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{passages: []}), do: []
+
+  def citations(%{source: source, passages: passages, translation: translation}) do
+    [verse_citation(source, translation)] ++
+      Enum.flat_map(passages, &passage_citations(&1, translation))
+  end
+
+  defp passage_citations(passage, translation),
+    do: passage.preview |> shown_preview() |> Enum.map(&verse_citation(&1, translation))
+
+  defp verse_citation(view, translation),
+    do: Citations.scripture(view.reference, if(view.translated, do: translation))
+
+  # The preview verses whose text starts within the characters shown.
+  defp shown_preview(preview) do
+    preview
+    |> Enum.map_reduce(0, fn view, start ->
+      {{view, start}, start + String.length(view.english) + 1}
+    end)
+    |> elem(0)
+    |> Enum.take_while(fn {_view, start} -> start < @preview_chars end)
+    |> Enum.map(&elem(&1, 0))
+  end
+
+  defp passage_text(passage, rank, source_genre, translation) do
     genre = Hermeneutics.genre_from_reference(passage.reference_start)
     percent = :erlang.float_to_binary(passage.permille / 10, decimals: 1)
 
@@ -214,7 +263,7 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
     text =
       passage.preview
       |> Enum.map_join(" ", & &1.english)
-      |> Format.truncate(500, "...")
+      |> Format.truncate(@preview_chars, "...")
 
     count =
       if passage.verse_count > 1,
@@ -222,6 +271,8 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
         else: ""
 
     "### #{rank}. #{passage.reference} (#{percent}% similar)\n\n" <>
-      genre_line <> "#{text}\n\n" <> count
+      genre_line <>
+      "#{text}\n" <>
+      Citation.source_line(passage_citations(passage, translation)) <> "\n\n" <> count
   end
 end

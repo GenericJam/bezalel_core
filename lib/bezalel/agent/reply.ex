@@ -8,6 +8,10 @@ defmodule Bezalel.Agent.Reply do
   THINKING. A `lookup_verse` or `word_study` result that names a passage
   becomes the passage card (`Bezalel.Agent.Card`).
 
+  Every study tool's result carries the sources it rests on
+  (`Bezalel.Study.Citation`); the reply collects them, without repeats, in
+  `citations`, and `sources/1` marks the ones its answer links.
+
   Pictures in a turn or a tool result are listed in `images` (stored
   inline) and `materials` (by reference: a `draw_image` drawing).
 
@@ -19,6 +23,7 @@ defmodule Bezalel.Agent.Reply do
 
   alias Bezalel.Agent.{Card, Patterns}
   alias Bezalel.Library.Transcript
+  alias Bezalel.Study.{Citation, Citations}
   alias Rho.Session
 
   @type status :: :running | :done | :stopped | :error
@@ -33,6 +38,7 @@ defmodule Bezalel.Agent.Reply do
           text: String.t(),
           summary: String.t(),
           card: Card.t() | nil,
+          citations: [Citation.t()],
           images: [Bezalel.Library.Message.image()],
           materials: [Bezalel.Library.Message.material()],
           seen: [String.t()],
@@ -53,6 +59,7 @@ defmodule Bezalel.Agent.Reply do
     text: "",
     summary: "",
     card: nil,
+    citations: [],
     images: [],
     materials: [],
     seen: [],
@@ -139,12 +146,13 @@ defmodule Bezalel.Agent.Reply do
 
   def apply(r, %{type: :tool_execution_end, id: id, name: name} = event) do
     # Replayed from the session (`Bezalel.Library.Transcript`), the card
-    # is the one kept with the result; live, it's built from the details.
-    card =
+    # and citations are the ones kept with the result; live, they're the
+    # details'.
+    {card, citations} =
       cond do
-        event.is_error -> nil
-        Map.has_key?(event, :card) -> event.card
-        true -> Card.from_tool(name, event[:details])
+        event.is_error -> {nil, []}
+        Map.has_key?(event, :card) -> {event.card, event[:citations] || []}
+        true -> {Card.from_tool(name, event[:details]), live_citations(event[:details])}
       end
 
     items =
@@ -156,7 +164,12 @@ defmodule Bezalel.Agent.Reply do
           item
       end)
 
-    %{r | items: items, card: pick_card(r.card, card, name)}
+    %{
+      r
+      | items: items,
+        card: pick_card(r.card, card, name),
+        citations: Citations.dedupe(r.citations ++ citations)
+    }
   end
 
   def apply(r, %{type: :turn_end, error: error}) when is_binary(error),
@@ -183,6 +196,20 @@ defmodule Bezalel.Agent.Reply do
   @doc "Whether there's anything to show: a block, a card, a picture or a material."
   @spec any?(t()) :: boolean()
   def any?(r), do: blocks(r) != [] or r.card != nil or r.images != [] or r.materials != []
+
+  @doc """
+  The sources the reply's tools consulted (`citations`), each marked
+  `cited` when the answer so far links it (`Bezalel.Study.Citations.mark/2`),
+  in the order the tools returned them. A sources list groups them with
+  `Bezalel.Study.Citations.by_work/1`.
+  """
+  @spec sources(t()) :: [Citation.t()]
+  def sources(r), do: Citations.mark(r.citations, join(r.summary, r.text))
+
+  defp live_citations(%{citations: citations}) when is_list(citations),
+    do: for(c <- citations, c = Citation.from_map(c), do: c)
+
+  defp live_citations(_details), do: []
 
   @doc """
   Starts over after the steering message `text` was injected: the reply so

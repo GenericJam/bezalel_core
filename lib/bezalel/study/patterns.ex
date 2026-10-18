@@ -83,7 +83,13 @@ defmodule Bezalel.Study.Patterns do
     # ('Gen 38:6-26', '1 Cor 12:12'; server.py _KEY_REF_PATTERN).
     ane_key_reference: {~S"^(\d?\s*[A-Za-z]+)\s+(\d+)", ""},
     # list_research_sources: what a topic loses before matching (_normalise_topic).
-    research_topic_strip: {~S"[^a-z0-9\s]", "u"}
+    research_topic_strip: {~S"[^a-z0-9\s]", "u"},
+    # Citations: what GitHub drops from a heading to make its anchor, and the
+    # runs Theographic's event slugs turn into "_".
+    github_anchor_strip: {~S"[^\p{L}\p{N}\p{M}\p{Pc}\- ]", "u"},
+    slug_separator: {~S"[^a-z0-9]+", ""},
+    # Citations: a section locator's first number ("1.104–108" → "1.104").
+    first_locator: {~S"^[0-9]+(?:[.:][0-9]+)?", ""}
   }
 
   # The cache key carries a hash of the sources, so a hot-loaded version of

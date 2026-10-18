@@ -9,7 +9,7 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
   # atonement_models theme).
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.Preferences
+  alias Bezalel.Study.{Citation, Preferences}
 
   alias Bezalel.Study.Tools.{
     GetAneContext,
@@ -31,6 +31,19 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
   defp error(tool, args) do
     assert {:error, text} = tool.result(args, @four)
     text
+  end
+
+  # The tool as the model calls it: its Markdown and its citations.
+  defp cited(tool, args) do
+    assert {:ok, {:details, text, %{citations: citations}}} = tool.run(args, %{})
+    {text, citations}
+  end
+
+  # The `Source:` line under the record that `marker` starts.
+  defp source_line_after(text, marker) do
+    [_, rest] = String.split(text, marker, parts: 2)
+    [line | _] = Regex.run(~r/^Source: .+$/m, rest)
+    line
   end
 
   defp headings(text, level),
@@ -102,6 +115,35 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
 
       assert {:ok, _} = GetStudyNotes.run(%{"reference" => "Psalm 99999999999999999999:1"}, %{})
     end
+
+    test "each note cites its source: Tyndale on STEP, unfoldingWord's book at Door43, SIL's site" do
+      {text, citations} = cited(GetStudyNotes, %{"reference" => "John 3:16"})
+      tyndale = "https://www.stepbible.org/?q=version=TNotes@reference=Jhn.3.16"
+
+      assert text =~
+               ~r/\n\*\*John 3:16\*\*\n[^*]+\n\nSource: \[John 3:16 \(Tyndale note\)\]\(#{Regex.escape(tyndale)}\)\n/
+
+      assert %Citation{work: "tyndale_notes", url: ^tyndale, dataset_url: dataset} =
+               Enum.find(citations, &(&1.label == "John 3:16 (Tyndale note)"))
+
+      assert dataset =~ "/AquiferOpenStudyNotes/blob/bbb3f860/eng/md/43.content.md#"
+
+      uw = "https://git.door43.org/unfoldingWord/en_tn/src/branch/master/tn_JHN.tsv"
+      assert source_line_after(text, "**John 3:16 (#7)**") =~ "](#{uw})"
+
+      assert %Citation{work: "uw_notes", url: ^uw} =
+               Enum.find(citations, &(&1.label == "John 3:16 (#7) (unfoldingWord note)"))
+
+      assert source_line_after(text, "### Translation Notes (SIL)") ==
+               "Source: [John 3:16 (SIL note)](https://opentn.bible/)"
+
+      assert Enum.any?(citations, &(&1.work == "sil_notes"))
+
+      # One citation per note shown, in display order.
+      {:ok, %{notes: notes}} = GetStudyNotes.result(%{"reference" => "John 3:16"})
+      assert hd(citations).label == "#{hd(notes).title} (Tyndale note)"
+      assert Enum.count(Regex.scan(~r/^Source: /m, text)) == length(notes)
+    end
   end
 
   describe "get_bible_dictionary" do
@@ -121,12 +163,22 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
     test "long articles are cut" do
       text = ok(GetBibleDictionary, %{"topic" => "Tabernacle"})
 
-      assert String.ends_with?(
-               text,
-               "\n\n*[Article truncated — full text available in the Tyndale Bible Dictionary]*\n"
-             )
+      assert text =~
+               "\n\n*[Article truncated — full text available in the Tyndale Bible Dictionary]*\n" <>
+                 "\nSource: [Tabernacle (Tyndale Bible Dictionary)]("
 
-      assert String.length(text) < 4300
+      [article, _source] = String.split(text, "\nSource: ")
+      assert String.length(article) < 4300
+    end
+
+    test "each article cites its heading in Aquifer's dictionary" do
+      url =
+        "https://github.com/BibleAquifer/AquiferOpenBibleDictionary/blob/4d92a9ac/eng/md/" <>
+          "001.content.md#abraham-id-3320"
+
+      {text, citations} = cited(GetBibleDictionary, %{"topic" => "abraham"})
+      assert String.ends_with?(text, "\n\nSource: [Abraham (Tyndale Bible Dictionary)](#{url})\n")
+      assert [%Citation{work: "tyndale_dictionary", url: ^url}] = citations
     end
 
     test "nothing found, and no topic" do
@@ -143,6 +195,19 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
       assert headings(text, "##") == ["atonement", "atonement"]
       assert text =~ ~r/\A## atonement\n\nt258: atone\/atonement\n/
       assert {:ok, %{terms: [_, _]}} = GetKeyTerms.result(%{"term" => "grace"})
+    end
+
+    test "each entry cites its heading in Aquifer's key terms" do
+      {text, citations} = cited(GetKeyTerms, %{"term" => "Atonement"})
+      base = "https://github.com/BibleAquifer/FIAKeyTerms/blob/91e4a774/eng/md/001.content.md#"
+
+      assert Enum.map(citations, & &1.url) == [
+               base <> "atonement-id-eng-t258-v1",
+               base <> "atonement-id-eng-t258-v1-audio"
+             ]
+
+      assert Enum.all?(citations, &(&1.work == "fia"))
+      assert text =~ "Source: [atonement (FIA Key Terms)](#{base}atonement-id-eng-t258-v1)\n"
     end
 
     test "a dictionary article is not a key term; no term" do
@@ -229,6 +294,31 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
 
         assert direct =~ "### Covenant Ratification Rituals and Animal Cutting"
       end
+    end
+
+    test "each entry's Source line names its scholarly sources, full or brief" do
+      {text, citations} = cited(GetAneContext, %{"reference" => "Genesis 15:6"})
+      refute text =~ "**Sources:**"
+
+      assert source_line_after(text, "### Covenant Ratification Rituals and Animal Cutting") ==
+               "Source: Mendenhall, 'Covenant Forms in Israelite Tradition' · Weinfeld, " <>
+                 "'The Covenant of Grant in the Old Testament and in the Ancient Near East' " <>
+                 "(JAOS, 1970) · Hallo, Context of Scripture, vol. 2 (Sefire treaty texts) · " <>
+                 "Tadmor, 'Treaty and Oath in the Ancient Near East'"
+
+      # A broad entry, shown brief, still cites its sources.
+      broad = section(text, "# General ANE Reading Frame")
+
+      assert source_line_after(broad, "### Food, Diet, and Communal Meals") =~
+               "Source: MacDonald, What Did the Ancient Israelites Eat? · "
+
+      # The direct entries' sources come first, as they print.
+      assert %Citation{work: "ane", url: nil, label: "Mendenhall, " <> _} = hd(citations)
+
+      assert %Citation{work: "ane"} =
+               Enum.find(citations, &(&1.label == "Borowski, Daily Life in Biblical Times"))
+
+      assert {:ok, {:details, _, %{citations: []}}} = GetAneContext.run(%{}, %{})
     end
 
     test "nothing found, and input it can't read" do
@@ -334,6 +424,41 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
 
       assert error(GetTheologyContext, %{"reference" => "Psalm 99999999999999999999:1"}) ==
                "No theological scholarship found for reference='Psalm 99999999999999999999:1'."
+    end
+
+    test "each entry's Source line: a stored URL, else the book summarised, else studybible-mcp" do
+      {text, citations} =
+        cited(GetTheologyContext, %{"reference" => "Psalm 82:6", "author" => "heiser"})
+
+      refute text =~ "**Source**"
+      heiser = "https://www.thedivinecouncil.com/DT32BibSac.pdf"
+
+      assert source_line_after(text, "### Psalm 82 — Yahweh Judges the Divine Council Members") ==
+               "Source: [Heiser — Deuteronomy 32:8 and the Sons of God (BibSac paper), " <>
+                 "Psalm 82 Analysis](#{heiser})"
+
+      assert %Citation{work: "theology:heiser", url: ^heiser, locator: "pp. 62-66"} =
+               hd(citations)
+
+      {text, citations} =
+        cited(GetTheologyContext, %{"theme" => "atonement_models", "limit" => 2})
+
+      assert source_line_after(text, "### The Work of Christ: Bearing Our Sin in Our Place") ==
+               "Source: John Stott, *Basic Christianity* (1958), on Part 3 — Christ's Work"
+
+      assert [
+               %Citation{
+                 work: "theology:stott",
+                 url: nil,
+                 book: %{author: "John Stott", title: "Basic Christianity", year: 1958}
+               },
+               %Citation{
+                 work: "studybible",
+                 url: "https://github.com/djayatillake/studybible-mcp"
+               }
+             ] = citations
+
+      assert {:ok, {:details, _, %{citations: []}}} = GetTheologyContext.run(%{}, %{})
     end
   end
 
@@ -448,6 +573,18 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
         })
 
       assert String.ends_with?(text, "*Listings verified on or after 2026-01-05.*")
+    end
+
+    test "each listing's address is its Source line" do
+      {text, citations} = cited(ListResearchSources, %{"topic" => "rabbinic"})
+      sefaria = source("sefaria")
+
+      assert text =~ "### Sefaria\nSource: [Sefaria](#{sefaria["url"]})\n"
+
+      assert %Citation{work: "research", locator: "sefaria"} =
+               Enum.find(citations, &(&1.url == sefaria["url"]))
+
+      assert length(citations) == Enum.count(Regex.scan(~r/^### /m, text))
     end
   end
 end

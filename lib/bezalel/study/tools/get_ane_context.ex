@@ -14,11 +14,15 @@ defmodule Bezalel.Study.Tools.GetAneContext do
   message. `result/1` returns the entries with their list fields decoded.
   With the ANE background switched off (`Bezalel.Study.Sources`,
   `ane:context`) the tool is withheld, and if called anyway answers with an
-  error saying so.
+  error saying so. Each entry, brief or full, ends with a `Source:` line
+  naming the scholarly sources it gives (books, `Citations.ane_source/1`),
+  in place of their `**Sources:**` line, and `run/2` returns those
+  citations as `details.citations`.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Patterns, Preferences, Reference, Sources}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Patterns, Preferences}
+  alias Bezalel.Study.{Reference, Sources}
   require Args
 
   @dimensions ~w(cosmology_worldview religious_practices social_structure legal_covenant
@@ -125,7 +129,8 @@ defmodule Bezalel.Study.Tools.GetAneContext do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc """
@@ -382,41 +387,65 @@ defmodule Bezalel.Study.Tools.GetAneContext do
     header <> "\n\n" <> Enum.join(body(entries, level), "\n")
   end
 
-  defp body(entries, level) do
+  # The entries' sections in the order they print: {lines before them, the
+  # entries, their formatter}.
+  defp sections(entries, level) do
     has_match_types = Enum.any?(entries, &Format.present?(&1.match_type))
 
     cond do
       level == "full" or not has_match_types ->
-        grouped(entries, if(level == "brief", do: &brief/1, else: &full/1))
+        [{[], entries, if(level == "brief", do: &brief/1, else: &full/1)}]
 
       level == "brief" ->
-        grouped(entries, &brief/1)
+        [{[], entries, &brief/1}]
 
       true ->
         direct = Enum.filter(entries, &(&1.match_type == "direct"))
         broad = Enum.filter(entries, &(&1.match_type == "broad"))
 
-        direct_lines =
-          if direct == [],
-            do: [],
-            else: ["# Directly Relevant to This Passage", "" | grouped(direct, &full/1)]
+        direct_section = {["# Directly Relevant to This Passage", ""], direct, &full/1}
 
-        broad_lines =
-          if broad == [],
-            do: [],
-            else: [
-              "# General ANE Reading Frame",
-              "*These entries provide broad cultural context for this book. Summaries shown; " <>
-                "call with detail_level='full' for complete entries.*",
-              "" | grouped(broad, &brief/1)
-            ]
+        broad_section =
+          {[
+             "# General ANE Reading Frame",
+             "*These entries provide broad cultural context for this book. Summaries shown; " <>
+               "call with detail_level='full' for complete entries.*",
+             ""
+           ], broad, &brief/1}
 
-        direct_lines ++ broad_lines
+        Enum.reject([direct_section, broad_section], &match?({_, [], _}, &1))
     end
   end
 
+  defp body(entries, level) do
+    Enum.flat_map(sections(entries, level), fn {lines, section, formatter} ->
+      lines ++ grouped(section, formatter)
+    end)
+  end
+
+  # The citations of the entries shown, in the order they print.
+  defp citations(%{entries: entries, detail_level: level}) do
+    for {_lines, section, _formatter} <- sections(entries, level),
+        {_label, group} <- by_dimension(section),
+        entry <- group,
+        citation <- cite(entry),
+        do: citation
+  end
+
+  defp citations(_dimensions), do: []
+
+  @doc "An entry's citations: the scholarly sources it names."
+  @spec cite(entry()) :: [Citation.t()]
+  def cite(entry), do: Enum.map(entry.scholarly_sources, &Citations.ane_source/1)
+
   # Entries under their dimension, in first-seen order.
   defp grouped(entries, formatter) do
+    Enum.flat_map(by_dimension(entries), fn {label, group} ->
+      ["## #{label}", ""] ++ Enum.flat_map(group, formatter) ++ ["---", ""]
+    end)
+  end
+
+  defp by_dimension(entries) do
     {labels, groups} =
       Enum.reduce(entries, {[], %{}}, fn entry, {labels, groups} ->
         label = entry.dimension_label
@@ -426,10 +455,7 @@ defmodule Bezalel.Study.Tools.GetAneContext do
 
     labels
     |> Enum.reverse()
-    |> Enum.flat_map(fn label ->
-      ["## #{label}", ""] ++
-        Enum.flat_map(Enum.reverse(groups[label]), formatter) ++ ["---", ""]
-    end)
+    |> Enum.map(&{&1, Enum.reverse(groups[&1])})
   end
 
   defp full(entry) do
@@ -447,16 +473,17 @@ defmodule Bezalel.Study.Tools.GetAneContext do
       ) ++
       significance(entry) ++
       key_references(entry) ++
-      if(entry.scholarly_sources == [],
-        do: [],
-        else: ["**Sources:** #{Enum.join(entry.scholarly_sources, "; ")}", ""]
-      )
+      source_line(entry)
   end
 
   defp brief(entry) do
     ["### #{entry.title}", ""] ++
-      paragraph(entry.summary) ++ significance(entry) ++ key_references(entry)
+      paragraph(entry.summary) ++
+      significance(entry) ++ key_references(entry) ++ source_line(entry)
   end
+
+  defp source_line(%{scholarly_sources: []}), do: []
+  defp source_line(entry), do: [Citation.source_line(cite(entry)), ""]
 
   defp paragraph(text), do: if(Format.present?(text), do: [text, ""], else: [])
 

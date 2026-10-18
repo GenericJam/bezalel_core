@@ -15,7 +15,16 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Preferences, Reference, Sources}
+  alias Bezalel.Study.{
+    Args,
+    Citation,
+    Citations,
+    DB,
+    Preferences,
+    Reference,
+    Sources,
+    Translations
+  }
 
   @impl true
   def name, do: "get_cross_references"
@@ -123,19 +132,22 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: Citations.details(render(result), result, citations(result))
   end
 
   @typedoc """
   A theme's chain (`theme` set, `rows` with `reference` and `note`) or a
   verse's cross references (`reference` set, `rows` with `target`
-  ('Rom.5.8'), `relevance` (TSK votes) and `tier`).
+  ('Rom.5.8'), `relevance` (TSK votes) and `tier`). `translation` is the
+  user's, which the verses (shown by reference, without text) link to.
   """
   @type t :: %{
           theme: String.t() | nil,
           reference: String.t() | nil,
           source: String.t() | nil,
           limit: pos_integer(),
+          translation: Translations.ref(),
           rows: [DB.row()]
         }
 
@@ -150,7 +162,16 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
     reference = Args.reference(args)
     source = Args.optional(args, "source")
     limit = Args.limit(args, Preferences.limit(prefs, nil))
-    base = %{theme: theme, reference: nil, source: source, limit: limit, rows: []}
+    translation = Translations.get(prefs.translation) || Translations.get("bsb")
+
+    base = %{
+      theme: theme,
+      reference: nil,
+      source: source,
+      limit: limit,
+      translation: Translations.ref(translation),
+      rows: []
+    }
 
     cond do
       theme ->
@@ -229,9 +250,14 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
   def render(%{theme: theme, rows: []}) when is_binary(theme),
     do: "No cross-references found for theme '#{theme}'."
 
-  def render(%{theme: theme, rows: rows}) when is_binary(theme) do
-    "## Cross-References: #{theme}\n\n" <>
-      Enum.map_join(rows, &"- **#{&1["reference"]}**: #{&1["note"]}\n")
+  def render(%{theme: theme, rows: rows} = result) when is_binary(theme) do
+    "## Cross-References: #{theme}\n" <>
+      Citation.source_line(chains()) <>
+      "\n\n" <>
+      Enum.map_join(rows, fn row ->
+        "- **#{row["reference"]}**: #{row["note"]}\n" <>
+          sub_source(theme_citations(row, result.translation))
+      end)
   end
 
   def render(%{reference: reference, source: source, rows: []}) do
@@ -239,16 +265,58 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
       if(source, do: " (source filter: #{source})", else: "")
   end
 
-  def render(%{reference: reference, limit: limit, rows: rows}) do
+  def render(%{reference: reference, limit: limit, rows: [first | _] = rows} = result) do
     "## Cross-References for #{reference}\n\n" <>
       "_#{length(rows)} reference(s) returned (cap limit=#{limit}; " <>
       "actual count may be smaller when verse is signal-poor — by design). " <>
-      "Source: TSK = Treasury of Scripture Knowledge._\n\n" <>
+      "TSK = Treasury of Scripture Knowledge._\n" <>
+      Citation.source_line(Citations.tsk(first["source"])) <>
+      "\n\n" <>
       "### TSK — #{length(rows)}\n" <>
       Enum.map_join(rows, fn row ->
         votes = row["relevance"]
         tag = if votes in [nil, 0], do: "", else: "  *(votes: #{votes})*"
-        "- #{Reference.display(row["target"])}#{tag}\n"
+
+        "- #{Reference.display(row["target"])}#{tag}\n" <>
+          sub_source([Citations.scripture(row["target"], result.translation)])
       end) <> "\n"
   end
+
+  @doc """
+  The sources `render/1` shows, in its order: for a verse, its cross
+  references at OpenBible.info (the TSK) and each target verse in the
+  user's translation; for a theme, studybible-mcp's thematic chains and
+  each passage in the user's translation.
+  """
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{rows: []}), do: []
+
+  def citations(%{theme: theme, rows: rows, translation: translation}) when is_binary(theme),
+    do: [chains() | Enum.flat_map(rows, &theme_citations(&1, translation))]
+
+  def citations(%{rows: [first | _] = rows, translation: translation}) do
+    [
+      Citations.tsk(first["source"])
+      | Enum.map(rows, &Citations.scripture(&1["target"], translation))
+    ]
+  end
+
+  defp chains, do: Citations.studybible("Thematic chains")
+
+  # A chain's passage ('Romans 3:21-26') at its first verse, labelled as
+  # the chain gives it; none for text that isn't a known book's passage.
+  defp theme_citations(row, translation) do
+    with %{book: book, start_chapter: chapter, start_verse: verse} <-
+           Reference.parse_passage(row["reference"]),
+         name when is_binary(name) <- Reference.book_name(book) do
+      citation = Citations.scripture({book, chapter, verse || 1}, translation)
+      [%{citation | label: row["reference"]}]
+    else
+      _ -> []
+    end
+  end
+
+  # A list item's Source line, under it.
+  defp sub_source([]), do: ""
+  defp sub_source(citations), do: "  " <> Citation.source_line(citations) <> "\n"
 end

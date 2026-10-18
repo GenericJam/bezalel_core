@@ -14,8 +14,9 @@ defmodule Bezalel.Agent.Card do
         "from" => "lookup_verse",
         "title" => "Exodus 31:2-3",
         "version" => "NET",
-        "version_url" => "http://netbible.org",
-        "verses" => [%{"ref" => "2", "tokens" => [["See,", nil], ["called", "H7121G"], ...]}],
+        "version_url" => "https://netbible.org/bible/Exodus+31:2",
+        "verses" => [%{"ref" => "2", "url" => "https://netbible.org/bible/Exodus+31:2",
+                       "tokens" => [["See,", nil], ["called", "H7121G"], ...]}],
         "words" => %{"H7121G" => %{"strongs" => ..., "word" => ..., "translit" => ...,
                                    "gloss" => ..., "morph" => ...}},
         "more" => 0
@@ -25,9 +26,12 @@ defmodule Bezalel.Agent.Card do
   `translation`, the user's choice in Settings or the BSB standing in for
   a NET that isn't installed) when any verse shown is its text (as
   `Bezalel.Study.Format.translation_label/2` labels it), empty when every
-  verse shown has only STEPBible's gloss; `version_url` is set for the
-  NET, whose terms ask for "(NET)" after the quotation, linked to
-  netbible.org (the host app draws it after the last verse).
+  verse shown has only STEPBible's gloss. A verse quoted in a translation
+  has its page there as `url` (`Bezalel.Study.Citations`: netbible.org's
+  verse page, Bible Hub's for the BSB). `version_url` is set for the NET,
+  whose terms ask for "(NET)" after the quotation, linked to netbible.org:
+  the first quoted verse's page (a page on netbible.org, which the terms
+  allow), for the host app to draw after the last verse.
 
   English and original aren't aligned word for word in the packs: an
   English word is highlighted when it is a content word of an original
@@ -36,7 +40,7 @@ defmodule Bezalel.Agent.Card do
   """
 
   alias Bezalel.Agent.Patterns
-  alias Bezalel.Study.Reference
+  alias Bezalel.Study.{Citations, Reference}
 
   # Verses a card shows; a longer passage says how many more there are.
   @max_verses 6
@@ -89,6 +93,7 @@ defmodule Bezalel.Agent.Card do
 
   defp card(result, from, title, verses, ref, highlight?) do
     {shown, rest} = Enum.split(verses, @max_verses)
+    translation = Map.get(result, :translation)
 
     {rows, words} =
       Enum.map_reduce(shown, %{}, fn v, words ->
@@ -99,22 +104,31 @@ defmodule Bezalel.Agent.Card do
               do: [token, Map.get(index, bare(token))]
 
         found = for [_, s] <- tokens, s, into: %{}, do: {s, word(v.words, s)}
-        {%{"ref" => ref.(v), "tokens" => tokens}, Map.merge(found, words)}
+        row = %{"ref" => ref.(v), "tokens" => tokens, "url" => verse_url(v, translation)}
+        {Map.reject(row, fn {_k, url} -> url == nil end), Map.merge(found, words)}
       end)
 
-    translation = Map.get(result, :translation)
     translated? = translation != nil and Enum.any?(shown, & &1.translated)
+    net? = translated? and translation.key == "net"
 
     %{
       "from" => from,
       "title" => title,
       "version" => if(translated?, do: translation.abbreviation, else: ""),
-      "version_url" => if(translated? and translation.key == "net", do: translation.url),
+      "version_url" => if(net?, do: Enum.find_value(rows, translation.url, & &1["url"])),
       "verses" => rows,
       "words" => words,
       "more" => length(rest)
     }
   end
+
+  # The verse's page in the translation it's quoted in (`Bezalel.Study.Citations`);
+  # nil for a verse shown only as STEPBible's gloss.
+  defp verse_url(%{translated: true, reference: "" <> reference}, %{key: key})
+       when key in ["net", "bsb"],
+       do: Citations.scripture(reference, key).url
+
+  defp verse_url(_verse, _translation), do: nil
 
   # Content word of a gloss → the Strong's number of the first original
   # word glossed with it.

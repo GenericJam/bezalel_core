@@ -15,7 +15,10 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   message is the lxx pack error. A chapter or verse number too large for
   SQLite (theirs raised an overflow) is the unparseable-reference error.
 
-  `result/1` returns the rows (MT and LXX, in display order) as data.
+  `result/1` returns the rows (MT and LXX, in display order) as data. Each
+  row has a `Source:` line (`citations/1`): the MT's Hebrew and the LXX's
+  Greek on STEP Bible, Brenton's English at eBible.org, a scroll's
+  manuscript page.
 
   Changed for Bezalel: their Apocrypha line ("not in the Protestant canon
   (cf. Westminster Confession 1.3); background only") is now a neutral
@@ -27,7 +30,18 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Ancient, Args, BiblicalScrolls, DB, Format, Patterns, Preferences, Sources}
+  alias Bezalel.Study.{
+    Ancient,
+    Args,
+    BiblicalScrolls,
+    Citation,
+    Citations,
+    DB,
+    Format,
+    Patterns,
+    Preferences,
+    Sources
+  }
 
   @max_verses 10
   @versions ["MT", "LXX", "DSS"]
@@ -183,7 +197,33 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
 
   @impl true
   def run(args, ctx) do
-    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
+    with {:ok, result} <- result(args, Preferences.current(ctx)) do
+      Citations.details(render(result), result, citations(result))
+    end
+  end
+
+  @doc "The citations of the rows `render/1` shows, in its order."
+  @spec citations(t()) :: [Citation.t()]
+  def citations(%{rows: rows}), do: Enum.flat_map(rows, &row_citations/1)
+
+  # MT: its Hebrew on STEP; LXX: the Rahlfs verse on STEP (by its English
+  # reference) with Brenton's English where the row has it; a scroll: its
+  # manuscript's page (Leon Levy has one for every manuscript the pack names).
+  defp row_citations(%{version: "MT"} = row), do: [Citations.step(row.canonical_reference)]
+
+  defp row_citations(%{version: "DSS", dss: dss}) do
+    [
+      Citations.dss_manuscript(dss.siglum, "#{dss.siglum} #{dss.locator}",
+        leon_levy: dss.name != nil
+      )
+    ]
+  end
+
+  defp row_citations(%{version: "LXX"} = row) do
+    english = Format.present?(row.translation)
+
+    [Citations.lxx(row.canonical_reference || row.edition_reference, english: english)] ++
+      if english, do: [Citations.brenton(row.edition_reference)], else: []
   end
 
   @typedoc """
@@ -851,7 +891,12 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   defp row_lines(%{version: "DSS"} = row, result) do
     [row_header(row)] ++
       if(result.include_original, do: ["**#{row.language}:** #{row.text}"], else: []) ++
-      [preservation(row.dss), "**English:** none (any English is the assistant's own).", ""]
+      [
+        preservation(row.dss),
+        "**English:** none (any English is the assistant's own).",
+        Citation.source_line(row_citations(row)),
+        ""
+      ]
   end
 
   defp row_lines(row, result) do
@@ -859,6 +904,7 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
       if(result.include_original, do: ["**#{row.language}:** #{row.text}"], else: []) ++
       brenton_lines(row.brenton, result.include_original) ++
       english_lines(row) ++
+      [Citation.source_line(row_citations(row))] ++
       morphology_lines(row.morphology, result.include_morphology) ++ [""]
   end
 

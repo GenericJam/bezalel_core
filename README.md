@@ -41,11 +41,15 @@ Claude or another client rather than an Elixir library, use studybible-mcp.
 | none | `list_research_sources` |
 
 Each tool is a `Rho.Tool` module (`Bezalel.Study.Tools.*`; `Bezalel.Study.Tools.all/0`
-lists them) whose `run/2` returns the Markdown the model reads, and whose
-`result/1` returns the same answer as data for an app to draw. A missing pack
-is an error that names it, so the model can say so instead of guessing.
-How each was ported and where it differs from studybible-mcp:
-[docs/study_tools.md](docs/study_tools.md).
+lists them) whose `run/2` returns the Markdown the model reads with the
+answer's data for an app to draw (`{:details, markdown, data}`), and whose
+`result/1` returns the data alone. Every record the Markdown shows (a verse,
+a lexicon entry, a note, an ancient passage, a manuscript, a book) carries a
+`Source:` link the model copies into its answer, and the data carries the
+same as `citations` (`Bezalel.Study.Citation`; every URL template is in
+`Bezalel.Study.Citations`). A missing pack is an error that names it, so the
+model can say so instead of guessing. How each was ported and where it
+differs from studybible-mcp: [docs/study_tools.md](docs/study_tools.md).
 
 Also here: `Bezalel.Study.Reference` (book names and reference forms),
 `Bezalel.Study.Ancient.Registry` (the ancient-source corpora and their
@@ -57,12 +61,14 @@ prompt).
 
 And the agent's surface, the same for every app that shows a conversation:
 `Bezalel.Agent.Reply` folds rho's loop events (`Rho.Events`) into the
-reply's blocks (THINKING, TOOL CALL, SUMMARY) as it streams,
+reply's blocks (THINKING, TOOL CALL, SUMMARY) and its sources as it streams,
 `Bezalel.Agent.Card` builds the passage card from `lookup_verse` /
-`word_study` data, and `Bezalel.Library.Transcript` reads a conversation's
-messages (`Bezalel.Library.Message`) back off its rho session and plans the
-branch moves behind Delete and Undo. None of it reads or writes a file:
-the app keeps the state, draws it, and reads and writes the session file.
+`word_study` data, `Bezalel.Agent.keep_details/2` is what the session keeps
+of a tool's data (the card and the citations), and
+`Bezalel.Library.Transcript` reads a conversation's messages
+(`Bezalel.Library.Message`) back off its rho session and plans the branch
+moves behind Delete and Undo. None of it reads or writes a file: the app
+keeps the state, draws it, and reads and writes the session file.
 
 And **materials**, the files sent to the agent and received from it (photos,
 audio, video, documents, and their transcripts, audio tracks, stills and
@@ -109,9 +115,18 @@ Rho.Supervisor.start_link(tools: Bezalel.Study.Tools.all())
 Rho.start_loop(
   system_prompt: Bezalel.Study.Prompt.system_prompt(prefs, surface: my_formatting_text),
   tools: :registry,
-  withhold_tools: Bezalel.Study.Tools.withheld(prefs)
+  withhold_tools: Bezalel.Study.Tools.withheld(prefs),
+  keep_details: &Bezalel.Agent.keep_details/2
 )
 ```
+
+Show each reply's sources: `Bezalel.Agent.Reply.sources(reply)` while it
+streams, `message.citations` once stored, each a `Bezalel.Study.Citation`
+marked `cited` when the answer links it; `Bezalel.Study.Citations.by_work/1`
+groups them for a list. A citation whose `translation` is `:assistant` (the
+tool gave the original only, so any English is the model's) or
+`:unpublished_draft` has `original` links to show beside it. The passage
+card's `version_url` is the quoted verse's page on netbible.org.
 
 Keep materials: a `Bezalel.Materials.Store` of your own (every callback gets
 a ctx with `:session_id`, so a host with several users finds the owner), and

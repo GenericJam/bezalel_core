@@ -11,8 +11,10 @@ defmodule Bezalel.Library.Transcript do
   A live reply's blocks are rebuilt from its entries by the fold that drew
   it while it streamed (`Bezalel.Agent.Reply`): each turn's thinking, each
   tool call with its result, the answer as the SUMMARY; its passage card
-  comes from the tool result's kept `details` (the host app's agent loop
-  keeps the card there). A reply Bezalel wrote itself (the storyboard's, or one
+  and the sources its tools consulted come from the tool results' kept
+  `details` (`Bezalel.Agent.keep_details/2`; a session from before
+  citations kept the bare card there, which reads as a card with no
+  sources). A reply Bezalel wrote itself (the storyboard's, or one
   moved over from the old messages table) is one assistant message whose
   text is its summary, for the model, and whose `"bezalel"` field holds
   what the chat shows (`blocks`, `passage`, `card`, `image`, `model`);
@@ -28,6 +30,7 @@ defmodule Bezalel.Library.Transcript do
   leaf; `custom` entries never reach a model.
   """
 
+  alias Bezalel.Agent
   alias Bezalel.Agent.Reply
   alias Bezalel.Library.Message
   alias Bezalel.Materials
@@ -190,7 +193,14 @@ defmodule Bezalel.Library.Transcript do
 
         nil ->
           reply = replay(group)
-          %{message | blocks: Reply.blocks(reply), card: reply.card, model: model(group)}
+
+          %{
+            message
+            | blocks: Reply.blocks(reply),
+              card: reply.card,
+              citations: Reply.sources(reply),
+              model: model(group)
+          }
       end
 
     if shown?(message), do: [message], else: []
@@ -235,7 +245,8 @@ defmodule Bezalel.Library.Transcript do
           text: Session.text(m["content"]),
           is_error: m["isError"] == true,
           details: nil,
-          card: m["details"]
+          card: Agent.kept_card(m["details"]),
+          citations: Agent.kept_citations(m["details"])
         }
 
         {Reply.apply(r, event), turn}
