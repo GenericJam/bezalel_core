@@ -574,7 +574,8 @@ defmodule Bezalel.UsageTest do
         |> Map.put("id", "a1")
       ]
 
-      assert [%{usage: nil}, %{usage: %{input: 900, output: 40, text: "in 900 · out 40 · $0.00"}}] =
+      # No cost reported (a sign-in's calls report none): none shown.
+      assert [%{usage: nil}, %{usage: %{input: 900, output: 40, text: "in 900 · out 40"}}] =
                Transcript.messages(branch, "s1")
     end
   end

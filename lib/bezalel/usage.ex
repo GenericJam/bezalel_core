@@ -528,7 +528,8 @@ defmodule Bezalel.Usage do
   assistant message's `usage`): tokens in, out, read from and written to
   the cache, cost in dollars (what the tokens cost at API prices; on a
   subscription the plan covers it), and one line, `"in 12.3k · out 456 ·
-  cache 10.2k · $0.04"`. Nil when no call reported any tokens.
+  cache 10.2k · $0.04"` (no cost when there is none: a sign-in's calls
+  report none). Nil when no call reported any tokens.
   """
   @spec reply_usage([map()]) :: reply_usage() | nil
   def reply_usage(entries) do
@@ -541,7 +542,8 @@ defmodule Bezalel.Usage do
 
       parts =
         ["in #{tokens(c["input"])}", "out #{tokens(c["output"])}"] ++
-          if(cache > 0, do: ["cache #{tokens(cache)}"], else: []) ++ [money(c["cost"])]
+          if(cache > 0, do: ["cache #{tokens(cache)}"], else: []) ++
+          if(c["cost"] > 0, do: [money(c["cost"])], else: [])
 
       %{
         input: c["input"],
