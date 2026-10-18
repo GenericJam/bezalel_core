@@ -26,9 +26,12 @@ too unless this file says otherwise.
   Undo (`Bezalel.Library.Transcript`, `Bezalel.Library.Message`; no file I/O, the
   app reads and writes the file); materials (`Bezalel.Materials`: the record,
   content addressing, derivatives, what goes to the model, rho's attachment
-  resolver; the `draw_image` tool, `Bezalel.Study.Tools.materials/0`) and a
-  reply as words to read aloud (`Bezalel.Speech`). Anything every Bezalel app
-  must answer the same way.
+  resolver; the `draw_image` tool, `Bezalel.Study.Tools.materials/0`), a
+  reply as words to read aloud (`Bezalel.Speech`), and usage over rho's
+  record (`Bezalel.Usage`: each provider's limits or spend, the meter by the
+  model, a reply's tokens and cost, the check before sending, a failed
+  call explained with what to do; why: `decisions/2026-10-18-usage.md`).
+  Anything every Bezalel app must answer the same way.
 - **Not here:** UI, Mob, Phoenix, settings storage, where files live on a
   device, pack downloads, platform formatting, recording, transcribing and
   speaking. The host app supplies those

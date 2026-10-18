@@ -16,7 +16,9 @@ defmodule Bezalel.Library.Message do
   consulted (`citations`, `Bezalel.Study.Citation`s in the order the tools
   returned them, each `cited` when the reply's text links it:
   `Bezalel.Agent.Reply.sources/1`; a sources list groups them with
-  `Bezalel.Study.Citations.by_work/1`).
+  `Bezalel.Study.Citations.by_work/1`), and what its model calls used
+  (`usage`, `Bezalel.Usage.reply_usage/1`: tokens and cost; nil for a reply
+  no call reported tokens for).
 
   Its files come two ways. `materials` are those sent or received by
   reference (`Bezalel.Materials`: a user's attachment, a `draw_image`
@@ -54,6 +56,7 @@ defmodule Bezalel.Library.Message do
           images: [image()],
           materials: [material()],
           model: String.t() | nil,
+          usage: Bezalel.Usage.reply_usage() | nil,
           entries: [String.t()]
         }
 
@@ -65,6 +68,7 @@ defmodule Bezalel.Library.Message do
     :card,
     :image,
     :model,
+    :usage,
     blocks: [],
     citations: [],
     images: [],
