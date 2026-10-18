@@ -54,6 +54,15 @@ labels), `Bezalel.Study.Hermeneutics` (genre guidance),
 off, the translations they can pick) and `Bezalel.Study.Prompt` (the system
 prompt).
 
+And the agent's surface, the same for every app that shows a conversation:
+`Bezalel.Agent.Reply` folds rho's loop events (`Rho.Events`) into the
+reply's blocks (THINKING, TOOL CALL, SUMMARY) as it streams,
+`Bezalel.Agent.Card` builds the passage card from `lookup_verse` /
+`word_study` data, and `Bezalel.Library.Transcript` reads a conversation's
+messages (`Bezalel.Library.Message`) back off its rho session and plans the
+branch moves behind Delete and Undo. All pure: the app keeps the state,
+draws it, and reads and writes the session file.
+
 ## Using it
 
 ```elixir
