@@ -226,11 +226,39 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           missing_packs: []
         }
 
-        with {:ok, found} <-
-               DB.with_pack(:ancient, &search_packs(&1, base, corpus, link_range, limit)),
-             do: found
+        search_installed(base, corpus, link_range, limit)
     end
   end
+
+  @tables ~w(ancient_source_passages ancient_source_passages_fts ancient_source_biblical_links
+              ancient_source_notes)
+
+  # Without the ancient pack, a Qumran search still reads the scrolls pack
+  # and says what was left out; any other search needs the ancient pack.
+  defp search_installed(base, corpus, link_range, limit) do
+    if DB.available?(:ancient) or not scrolls_wanted?(corpus, base.prefs) or
+         not DB.available?(:scrolls) do
+      with {:ok, found} <-
+             DB.with_pack(:ancient, &search_packs(&1, base, corpus, link_range, limit)),
+           do: found
+    else
+      case DB.with_pack(:scrolls, &search_scrolls_only(&1, base, corpus, link_range, limit)) do
+        {:ok, found} -> found
+        {:error, unreadable} -> {:error, DB.missing(:ancient) <> " " <> unreadable}
+      end
+    end
+  end
+
+  # A damaged scrolls pack leaves nothing to search: both packs are named.
+  defp search_scrolls_only(scrolls, base, corpus, link_range, limit) do
+    case DB.check_tables(scrolls, :scrolls, @tables) do
+      :ok -> find([scrolls], %{base | missing_packs: [:ancient]}, corpus, link_range, limit)
+      {:error, damaged} -> {:error, DB.missing(:ancient) <> " " <> damaged}
+    end
+  end
+
+  defp scrolls_wanted?(corpus, prefs),
+    do: corpus in [nil, "qumran"] and Sources.enabled?(prefs, Sources.ancient("qumran"))
 
   defp search_packs(ancient, base, corpus, link_range, limit) do
     with_scrolls(ancient, corpus, base.prefs, fn conns, missing ->
@@ -243,10 +271,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   # isn't otherwise (or can't be read). `fun` gets the connections and the
   # packs missing.
   defp with_scrolls(ancient, corpus, prefs, fun) do
-    wanted = corpus in [nil, "qumran"] and Sources.enabled?(prefs, Sources.ancient("qumran"))
-
     cond do
-      not wanted ->
+      not scrolls_wanted?(corpus, prefs) ->
         fun.([ancient], [])
 
       DB.available?(:scrolls) ->
@@ -259,9 +285,6 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         fun.([ancient], [:scrolls])
     end
   end
-
-  @tables ~w(ancient_source_passages ancient_source_passages_fts ancient_source_biblical_links
-              ancient_source_notes)
 
   # A damaged scrolls pack is searched as if it were missing.
   defp with_readable_scrolls(ancient, scrolls, fun) do
@@ -286,11 +309,14 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
 
     cond do
       present == nil ->
-        scope =
-          if corpus, do: "The #{label(corpus)} corpus is", else: "No ancient-source corpus is"
+        pack = if :ancient in base.missing_packs, do: "scrolls", else: "ancient"
 
-        {:error,
-         "#{scope} not in this device's ancient pack (the ancient_source_passages table is empty)."}
+        scope =
+          if corpus,
+            do: "The #{label(corpus)} corpus is not in this device's #{pack} pack",
+            else: "This device's #{pack} pack has no ancient-source passages"
+
+        {:error, "#{scope} (the ancient_source_passages table is empty)."}
 
       not Enum.all?(conns, &fts5?/1) ->
         {:error,
@@ -537,6 +563,14 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
       end,
       if(r.prefix_match, do: " (prefix match)", else: "")
     )
+  end
+
+  # Searching without the ancient pack covers only the scrolls pack's Qumran works.
+  defp missing_note(%{missing_packs: [:ancient]}, lead) do
+    lead <>
+      "The ancient study pack (ancient sources) isn't downloaded on this device, so " <>
+      "only the Dead Sea Scrolls were searched (not CD, 1QS, 1QSa, 1QpHab or the other " <>
+      "ancient corpora); tell the user the rest needs that pack."
   end
 
   # Searching Qumran without the scrolls pack covers only the ancient pack's four works.

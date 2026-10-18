@@ -460,8 +460,12 @@ defmodule Bezalel.Study.Ancient do
 
         label = words |> Enum.drop(-1) |> Enum.join(" ")
 
-        # 'frg. 4' is a fragment, not line 4 of 'frg.'.
-        if match?([_, _ | _], words) and fragment_key(label) not in ["", "f"] and
+        # 'frg. 4' is a fragment, not line 4 of 'frg.'; 'frg. 2 i + 3' is
+        # one compound label, not line 3 of 'frg. 2 i +'.
+        key = fragment_key(label)
+
+        if match?([_, _ | _], words) and key not in ["", "f"] and
+             not String.ends_with?(key, "+") and
              Regex.match?(Patterns.get(:fragment_lines), List.last(words)),
            do: {label, List.last(words)},
            else: {text, nil}
