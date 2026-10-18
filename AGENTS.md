@@ -28,9 +28,13 @@ too unless this file says otherwise.
   content addressing, derivatives, what goes to the model, rho's attachment
   resolver; the `draw_image` tool, `Bezalel.Study.Tools.materials/0`, on the
   user's "Pictures by" model), a reply as words to read aloud
-  (`Bezalel.Speech`) and pushback (`Bezalel.Agent.Pushback`: the study
-  critic's brief, one round per reply, on rho's `Rho.Consult`). Anything
-  every Bezalel app must answer the same way.
+  (`Bezalel.Speech`), usage over rho's record (`Bezalel.Usage`: each
+  provider's limits or spend, the meter by the model, a reply's tokens and
+  cost, the check before sending, a failed call explained with what to do;
+  why: `decisions/2026-10-18-usage.md`) and pushback
+  (`Bezalel.Agent.Pushback`: the study critic's brief, one round per reply,
+  on rho's `Rho.Consult`). Anything every Bezalel app must answer the same
+  way.
 - **Not here:** UI, Mob, Phoenix, settings storage, where files live on a
   device, pack downloads, platform formatting, recording, transcribing and
   speaking. The host app supplies those

@@ -198,7 +198,8 @@ defmodule Bezalel.Library.Transcript do
       role: :agent,
       images: images(group, session_id),
       materials: materials(group),
-      entries: Enum.map(group, & &1["id"])
+      entries: Enum.map(group, & &1["id"]),
+      usage: Bezalel.Usage.reply_usage(group)
     }
 
     message =
