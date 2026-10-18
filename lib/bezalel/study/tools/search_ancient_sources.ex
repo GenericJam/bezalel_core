@@ -309,13 +309,14 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
 
     cond do
       present == nil ->
-        scope =
-          if corpus, do: "The #{label(corpus)} corpus is", else: "No ancient-source corpus is"
-
         pack = if :ancient in base.missing_packs, do: "scrolls", else: "ancient"
 
-        {:error,
-         "#{scope} not in this device's #{pack} pack (the ancient_source_passages table is empty)."}
+        scope =
+          if corpus,
+            do: "The #{label(corpus)} corpus is not in this device's #{pack} pack",
+            else: "This device's #{pack} pack has no ancient-source passages"
+
+        {:error, "#{scope} (the ancient_source_passages table is empty)."}
 
       not Enum.all?(conns, &fts5?/1) ->
         {:error,

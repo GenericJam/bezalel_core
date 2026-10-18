@@ -316,6 +316,11 @@ defmodule Bezalel.Study.ScrollsTest do
 
         assert message =~ "The Qumran corpus is not in this device's scrolls pack"
 
+        assert {:error, message} =
+                 SearchAncientSources.run(%{"query" => "בני אור", "corpus" => "all"}, %{})
+
+        assert message =~ "This device's scrolls pack has no ancient-source passages"
+
         File.rm!(scrolls)
         {:ok, conn} = Exqlite.Sqlite3.open(scrolls)
         :ok = Exqlite.Sqlite3.execute(conn, "CREATE TABLE pack_meta (key TEXT, value TEXT)")
