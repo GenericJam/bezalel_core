@@ -1,10 +1,13 @@
 defmodule Bezalel.Study.Tools.DrawImage do
   @moduledoc """
-  `draw_image`: a picture drawn for the user by OpenAI's image model
-  (gpt-image, through `ReqLLM.generate_image/3`), billed to the OpenAI API
-  key the user added in Settings (`Rho.Auth`, `:openai`). With a reference
-  picture (a material's id: a photo the user sent, a still, an earlier
-  drawing) it goes to the edits endpoint, which draws from that picture.
+  `draw_image`: a picture drawn for the user by the image model they chose
+  in Settings ("Pictures by", `Bezalel.Study.Preferences`' `image_model`,
+  one of `models/0`): OpenAI's gpt-image or a Gemini image model, through
+  `ReqLLM.generate_image/3`, billed to that provider's API key, which the
+  user added in Settings (`Rho.Auth`: `:openai`, `:google`). With a
+  reference picture (a material's id: a photo the user sent, a still, an
+  earlier drawing) gpt-image goes to the edits endpoint and Gemini gets
+  the picture with the words; either draws from that picture.
 
   The drawing is kept as a material through the host's store
   (`Bezalel.Materials.put/3`: received, derivation `:generated`,
@@ -15,27 +18,56 @@ defmodule Bezalel.Study.Tools.DrawImage do
 
   Not a study tool: it reads no pack and has no source to switch off, so
   it is in `Bezalel.Study.Tools.materials/0`, not `all/0`; a host offers it
-  once it has a materials store. Without an OpenAI API key it says so, for
-  the model to tell the user where to add one.
+  once it has a materials store. Without the chosen provider's API key it
+  says which key is missing, for the model to tell the user where to add
+  it (or to choose another image model).
 
-  Config (`config :bezalel_core, :draw_image, ...`): `:model` (default
-  `#{inspect("openai:gpt-image-2")}`), and for tests `:generate` (`{m, f}`
-  called as `ReqLLM.generate_image/3` is) and `:credential` (`{m, f}`
-  called as `Rho.Auth.credential/1` is).
+  Config (`config :bezalel_core, :draw_image, ...`), for tests:
+  `:generate` (`{m, f}` called as `ReqLLM.generate_image/3` is) and
+  `:credential` (`{m, f}` called as `Rho.Auth.credential/1` is).
   """
   @behaviour Rho.Tool
 
   alias Bezalel.Materials
   alias Bezalel.Materials.Material
+  alias Bezalel.Study.Preferences
+  alias ReqLLM.Message.ContentPart
+
+  @models [
+    %{id: "openai:gpt-image-2", label: "OpenAI gpt-image-2", provider: :openai},
+    %{id: "google:gemini-3.1-flash-image", label: "Gemini 3.1 Flash Image", provider: :google},
+    %{id: "google:gemini-3-pro-image", label: "Gemini 3 Pro Image", provider: :google}
+  ]
 
   @default_model "openai:gpt-image-2"
 
-  @sizes %{"square" => "1024x1024", "landscape" => "1536x1024", "portrait" => "1024x1536"}
+  # Each shape as OpenAI's size and as Gemini's aspect ratio.
+  @sizes %{
+    "square" => {"1024x1024", "1:1"},
+    "landscape" => {"1536x1024", "3:2"},
+    "portrait" => {"1024x1536", "2:3"}
+  }
 
   @edit_types ["image/jpeg", "image/png", "image/webp"]
 
-  @no_key "Drawing a picture needs an OpenAI API key, and none is set. Tell the user to add " <>
-            "one in Settings (OpenAI, API key); drawings are billed to that key."
+  @keys %{openai: "an OpenAI API key", google: "a Gemini API key"}
+  @key_settings %{openai: "OpenAI, API key", google: "Gemini, API key"}
+
+  @doc """
+  The image models a user can choose ("Pictures by"), in the order a
+  picker lists them: `%{id, label, provider}`, `id` a req_llm model spec,
+  `provider` the `Rho.Auth` provider whose API key pays for the drawing.
+  """
+  @spec models() :: [%{id: String.t(), label: String.t(), provider: :openai | :google}]
+  def models, do: @models
+
+  @doc "The ids of `models/0`."
+  @spec model_ids() :: [String.t()]
+  def model_ids, do: Enum.map(@models, & &1.id)
+
+  @doc "The image model a user who hasn't chosen one draws with: OpenAI's gpt-image."
+  @spec default_model() :: String.t()
+  def default_model, do: @default_model
 
   @impl true
   def name, do: "draw_image"
@@ -43,7 +75,7 @@ defmodule Bezalel.Study.Tools.DrawImage do
   @impl true
   def description do
     """
-    Draw a picture for the user with OpenAI's image model, billed to the user's OpenAI API key: a scene, a diagram, a map, an illustration of a passage. Describe it fully in `prompt`: the subject, what to show, the style, any words to letter in it. To draw from a picture (change it, or keep its look), give its ref in `references`: the ref of a picture the user attached (the ref attribute of its attachment) or of an earlier drawing. The user sees the drawing in the chat and it is kept in their Materials; you get its ref back. Draw when the user asks for a picture, or one plainly helps.\
+    Draw a picture for the user with the image model they chose in Settings, billed to their API key for that provider: a scene, a diagram, a map, an illustration of a passage. Describe it fully in `prompt`: the subject, what to show, the style, any words to letter in it. To draw from a picture (change it, or keep its look), give its ref in `references`: the ref of a picture the user attached (the ref attribute of its attachment) or of an earlier drawing. The user sees the drawing in the chat and it is kept in their Materials; you get its ref back. Draw when the user asks for a picture, or one plainly helps.\
     """
   end
 
@@ -77,18 +109,27 @@ defmodule Bezalel.Study.Tools.DrawImage do
   def timeout_ms, do: 180_000
 
   @impl true
-  def run(args, ctx) do
+  def run(args, ctx), do: run(args, ctx, Preferences.current(ctx))
+
+  @doc """
+  `run/2` with the user's settings given (`prefs.image_model` draws), as
+  the host's `:preferences` hook would give them.
+  """
+  @spec run(map(), map(), Preferences.t()) :: {:ok, term()} | {:error, String.t()}
+  def run(args, ctx, prefs) do
+    model = Enum.find(@models, &(&1.id == prefs.image_model)) || hd(@models)
+
     with {:ok, prompt} <- prompt(args),
          {:ok, size} <- size(args),
          {:ok, _store} <- store(),
          {:ok, refs} <- references(args, ctx),
-         {:ok, key} <- api_key(),
-         {:ok, {mime, bytes}} <- draw(prompt, size, refs, key) do
+         {:ok, key} <- api_key(model),
+         {:ok, {mime, bytes}} <- draw(model, prompt, size, refs, key) do
       material =
         Materials.derive(:generated, Enum.map(refs, &elem(&1, 0)), bytes,
           mime: mime,
           name: drawing_name(prompt, mime),
-          meta: %{prompt: prompt, model: model()}
+          meta: %{prompt: prompt, model: model.id}
         )
 
       case Materials.put(material, bytes, ctx) do
@@ -181,25 +222,27 @@ defmodule Bezalel.Study.Tools.DrawImage do
     end
   end
 
-  defp api_key do
+  defp api_key(%{provider: provider, label: label}) do
     {m, f} = config(:credential, {Rho.Auth, :credential})
 
-    case apply(m, f, [:openai]) do
-      {:ok, %{type: :api_key, key: key}} when is_binary(key) and key != "" -> {:ok, key}
-      _ -> {:error, @no_key}
+    case apply(m, f, [provider]) do
+      {:ok, %{type: :api_key, key: key}} when is_binary(key) and key != "" ->
+        {:ok, key}
+
+      _ ->
+        {:error,
+         "Drawing a picture with #{label} (the image model chosen in Settings, Pictures by) " <>
+           "needs #{@keys[provider]}, and none is set. Tell the user to add one in Settings " <>
+           "(#{@key_settings[provider]}), or to choose another image model under Pictures by; " <>
+           "drawings are billed to that key."}
     end
   end
 
-  defp draw(prompt, size, refs, key) do
+  defp draw(model, prompt, {size, ratio}, refs, key) do
     {m, f} = config(:generate, {ReqLLM, :generate_image})
+    {input, opts} = request(model.provider, prompt, size, ratio, refs, key)
 
-    opts =
-      case refs do
-        [] -> []
-        [{_material, {mime, bytes}}] -> [source_image: bytes, source_image_media_type: mime]
-      end
-
-    case apply(m, f, [model(), prompt, [api_key: key, size: size, output_format: :jpeg] ++ opts]) do
+    case apply(m, f, [model.id, input, opts]) do
       {:ok, response} ->
         case Enum.find(
                ReqLLM.Response.images(response),
@@ -212,6 +255,33 @@ defmodule Bezalel.Study.Tools.DrawImage do
       {:error, error} ->
         {:error, "The drawing failed: #{describe(error)}"}
     end
+  end
+
+  # gpt-image: the words, and a reference goes to the edits endpoint.
+  defp request(:openai, prompt, size, _ratio, refs, key) do
+    opts =
+      case refs do
+        [] -> []
+        [{_material, {mime, bytes}}] -> [source_image: bytes, source_image_media_type: mime]
+      end
+
+    {prompt, [api_key: key, size: size, output_format: :jpeg] ++ opts}
+  end
+
+  # Gemini: one user message, the reference picture after the words; a
+  # picture only, at the shape's aspect ratio. (req_llm's Google image
+  # request takes the key as its `key` query parameter.)
+  defp request(:google, prompt, _size, ratio, refs, key) do
+    parts = [
+      ContentPart.text(prompt)
+      | for({_m, {mime, bytes}} <- refs, do: ContentPart.image(bytes, mime))
+    ]
+
+    input =
+      if refs == [], do: prompt, else: ReqLLM.Context.new([ReqLLM.Context.user(parts)])
+
+    {input,
+     [api_key: key, aspect_ratio: ratio, provider_options: [response_modalities: ["IMAGE"]]]}
   end
 
   defp describe(%{response_body: %{"error" => %{"message" => message}}}) when is_binary(message),
@@ -230,8 +300,6 @@ defmodule Bezalel.Study.Tools.DrawImage do
     "Drew the picture; the user sees it in the chat, kept in their Materials as " <>
       "#{inspect(m.name)} (ref #{m.id})."
   end
-
-  defp model, do: config(:model, @default_model)
 
   defp config(key, default),
     do: :bezalel_core |> Application.get_env(:draw_image, []) |> Keyword.get(key, default)

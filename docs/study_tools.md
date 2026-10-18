@@ -12,10 +12,10 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | Module | What |
 |---|---|
 | `Bezalel.Study.Tools` | `all/0`, every study tool module; `materials/0`, the tools that make materials (`draw_image`); `withheld/1`, the tool names to withhold under a user's preferences |
-| `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by OpenAI's gpt-image on the user's OpenAI API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
+| `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by the image model the user chose ("Pictures by": OpenAI's gpt-image or a Gemini image model, `models/0`) on that provider's API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
 | `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. Every `run/2` hands rho the data with its `citations` as the result's details (`{:ok, {:details, markdown, data}}`, [Sources](#sources)): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card for `lookup_verse` and `word_study`. The Mermaid diagrams of the graph tools stay in the Markdown only |
 | `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
-| `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation; `current/1` asks the host |
+| `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation, image model, pushback model; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
 | `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB) with their labels, links and acknowledgements |
 | `Bezalel.Study.Reference` | Book names and reference forms ("Ex 31:2-3", "Exodus 31", "Jn 3:16", "Jude 3"); `book_name/1`, a code's English name |
@@ -24,7 +24,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Verses`, `Bezalel.Study.Lexicon` | Verse and lexicon queries |
 | `Bezalel.Study.Format` | Shared Markdown (verses, lexicon entries) |
 | `Bezalel.Study.Hermeneutics` | Genres and their guidance (Fee & Stuart) |
-| `Bezalel.Study.Prompt` | The system prompt: `fixed/1`, `default_approach/0`, `system_prompt/2` |
+| `Bezalel.Study.Prompt` | The system prompt: `fixed/1`, `default_approach/0`, `other_models/0`, `system_prompt/2` |
 | `Bezalel.Study.Args`, `Bezalel.Study.Patterns` | Argument reading; the regexes, compiled at run time (mob_dev rule) |
 | `Bezalel.Study.Graph` | Person lookup, family and Mermaid helpers shared by the graph tools |
 | `Bezalel.Study.Aquifer` | Dictionary and key-term search and article Markdown |
@@ -32,6 +32,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.BiblicalScrolls` | The biblical Dead Sea Scrolls' readings by verse (scrolls pack) |
 | `Bezalel.Study.Citation`, `Bezalel.Study.Citations` | A source a result rests on, and every URL template that builds one ([Sources](#sources)) |
 | `Bezalel.Agent.Details`, `Bezalel.Agent.Reply`, `Bezalel.Agent.Card` | What the session keeps of a tool's data (`keep_details/2`, `kept_card/1`, `kept_citations/1`), a reply's fold and sources, the passage card |
+| `Bezalel.Agent.Pushback` | Another model pushes back on a reply and the lead answers it: the critic's brief, one round per reply, automatic or on demand ([Pushback](#pushback-another-model-reviews-a-reply)) |
 
 ## Pack access
 
@@ -229,6 +230,8 @@ explicitly (tests pass them, so they stay async), and `result/1` uses `current/0
 | `excluded_sources` | `["editorial:verdicts", "method:genre_guidance"]` | Sources left out (below) |
 | `limit` | 8 (1–50) | Default result count of the list tools, held to each tool's maximum |
 | `translation` | `"net"` (`"net"`, `"bsb"`) | The English the tools quote |
+| `image_model` | `"openai:gpt-image-2"` (`DrawImage.models/0`) | "Pictures by": the model `draw_image` draws with |
+| `pushback_model` | nil (none) | "Pushback from": the model that pushes back on a reply ([Pushback](#pushback-another-model-reviews-a-reply)); any rho model spec |
 
 ### Sources
 
@@ -385,7 +388,7 @@ credits page (`Bezalel.Study.Credits`) stays the licence page.
 
 ## The system prompt
 
-`Prompt.system_prompt(prefs, surface: text)` is three parts:
+`Prompt.system_prompt(prefs, surface: text, ask_model: true)` is up to four parts:
 
 1. `Prompt.fixed(prefs)`, the part no user edits and kept minimal: Bezalel is a
    companion for studying the Bible; use the tools, quote what they return and cite it,
@@ -409,7 +412,13 @@ credits page (`Bezalel.Study.Credits`) stays the licence page.
    parallelomania, building on low-confidence claims) stated neutrally. No sermon-prep
    frame and no default doctrinal frame; Christian typological readings are one credited
    lens among others.
-3. `opts[:surface]`, the host's section on how its screen renders an answer (the phone
+3. With `ask_model: true` (the host offers rho's `ask_model` tool), `Prompt.other_models/0`:
+   ask another model only when the user asks for one ("have Gemini push back", "ask GPT
+   what it thinks"), once, with the model they named, purpose `"critique"` for pushback
+   or `"second_opinion"` for another view, then answer each of its points (revise where
+   it's right, stand your ground with reasons where it isn't), crediting it; one round.
+   Without the tool the prompt doesn't mention it.
+4. `opts[:surface]`, the host's section on how its screen renders an answer (the phone
    app passes its narrow-column formatting). Core has no platform formatting.
 
 From their `prompts/system_prompt.md` and `hermeneutics.py`: the tool guidance, the
@@ -451,13 +460,19 @@ text both apps show before a video is sent.
 **`draw_image`** is not a study tool (it reads no pack and has no source to switch off),
 so it is in `Tools.materials/0`, which a host offers beside `all/0` once it has a store.
 It takes `prompt`, `references` (one material id: req_llm's edits form carries one
-image) and `size` (`square`, `landscape`, `portrait`: 1024×1024, 1536×1024, 1024×1536),
-checks for a store, the reference and an OpenAI API key (`Rho.Auth.credential(:openai)`)
-before it spends anything, calls `ReqLLM.generate_image/3` (`openai:gpt-image-2`, JPEG;
-the edits endpoint with a reference), keeps the drawing (received, `:generated`,
-`derived_from` its reference) and answers rho with it by reference, so the chat draws
-it from the store and the model reads its ref. Tests replace the image call and the
-credential through `config :bezalel_core, :draw_image`.
+image) and `size` (`square`, `landscape`, `portrait`). It draws with the user's
+"Pictures by" (`prefs.image_model`, one of `DrawImage.models/0`: `openai:gpt-image-2`,
+the default, at 1024×1024, 1536×1024 or 1024×1536 as JPEG, a reference going to the
+edits endpoint; `google:gemini-3.1-flash-image` or `google:gemini-3-pro-image` at 1:1,
+3:2 or 2:3, picture only, a reference sent with the words). It checks for a store, the
+reference and the chosen provider's API key (`Rho.Auth.credential(:openai | :google)`)
+before it spends anything; a missing key is named, with where to add it ("Settings
+(Gemini, API key)") or to choose another model under Pictures by. Then it calls
+`ReqLLM.generate_image/3`, keeps the drawing (received, `:generated`, `derived_from`
+its reference, `meta.model` the model) and answers rho with it by reference, so the
+chat draws it from the store and the model reads its ref. `run/3` takes the
+preferences explicitly; tests replace the image call and the credential through
+`config :bezalel_core, :draw_image`.
 
 `Bezalel.Library.Message` and `Bezalel.Agent.Reply` list a message's materials by
 reference (`materials`, `%{id, kind, mime, name, about, entry}`) beside the pictures
@@ -469,6 +484,57 @@ sentences, a row with its column names; no code blocks, URLs, images or footnote
 Hebrew and Greek replaced by the transliteration the model put in parentheses after
 them or dropped, Strong's numbers in parentheses dropped, and references said aloud ("1
 Cor 13:4-7" is "First Corinthians 13 verses 4 to 7").
+
+## Pushback: another model reviews a reply
+
+Kevin's ask: "Claude generates the answer and Gemini provides pushback", like a code
+review. `Bezalel.Agent.Pushback` runs it on rho's consult (`Rho.Consult`, `rho ~> 0.3`);
+the decision record is `decisions/2026-10-18-pushback.md`.
+
+- **The critic** is the user's "Pushback from" (`prefs.pushback_model`, none by
+  default). Its brief, `Pushback.critic_prompt/0`, is a study code review: claims
+  against the tool results they cite, citations that don't support their claim,
+  textual and linguistic accuracy, missing or one-sided perspectives, overreach beyond
+  the evidence; a numbered list, most serious first, each point with its severity
+  (major, minor, nit) and evidence; no rewrite, no confessional side.
+- **What it reads** (`Pushback.brief/1`): the question as the lead got it (each
+  attachment's envelope included; its pictures and PDFs by reference,
+  `Pushback.attachments/1`), every tool call of the reply with its result (4,000
+  characters each, 24,000 in all, Source lines included) and the answer.
+- **One round per reply.** `Pushback.target/1` takes the conversation's last reply if
+  it finished with an answer (pi's `stopReason` `stop` or `length`, not one Bezalel
+  wrote); the lead's answer to a critique, a reply already critiqued, and a reply whose
+  lead had it critiqued within its turn (`ask_model`, purpose `critique`) are refused.
+  The critique is stored as the critic's own message (rho's attributed `model_message`
+  entry), the lead is prompted with it and `Pushback.instruction/0` ("Respond to each
+  point: revise where it's right, stand your ground with reasons where it isn't…"),
+  and its answer is the reply after it. A critique that comes back after the user
+  moved on (asked something else meanwhile) is not added: it would answer a reply
+  that is no longer the last, and the round isn't used up.
+- **Three ways in.** A per-conversation switch (the app's) calls `Pushback.auto/4` with
+  the finished reply after each `agent_end`; the Pushback button on the last reply
+  (`Pushback.offered?/2`, which agrees with `target/1` through the message's
+  `stop_reason` and blocks) calls `Pushback.start/3`; asking in words is the prompt's
+  rule and rho's `ask_model` tool, within the lead's turn. `start/3` answers at once
+  with a sentence for the user when it can't run: no critic chosen, the critic's
+  provider not signed in (`Rho.Consult.allowed/1`: "Gemini (Google) isn't signed in"),
+  a reply still running, nothing to push back on, or the round already had.
+- **On screen.** The critique streams on the loop's events (`consult_start`,
+  `consult_delta`, `consult_end`). The app folds them into a reply started with
+  `Bezalel.Agent.Reply.pushback/4` (any other reply ignores a consult outside a turn,
+  so a critique never lands in the user's next reply): `consult`, and a CONSULT block
+  ahead of the lead's answer. A stopped consult ends it `:stopped`; a failed one ends it
+  `:done` with `reason: :consult_failed` and the error (no run failed, so the app's
+  failed-run path, which drops entries and asks again, must not run). Stored, the
+  critique is a `Bezalel.Library.Message` with `role: :consult`, `model`, `purpose` and
+  `text` (and the same CONSULT block in `blocks`); an `ask_model` call inside a reply is
+  a CONSULT block in place of its TOOL CALL, streaming by the consult's id. A CONSULT
+  block has `"model"` and `"purpose"`; `Pushback.title/2` names it ("Pushback · Gemini
+  3 Pro"). The consult's cost is recorded in the session (rho's `consult` entry, in
+  `Rho.Session.totals/1`), and stopping the loop stops it.
+- **The same brief in words.** The app sets `config :rho, :consult_system,
+  {Bezalel.Agent.Pushback, :system, []}`, so the critic the lead asks for itself gets
+  the study brief too (rho's own for other purposes).
 
 ## Tests and fixtures
 

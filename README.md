@@ -70,13 +70,19 @@ of a tool's data (the card and the citations), and
 moves behind Delete and Undo. None of it reads or writes a file: the app
 keeps the state, draws it, and reads and writes the session file.
 
+And **pushback**: another model reviews a reply the way a colleague reviews
+code, and the model that answered answers the review (`Bezalel.Agent.Pushback`,
+on rho's `Rho.Consult`): automatically after every reply or on demand, one
+round per reply, the critique shown as the critic's own message.
+
 And **materials**, the files sent to the agent and received from it (photos,
 audio, video, documents, and their transcripts, audio tracks, stills and
 drawings): `Bezalel.Materials` names each by the SHA-256 of its bytes, says
 what goes to a model (pictures and PDFs by reference, audio and video as
 their transcript), and resolves rho's attachment references through the
 app's store; the `draw_image` tool (`Bezalel.Study.Tools.materials/0`)
-draws with OpenAI's gpt-image on the user's API key; `Bezalel.Speech` turns
+draws with the image model the user chose (OpenAI's gpt-image or a Gemini
+image model) on that provider's API key; `Bezalel.Speech` turns
 a reply into words for text-to-speech. Where the files live stays the
 app's.
 
@@ -95,9 +101,10 @@ config :bezalel_core, :packs_dir, {MyApp.Storage, :packs_dir, []}
 ```
 
 Tell it where a user's study settings come from (approach, scripture labels,
-switched-off sources, default result count, translation), as a function
-called on every tool call with the tool's ctx appended (it carries
-`:session_id`); unset, everyone gets the defaults:
+switched-off sources, default result count, translation, "Pictures by" and
+"Pushback from" models), as a function called on every tool call with the
+tool's ctx appended (it carries `:session_id`); unset, everyone gets the
+defaults:
 
 ```elixir
 config :bezalel_core, :preferences, {MyApp.Settings, :study_preferences, []}
@@ -149,6 +156,39 @@ end
 Show `Bezalel.Materials.video_notice/0` before a video is sent, and read a
 reply aloud with `Bezalel.Speech.speakable(summary)`. How it all works:
 [docs/study_tools.md](docs/study_tools.md#materials-drawings-and-read-aloud).
+
+Let another model push back (`prefs.pushback_model`, "Pushback from"). The
+loop's subscriber gets the critique as `consult_*` events, then the lead's
+answer as a run; fold both into a `Bezalel.Agent.Reply.pushback/4` (other
+replies ignore a consult outside a turn):
+
+```elixir
+# The study brief for a critique the lead asks for in words, too:
+config :rho, :consult_system, {Bezalel.Agent.Pushback, :system, []}
+
+# "Have Gemini push back" in words: rho's ask_model tool, and the prompt's rule for it:
+Rho.Supervisor.start_link(tools: Bezalel.Study.Tools.all() ++ [Rho.Tools.Consult])
+Bezalel.Study.Prompt.system_prompt(prefs, surface: my_formatting_text, ask_model: true)
+
+# The per-conversation switch, on each finished reply (after :agent_end):
+with {:ok, _task} <- Bezalel.Agent.Pushback.auto(loop, finished_reply, critic),
+     do: stream_into(Bezalel.Agent.Reply.pushback(conversation_id, model, critic, session_id))
+
+# The Pushback button, on the message where offered?/2 is true:
+if Bezalel.Agent.Pushback.offered?(messages, message), do: show_button()
+case Bezalel.Agent.Pushback.start(loop, critic) do
+  {:ok, _task} -> stream_into(Bezalel.Agent.Reply.pushback(conversation_id, model, critic, session_id))
+  {:error, sentence} -> show_error(sentence)
+end
+
+# A failed critique ends that reply :done, reason: :consult_failed, with its error:
+# show the error; it's no failed run (don't drop entries or ask again).
+```
+
+A critique is a CONSULT block (`"model"`, `"purpose"`) live and a
+`Bezalel.Library.Message` with `role: :consult` once stored; title it with
+`Bezalel.Agent.Pushback.title(model, purpose)` ("Pushback · Gemini 3 Pro").
+How it works: [docs/study_tools.md](docs/study_tools.md#pushback-another-model-reviews-a-reply).
 
 The NET Bible (the default translation) is quoted by permission for
 non-commercial use: show `Bezalel.Study.Translations.get("net").copyright`

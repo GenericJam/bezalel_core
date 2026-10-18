@@ -27,8 +27,9 @@ defmodule BezalelCore.MixProject do
       {:exqlite, "~> 0.42"},
       # The tool behaviour every study tool implements (Rho.Tool), the
       # session shape Bezalel.Library.Transcript reads, attachments by
-      # reference (Bezalel.Materials, rho 0.2).
-      sibling(:rho, "~> 0.2"),
+      # reference (Bezalel.Materials, rho 0.2), consults and attributed
+      # model messages (Bezalel.Agent.Pushback, rho 0.3).
+      sibling(:rho, "~> 0.3"),
       # Bezalel.Materials: a file's media type from its name, and back.
       {:mime, "~> 2.0"},
       # Bezalel.Agent.Reply encodes tool arguments for the TOOL CALL block.

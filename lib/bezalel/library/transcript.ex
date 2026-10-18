@@ -6,8 +6,12 @@ defmodule Bezalel.Library.Transcript do
   the reading and writing.
 
   **Messages.** On the active branch, each user `message` entry is a user
-  message; the entries between two of them (the model's turns, tool
-  results, the loop's notices) are one reply (`Bezalel.Library.Message`).
+  message, and each attributed `model_message` entry (another model's
+  message, `Rho.Session.attribution/1`: a pushback's critique,
+  `Bezalel.Agent.Pushback`) a `:consult` message; the entries between two
+  of these (the model's turns, tool results, the loop's notices) are one
+  reply (`Bezalel.Library.Message`), so the reply after a critique is the
+  lead model's answer to it.
   A live reply's blocks are rebuilt from its entries by the fold that drew
   it while it streamed (`Bezalel.Agent.Reply`): each turn's thinking, each
   tool call with its result, the answer as the SUMMARY; its passage card
@@ -118,6 +122,7 @@ defmodule Bezalel.Library.Transcript do
     |> Enum.reverse()
     |> Enum.flat_map(fn
       {:user, entry} -> [user_message(entry, session_id)]
+      {:consult, entry} -> [consult_message(entry)]
       {:agent, group, _closed?} -> reply_message(Enum.reverse(group), session_id)
     end)
   end
@@ -128,8 +133,8 @@ defmodule Bezalel.Library.Transcript do
   # question was deleted) stay two.
   defp group(entry, groups) do
     case {kind(entry), groups} do
-      {:user, _} ->
-        [{:user, entry} | groups]
+      {boundary, _} when boundary in [:user, :consult] ->
+        [{boundary, entry} | groups]
 
       {:notice, [{:agent, group, closed?} | rest]} ->
         [{:agent, [entry | group], closed?} | rest]
@@ -156,7 +161,9 @@ defmodule Bezalel.Library.Transcript do
        when role in ["assistant", "toolResult"],
        do: :turn
 
-  defp kind(%{"type" => "custom_message"}), do: :notice
+  defp kind(%{"type" => "custom_message"} = entry),
+    do: if(Session.attribution(entry), do: :consult, else: :notice)
+
   defp kind(_entry), do: :skip
 
   defp user_message(%{"id" => id, "message" => m} = entry, session_id) do
@@ -166,6 +173,21 @@ defmodule Bezalel.Library.Transcript do
       text: Session.typed(m),
       images: images([entry], session_id),
       materials: materials([entry]),
+      entries: [id]
+    }
+  end
+
+  defp consult_message(%{"id" => id} = entry) do
+    %{model: model, purpose: purpose} = Session.attribution(entry)
+    text = Session.text(entry["content"])
+
+    %Message{
+      id: id,
+      role: :consult,
+      text: text,
+      model: model,
+      purpose: purpose,
+      blocks: [Reply.consult_block("consult", %{model: model, purpose: purpose, text: text})],
       entries: [id]
     }
   end
@@ -200,11 +222,19 @@ defmodule Bezalel.Library.Transcript do
             | blocks: Reply.blocks(reply),
               card: reply.card,
               citations: Reply.sources(reply),
-              model: model(group)
+              model: model(group),
+              stop_reason: stop_reason(group)
           }
       end
 
     if shown?(message), do: [message], else: []
+  end
+
+  defp stop_reason(group) do
+    Enum.find_value(Enum.reverse(group), fn
+      %{"message" => %{"role" => "assistant"} = m} -> m["stopReason"]
+      _ -> nil
+    end)
   end
 
   defp shown?(m),
@@ -353,7 +383,7 @@ defmodule Bezalel.Library.Transcript do
   @doc """
   The move that takes the last question off the branch, so it can be
   asked again: `{move, text}`, or `:none` when the branch doesn't end in a
-  user message.
+  user message (another model's message is no question to ask again).
   """
   @spec take_question([Session.entry()]) :: {move(), String.t()} | :none
   def take_question(branch) do
@@ -364,9 +394,9 @@ defmodule Bezalel.Library.Transcript do
   end
 
   @doc """
-  The move that drops a failed run's entries after the last user message
-  (the reply is shown as its error, then asked again); `:none` when there
-  are none.
+  The move that drops a failed run's entries after the last user message,
+  or after another model's message (a pushback's critique stays, its
+  failed answer goes); `:none` when there are none.
   """
   @spec drop_after_question([Session.entry()]) :: move() | :none
   def drop_after_question(branch) do
@@ -376,9 +406,10 @@ defmodule Bezalel.Library.Transcript do
     end
   end
 
-  # The last user message and what follows it that the chat shows.
+  # The last user message or other model's message, and what follows it
+  # that the chat shows.
   defp last_user(branch) do
-    case Enum.split_while(Enum.reverse(branch), &(kind(&1) != :user)) do
+    case Enum.split_while(Enum.reverse(branch), &(kind(&1) not in [:user, :consult])) do
       {_after, []} -> nil
       {after_rev, [entry | _]} -> {entry, after_rev |> Enum.reverse() |> Enum.reject(&skip?/1)}
     end
