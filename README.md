@@ -60,8 +60,8 @@ reply's blocks (THINKING, TOOL CALL, SUMMARY) as it streams,
 `Bezalel.Agent.Card` builds the passage card from `lookup_verse` /
 `word_study` data, and `Bezalel.Library.Transcript` reads a conversation's
 messages (`Bezalel.Library.Message`) back off its rho session and plans the
-branch moves behind Delete and Undo. All pure: the app keeps the state,
-draws it, and reads and writes the session file.
+branch moves behind Delete and Undo. None of it reads or writes a file:
+the app keeps the state, draws it, and reads and writes the session file.
 
 ## Using it
 

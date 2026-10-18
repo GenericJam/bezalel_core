@@ -2,7 +2,7 @@ defmodule Bezalel.Library.Transcript do
   @moduledoc """
   A conversation's transcript is its rho session (`Rho.Session`, pi's
   JSONL): this module reads the chat's messages off a branch of it and
-  plans the branch edits behind Delete and Undo. Pure; the host app does
+  plans the branch edits behind Delete and Undo. No file I/O; the host app does
   the reading and writing.
 
   **Messages.** On the active branch, each user `message` entry is a user

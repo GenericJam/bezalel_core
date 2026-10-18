@@ -17,7 +17,7 @@ too unless this file says otherwise.
   events folded into a reply's blocks and passage card (`Bezalel.Agent.Reply`,
   `Bezalel.Agent.Card`, `Bezalel.Agent.Patterns`) and a conversation's
   messages read off its rho session, with the branch moves behind Delete and
-  Undo (`Bezalel.Library.Transcript`, `Bezalel.Library.Message`; pure, the
+  Undo (`Bezalel.Library.Transcript`, `Bezalel.Library.Message`; no file I/O, the
   app reads and writes the file). Anything every Bezalel app must answer the
   same way.
 - **Not here:** UI, Mob, Phoenix, settings storage, where files live on a

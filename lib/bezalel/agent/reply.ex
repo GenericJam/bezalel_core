@@ -10,10 +10,10 @@ defmodule Bezalel.Agent.Reply do
 
   Pictures in a turn or a tool result are listed in `images`.
 
-  Pure: the host app keeps one per conversation with a reply in flight.
-  The loop writes the reply to the conversation's session as it goes;
-  once stored, `Bezalel.Library.Transcript` draws it with this same fold
-  over its entries.
+  No file I/O: the host app keeps one per conversation with a reply in
+  flight. The loop writes the reply to the conversation's session as it
+  goes; once stored, `Bezalel.Library.Transcript` rebuilds it with this same
+  fold over its entries.
   """
 
   alias Bezalel.Agent.{Card, Patterns}
