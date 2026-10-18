@@ -114,6 +114,10 @@ defmodule Bezalel.Usage do
   among them for a subscription, the billing page for an API key, and for
   both what its models used today and this week (the last seven days,
   today included), in total (`spend`) and per model (most tokens first).
+
+  Windows are a sign-in's only: Claude's sign-in and an Anthropic key are
+  the same provider in rho's record, and the windows a sign-in left there
+  don't apply to a key stored in its place.
   """
   @spec summary(map(), keyword()) :: [provider_summary()]
   def summary(state, opts \\ []) do
@@ -122,18 +126,24 @@ defmodule Bezalel.Usage do
     for provider <- Keyword.get(opts, :providers, Auth.providers()),
         %{signed_in: true, type: type} <- [auth[provider]] do
       kind = kind(type)
-      windows = if kind == :subscription, do: windows(state, provider, now), else: []
       models = models(state, provider, today)
+
+      {windows, limits, out} =
+        if kind == :subscription,
+          do:
+            {windows(state, provider, now), Rho.Usage.limits(state, provider) || %{},
+             exhausted(state, provider, now)},
+          else: {[], %{}, nil}
 
       %{
         provider: provider,
         name: name(provider, kind),
         kind: kind,
-        plan: (Rho.Usage.limits(state, provider) || %{})["plan"],
-        checked_at: (Rho.Usage.limits(state, provider) || %{})["checked_at"],
-        level: worst([level_of_exhausted(state, provider, now) | Enum.map(windows, & &1.level)]),
+        plan: limits["plan"],
+        checked_at: limits["checked_at"],
+        level: worst([if(out, do: :exhausted, else: :ok) | Enum.map(windows, & &1.level)]),
         windows: windows,
-        exhausted: exhausted(state, provider, now),
+        exhausted: out,
         spend: %{today: sum(models, :today), week: sum(models, :week)},
         models: models,
         billing_url: if(kind == :api_key, do: billing_url(provider))
@@ -204,17 +214,20 @@ defmodule Bezalel.Usage do
 
   @doc """
   Can a question go to `model` now, as far as the usage record knows?
-  `{:exhausted, explanation}` while its provider's limit is used up for
-  more than a minute (a window at 100 %, or a 429 that hasn't lifted), so
-  the app can say so instead of sending a call that fails.
+  `{:exhausted, explanation}` while its subscription's limit is used up
+  for more than a minute (a window at 100 %, or a 429 that hasn't lifted),
+  so the app can say so instead of sending a call that fails. An API key
+  isn't held back: the windows are a sign-in's, and a key's throttles are
+  short (the loop waits them out). Options as `explain/2`'s.
   """
   @spec preflight(map(), String.t(), keyword()) :: :ok | {:exhausted, explanation()}
   def preflight(state, model, opts \\ []) do
-    {now, _today, _auth} = context(opts, auth: false)
+    {now, _today, auth} = context(opts)
 
     with {:ok, provider} <- Auth.provider_for_model(model),
+         :subscription <- credential_kind(provider, auth),
          %{resets_at: at} when at > now + @grace_s <- Rho.Usage.exhausted(state, provider, now) do
-      {:exhausted, limit_reached(state, provider, nil, now, "")}
+      {:exhausted, limit_reached(ctx(state, now, opts), provider, nil, "", nil)}
     else
       _ -> :ok
     end
@@ -230,52 +243,62 @@ defmodule Bezalel.Usage do
   `error` is the reply's error text (what `Rho.LLM.describe/1` wrote, as
   the loop reports and the session keeps it) or a `t:Rho.LLM.error/0`.
   Options: `:state` (the usage record: when a used-up limit resets),
-  `:model` (the model the call went to), `:auth` (whether its provider was
+  `:model` (the model the call went to), `:auth` (whether its provider is
   a sign-in or a key: an API key's 401 is a bad key, a sign-in's an
-  expired one), `:now`. `detail` keeps the original text.
+  expired one), `:now`, and `:clock` (`fn unix -> text`, how the message
+  says a reset time; `Rho.LLM.clock/2` by default, the node's local time:
+  right on a phone, the server's zone on a website). `detail` keeps the
+  original text.
   """
   @spec explain(String.t() | Rho.LLM.error(), keyword()) :: explanation()
   def explain(error, opts \\ []) do
-    {now, _today, _auth} = context(opts, auth: false)
-    state = Keyword.get(opts, :state, %{})
+    {now, _today, auth} = context(opts)
+    ctx = ctx(Keyword.get(opts, :state, %{}), now, opts)
     text = text(error)
-    provider = provider(error, opts[:model], text)
-    kind = credential_kind(provider, opts[:auth])
+    # The loop adds why its fallback model couldn't take over; the call
+    # that failed is the text before it.
+    own = text |> String.split("\n(Fallback model:", parts: 2) |> hd()
+    provider = provider(error, opts[:model], own)
+    kind = credential_kind(provider, auth)
 
-    case classify(error, String.downcase(text), now) do
-      :limit_reached -> limit_reached(state, provider, window_in(text), now, text, error)
-      class -> explanation(class, provider, kind, state, now, text)
+    case classify(error, String.downcase(own), provider, now) do
+      :limit_reached -> limit_reached(ctx, provider, window_in(own), text, error)
+      class -> explanation(class, provider, kind, ctx, text)
     end
   end
+
+  defp ctx(state, now, opts),
+    do: %{state: state, now: now, clock: Keyword.get(opts, :clock, &Rho.LLM.clock(&1, now))}
 
   defp text(error) when is_binary(error), do: error
   defp text(error), do: Rho.LLM.describe(error)
 
-  defp classify({:rate_limited, %{resets_at: at}}, _t, now) when is_integer(at) and at > now,
-    do: :limit_reached
+  defp classify({:rate_limited, %{resets_at: at}}, _t, _provider, now)
+       when is_integer(at) and at > now,
+       do: :limit_reached
 
-  defp classify({:signed_out, _provider}, _t, _now), do: :signed_out
-  defp classify({:auth, _provider, _message}, _t, _now), do: :sign_in_expired
-  defp classify({:transport, _reason}, _t, _now), do: :network
+  defp classify({:signed_out, _provider}, _t, _p, _now), do: :signed_out
+  defp classify({:auth, _provider, _message}, _t, _p, _now), do: :sign_in_expired
+  defp classify({:transport, _reason}, _t, _p, _now), do: :network
 
-  defp classify(_error, t, _now) do
-    Enum.find_value(classes(), :failed, fn {class, needles} ->
+  defp classify(_error, t, provider, _now) do
+    Enum.find_value(classes(provider), :failed, fn {class, needles} ->
       if Enum.any?(needles, &String.contains?(t, &1)), do: class
     end)
   end
 
   # In order: the first class one of whose phrases the (lowercased) text
   # holds. Out of credit before a 429, so OpenAI's insufficient_quota (a
-  # 429) isn't taken for a throttle; a bad key before a 401 sign-in.
-  defp classes do
+  # 429 whose message is "You exceeded your current quota…") isn't taken
+  # for a throttle; Gemini says the same words of a per-minute quota, so
+  # for Google they're a throttle. A bad key before a 401 sign-in.
+  defp classes(provider) do
+    quota = if provider == :google, do: [], else: ["exceeded your current quota"]
+
     [
       limit_reached: ["is used up until", "usage limit has been reached", "usage_limit_reached"],
-      no_credit: [
-        "credit balance is too low",
-        "insufficient_quota",
-        "exceeded your current quota",
-        "402 (payment required)"
-      ],
+      no_credit:
+        ["credit balance is too low", "insufficient_quota", "402 (payment required)"] ++ quota,
       cost_cap: ["daily cost cap reached"],
       overloaded: ["529 (overloaded)", "overloaded_error", "overloaded"],
       invalid_key: [
@@ -287,12 +310,18 @@ defmodule Bezalel.Usage do
       ],
       sign_in_expired: ["sign-in expired", "401 (sign-in rejected)", "oauth token has expired"],
       signed_out: ["not signed in to"],
-      rate_limited: ["429 (rate limited)", "rate_limit_error", "rate limit"],
+      rate_limited: [
+        "429 (rate limited)",
+        "rate_limit_error",
+        "rate limit",
+        "exceeded your current quota"
+      ],
       network: ["network error"]
     ]
   end
 
-  defp limit_reached(state, provider, window, now, text, error \\ nil) do
+  defp limit_reached(ctx, provider, window, text, error) do
+    %{state: state, now: now} = ctx
     out = provider && exhausted(state, provider, now)
     at = until(error, out, state, provider, now)
 
@@ -304,18 +333,19 @@ defmodule Bezalel.Usage do
       end
 
     who = if provider, do: "#{name(provider, :subscription)}'s ", else: "The "
+    switch = "another model #{Rho.Config.hint(:switch_model)}."
 
-    lifts =
+    after_that =
       if at,
-        do: " It resets at #{Rho.LLM.clock(at, now)} (in #{Rho.Usage.duration(at - now)}).",
-        else: ""
+        do:
+          " It resets at #{ctx.clock.(at)} (in #{Rho.Usage.duration(at - now)}). " <>
+            "Until then, switch to " <> switch,
+        else: " Switch to " <> switch
 
     %{
       kind: :limit_reached,
       title: "Usage limit reached",
-      message:
-        "#{who}#{lower_first(label)} is used up.#{lifts} " <>
-          "Until then, switch to another model #{Rho.Config.hint(:switch_model)}.",
+      message: "#{who}#{lower_first(label)} is used up.#{after_that}",
       action: if(at, do: :wait, else: :switch_model),
       provider: provider,
       until: at,
@@ -337,7 +367,7 @@ defmodule Bezalel.Usage do
     end
   end
 
-  defp explanation(:no_credit, provider, _kind, _state, _now, text) do
+  defp explanation(:no_credit, provider, _kind, _ctx, text) do
     who = if provider, do: "#{api_name(provider)} account", else: "API account"
 
     base(:no_credit, "Out of API credit", provider, text, %{
@@ -349,7 +379,7 @@ defmodule Bezalel.Usage do
     })
   end
 
-  defp explanation(:cost_cap, provider, _kind, _state, _now, text) do
+  defp explanation(:cost_cap, provider, _kind, _ctx, text) do
     base(:cost_cap, "Daily spending cap reached", provider, text, %{
       message:
         "Today's spending cap is reached, so no more model calls go out until tomorrow, " <>
@@ -358,7 +388,7 @@ defmodule Bezalel.Usage do
     })
   end
 
-  defp explanation(:overloaded, provider, _kind, _state, _now, text) do
+  defp explanation(:overloaded, provider, _kind, _ctx, text) do
     who = if provider, do: "#{company(provider)}'s servers are", else: "The model's servers are"
 
     base(:overloaded, "The model is overloaded", provider, text, %{
@@ -369,12 +399,19 @@ defmodule Bezalel.Usage do
     })
   end
 
-  defp explanation(:invalid_key, provider, _kind, _state, _now, text), do: bad_key(provider, text)
+  # A sign-in's 401 can read like a bad key (OpenAI says "Incorrect API key
+  # provided" of a bad bearer token), and ChatGPT has no key to paste: the
+  # remedy follows the credential, where it's known.
+  defp explanation(:invalid_key, provider, kind, ctx, text)
+       when kind == :subscription or provider == :openai_codex,
+       do: explanation(:sign_in_expired, provider, :subscription, ctx, text)
 
-  defp explanation(:sign_in_expired, provider, :api_key, _state, _now, text),
+  defp explanation(:invalid_key, provider, _kind, _ctx, text), do: bad_key(provider, text)
+
+  defp explanation(:sign_in_expired, provider, :api_key, _ctx, text),
     do: bad_key(provider, text)
 
-  defp explanation(:sign_in_expired, provider, _kind, _state, _now, text) do
+  defp explanation(:sign_in_expired, provider, _kind, _ctx, text) do
     who = if provider, do: "#{name(provider, :subscription)} sign-in", else: "sign-in"
 
     base(:sign_in_expired, "Sign-in expired", provider, text, %{
@@ -384,7 +421,7 @@ defmodule Bezalel.Usage do
     })
   end
 
-  defp explanation(:signed_out, provider, _kind, _state, _now, text) do
+  defp explanation(:signed_out, provider, _kind, _ctx, text) do
     who = if provider, do: Auth.label(provider), else: "this model's provider"
 
     base(:signed_out, "Not signed in", provider, text, %{
@@ -394,13 +431,14 @@ defmodule Bezalel.Usage do
     })
   end
 
-  defp explanation(:rate_limited, provider, _kind, state, now, text) do
+  defp explanation(:rate_limited, provider, _kind, ctx, text) do
+    %{state: state, now: now} = ctx
     at = until(nil, nil, state, provider, now)
     who = if provider, do: company(provider), else: "The provider"
 
     lifts =
       if at,
-        do: "It lifts at #{Rho.LLM.clock(at, now)} (in #{Rho.Usage.duration(at - now)}).",
+        do: "It lifts at #{ctx.clock.(at)} (in #{Rho.Usage.duration(at - now)}).",
         else: "Wait a moment and try again."
 
     base(:rate_limited, "Too many requests", provider, text, %{
@@ -410,14 +448,14 @@ defmodule Bezalel.Usage do
     })
   end
 
-  defp explanation(:network, provider, _kind, _state, _now, text) do
+  defp explanation(:network, provider, _kind, _ctx, text) do
     base(:network, "Couldn't reach the model", provider, text, %{
       message: "The connection to the model provider failed. Check the connection and try again.",
       action: :retry
     })
   end
 
-  defp explanation(:failed, provider, _kind, _state, _now, text) do
+  defp explanation(:failed, provider, _kind, _ctx, text) do
     base(:failed, "The reply failed", provider, text, %{
       message: text |> String.split("\n", parts: 2) |> hd(),
       action: :retry
@@ -530,7 +568,8 @@ defmodule Bezalel.Usage do
   def tokens(n) when n >= 1_000, do: short(n / 1_000) <> "k"
   def tokens(n), do: Integer.to_string(round(n))
 
-  defp short(x) when x >= 100, do: Integer.to_string(round(x))
+  # From 99.95 the one decimal would round to "100.0": whole numbers.
+  defp short(x) when x >= 99.95, do: Integer.to_string(round(x))
   defp short(x), do: :erlang.float_to_binary(Float.round(x * 1.0, 1), decimals: 1)
 
   @doc "Dollars: `$0.00`, `<$0.01`, `$0.84`, `$12.30`."
@@ -547,10 +586,10 @@ defmodule Bezalel.Usage do
 
   # ── Internals ────────────────────────────────────────────────────────────
 
-  defp context(opts, want \\ [auth: true]) do
+  defp context(opts) do
     now = Keyword.get_lazy(opts, :now, fn -> System.os_time(:second) end)
     today = Keyword.get_lazy(opts, :today, &Rho.Budget.today/0)
-    auth = if want[:auth], do: Keyword.get_lazy(opts, :auth, &Auth.status/0)
+    auth = Keyword.get_lazy(opts, :auth, &Auth.status/0)
     {now, today, auth}
   end
 
@@ -583,9 +622,6 @@ defmodule Bezalel.Usage do
         nil
     end
   end
-
-  defp level_of_exhausted(state, provider, now),
-    do: if(Rho.Usage.exhausted(state, provider, now), do: :exhausted, else: :ok)
 
   defp worst(levels) do
     cond do

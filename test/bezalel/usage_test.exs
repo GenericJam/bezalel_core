@@ -31,6 +31,14 @@ defmodule Bezalel.UsageTest do
   defp auth(pairs),
     do: Map.merge(%{anthropic: @out, openai_codex: @out, openai: @out}, Map.new(pairs))
 
+  # The credentials are always the test's (the default reads the node's
+  # store): none signed in unless the test says.
+  defp explain(error, opts \\ []),
+    do: Usage.explain(error, Keyword.put_new(opts, :auth, auth([])))
+
+  defp preflight(state, model, opts),
+    do: Usage.preflight(state, model, Keyword.put_new(opts, :auth, auth(anthropic: @oauth)))
+
   describe "explain/2: a failed call in plain words" do
     test "an Anthropic API key out of credit (a 400) says to add credit, with the billing page" do
       text =
@@ -47,7 +55,7 @@ defmodule Bezalel.UsageTest do
         })
         |> Rho.LLM.describe()
 
-      e = Usage.explain(text, model: @claude, auth: auth(anthropic: @key))
+      e = explain(text, model: @claude, auth: auth(anthropic: @key))
 
       assert %{kind: :no_credit, action: :add_credit, provider: :anthropic} = e
       assert e.billing_url == "https://console.anthropic.com/settings/billing"
@@ -75,7 +83,7 @@ defmodule Bezalel.UsageTest do
         Rho.LLM.describe(error) <>
           "\nStill limited after 3 retries over 14 s: prompt again to continue this run."
 
-      e = Usage.explain(text, model: @gpt)
+      e = explain(text, model: @gpt)
 
       assert %{kind: :no_credit, action: :add_credit, provider: :openai} = e
       assert e.billing_url =~ "platform.openai.com"
@@ -88,7 +96,7 @@ defmodule Bezalel.UsageTest do
           "error" => %{"type" => "overloaded_error", "message" => "Overloaded"}
         })
 
-      e = Usage.explain(Rho.LLM.describe(error), model: @claude)
+      e = explain(Rho.LLM.describe(error), model: @claude)
 
       assert %{kind: :overloaded, action: :retry, until: nil} = e
       assert e.message =~ "Anthropic's servers are too busy"
@@ -123,7 +131,7 @@ defmodule Bezalel.UsageTest do
       text = Rho.LLM.describe(error)
       state = recorded(@claude, %{status: 429, headers: headers, body: body, error: "x"}, now)
 
-      e = Usage.explain(text, state: state, model: @claude, now: now)
+      e = explain(text, state: state, model: @claude, now: now)
 
       assert %{kind: :limit_reached, action: :wait, until: ^reset, provider: :anthropic} = e
       assert e.title == "Usage limit reached"
@@ -132,12 +140,57 @@ defmodule Bezalel.UsageTest do
       assert e.message =~ "switch to another model"
 
       # The error itself, as a host holding it would pass it.
-      assert %{kind: :limit_reached, until: ^reset} = Usage.explain(error, now: now)
+      assert %{kind: :limit_reached, until: ^reset} = explain(error, now: now)
 
       # Only the text, with no record: the window still comes from the words.
-      bare = Usage.explain(text, now: now)
+      bare = explain(text, now: now)
       assert %{kind: :limit_reached, until: nil, action: :switch_model} = bare
-      assert bare.message =~ "Claude's 5-hour limit is used up."
+      assert bare.message =~ "Claude's 5-hour limit is used up. Switch to another model"
+      refute bare.message =~ "Until then"
+
+      # The host says how a time reads (the website: the reader's zone).
+      timed = explain(text, state: state, now: now, clock: fn ^reset -> "5:10 AM MDT" end)
+      assert timed.message =~ "It resets at 5:10 AM MDT (in 1h 20m)."
+    end
+
+    test "the loop's note on the fallback model doesn't stand for the call that failed" do
+      overloaded =
+        failed(@claude, 529, %{
+          "type" => "error",
+          "error" => %{"type" => "overloaded_error", "message" => "Overloaded"}
+        })
+
+      text =
+        Rho.LLM.describe(overloaded) <>
+          "\nStill limited after 4 retries over 31 s: prompt again to continue this run." <>
+          "\n(Fallback model: ChatGPT (OpenAI Codex)'s 5 hours limit is used up until 05:10.)"
+
+      assert %{kind: :overloaded, provider: :anthropic, detail: ^text} =
+               explain(text, model: @claude)
+
+      throttle =
+        Rho.LLM.describe({:http, 429, "This request would exceed your account's rate limit."}) <>
+          "\nPrompt again to continue this run." <>
+          "\n(Fallback model: ChatGPT (OpenAI Codex)'s 7 days limit is used up until Oct 21 09:00.)"
+
+      assert %{kind: :rate_limited, provider: :anthropic} = explain(throttle, model: @claude)
+    end
+
+    test "Gemini's per-minute quota is a throttle, though it reads like OpenAI's out of credit" do
+      error =
+        failed("google:gemini-2.5-flash", 429, %{
+          "error" => %{
+            "code" => 429,
+            "message" =>
+              "You exceeded your current quota, please check your plan and billing details. " <>
+                "For more information on this error, head to: " <>
+                "https://ai.google.dev/gemini-api/docs/rate-limits.",
+            "status" => "RESOURCE_EXHAUSTED"
+          }
+        })
+
+      assert %{kind: :rate_limited, action: :retry, billing_url: nil} =
+               explain(Rho.LLM.describe(error), model: "google:gemini-2.5-flash")
     end
 
     test "ChatGPT's usage limit (Codex's body) resets when the body says" do
@@ -154,13 +207,13 @@ defmodule Bezalel.UsageTest do
       }
 
       error = failed(@codex, 429, body, [], %{}, now)
-      e = Usage.explain(Rho.LLM.describe(error), model: @codex, state: %{}, now: now)
+      e = explain(Rho.LLM.describe(error), model: @codex, state: %{}, now: now)
 
       assert %{kind: :limit_reached, provider: :openai_codex} = e
       assert e.message =~ "ChatGPT's usage limit is used up."
 
       assert %{kind: :limit_reached, until: until, action: :wait} =
-               Usage.explain(error, now: now)
+               explain(error, now: now)
 
       assert until == now + 7200
     end
@@ -176,7 +229,7 @@ defmodule Bezalel.UsageTest do
           }
         })
 
-      e = Usage.explain(Rho.LLM.describe(error), model: @claude)
+      e = explain(Rho.LLM.describe(error), model: @claude)
       assert %{kind: :rate_limited, action: :retry, until: nil} = e
       assert e.message =~ "Anthropic is limiting how fast requests can be made"
     end
@@ -205,10 +258,18 @@ defmodule Bezalel.UsageTest do
         |> Rho.LLM.describe()
 
       assert %{kind: :invalid_key, action: :add_key, provider: :anthropic} =
-               e = Usage.explain(anthropic, model: @claude)
+               e = explain(anthropic, model: @claude)
 
       assert e.message =~ "Anthropic API key was turned down"
-      assert %{kind: :invalid_key, provider: :openai} = Usage.explain(openai, model: @gpt)
+      assert %{kind: :invalid_key, provider: :openai} = explain(openai, model: @gpt)
+
+      # OpenAI words a ChatGPT sign-in's bad token the same; there's no key
+      # to paste there, and a sign-in is signed in to again.
+      assert %{kind: :sign_in_expired, action: :sign_in, provider: :openai_codex} =
+               explain(openai, model: @codex)
+
+      assert %{kind: :sign_in_expired, action: :sign_in} =
+               explain(anthropic, model: @claude, auth: auth(anthropic: @oauth))
     end
 
     test "a 401 is an expired sign-in on a subscription and a bad key on an API key" do
@@ -225,45 +286,45 @@ defmodule Bezalel.UsageTest do
         |> Rho.LLM.describe()
 
       assert %{kind: :sign_in_expired, action: :sign_in} =
-               e = Usage.explain(text, model: @claude, auth: auth(anthropic: @oauth))
+               e = explain(text, model: @claude, auth: auth(anthropic: @oauth))
 
       assert e.message =~ "Claude sign-in has expired"
 
       generic = Rho.LLM.describe({:http, 401, "Invalid bearer token"})
 
       assert %{kind: :invalid_key, action: :add_key} =
-               Usage.explain(generic, model: @claude, auth: auth(anthropic: @key))
+               explain(generic, model: @claude, auth: auth(anthropic: @key))
 
       assert %{kind: :sign_in_expired} =
-               Usage.explain(generic, model: @claude, auth: auth(anthropic: @oauth))
+               explain(generic, model: @claude, auth: auth(anthropic: @oauth))
     end
 
     test "a refresh that failed, a missing sign-in, the daily cap, the network, anything else" do
       expired = {:auth, :openai_codex, "invalid_grant: refresh token revoked"}
-      assert %{kind: :sign_in_expired, action: :sign_in} = Usage.explain(expired)
-      assert %{kind: :sign_in_expired} = Usage.explain(Rho.LLM.describe(expired))
+      assert %{kind: :sign_in_expired, action: :sign_in} = explain(expired)
+      assert %{kind: :sign_in_expired} = explain(Rho.LLM.describe(expired))
 
       assert %{kind: :signed_out, action: :sign_in, provider: :openai} =
-               Usage.explain({:signed_out, :openai})
+               explain({:signed_out, :openai})
 
       assert %{kind: :signed_out, provider: :openai} =
-               Usage.explain(Rho.LLM.describe({:signed_out, :openai}))
+               explain(Rho.LLM.describe({:signed_out, :openai}))
 
       cap =
         "Daily cost cap reached: $5.02 of $5.00 spent today. " <>
           "No more model calls until tomorrow, or until the cap is raised."
 
-      assert %{kind: :cost_cap, action: :wait} = Usage.explain(cap)
+      assert %{kind: :cost_cap, action: :wait} = explain(cap)
 
-      assert %{kind: :network, action: :retry} = Usage.explain({:transport, :econnrefused})
+      assert %{kind: :network, action: :retry} = explain({:transport, :econnrefused})
 
       assert %{kind: :network} =
-               Usage.explain(Rho.LLM.describe({:transport, :closed}), model: @claude)
+               explain(Rho.LLM.describe({:transport, :closed}), model: @claude)
 
       other = Rho.LLM.describe({:http, 500, "Internal server error"}) <> "\nPrompt again."
 
       assert %{kind: :failed, action: :retry, message: "Model call failed (HTTP 500): " <> _} =
-               e = Usage.explain(other)
+               e = explain(other)
 
       refute e.message =~ "Prompt again"
     end
@@ -399,24 +460,39 @@ defmodule Bezalel.UsageTest do
       now = 1_800_000_000
       full = windows(%{"5h" => {100.0, now + 4800}, "7d" => {64.0, now + 90_000}}, now)
 
-      assert {:exhausted, e} = Usage.preflight(full, @claude, now: now)
+      assert {:exhausted, e} = preflight(full, @claude, now: now)
       assert %{kind: :limit_reached, action: :wait, until: until, provider: :anthropic} = e
       assert until == now + 4800
       assert e.message =~ "Claude's 5-hour limit is used up. It resets at "
 
       # Another provider's model goes ahead, and so does one about to reset.
-      assert Usage.preflight(full, @codex, now: now) == :ok
-      assert Usage.preflight(full, @claude, now: now + 4800 - 30) == :ok
-      assert Usage.preflight(%{}, @claude, now: now) == :ok
+      assert preflight(full, @codex, now: now) == :ok
+      assert preflight(full, @claude, now: now + 4800 - 30) == :ok
+      assert preflight(%{}, @claude, now: now) == :ok
 
       # A recorded 429 that hasn't lifted counts as used up too.
       limited = %{"rate_limited" => %{"anthropic" => %{"at" => now, "resets_at" => now + 900}}}
 
       assert {:exhausted, %{until: lifts, message: message}} =
-               Usage.preflight(limited, @claude, now: now)
+               preflight(limited, @claude, now: now)
 
       assert lifts == now + 900
       assert message =~ "Claude's usage limit is used up."
+    end
+
+    test "a key stored in place of a used-up sign-in isn't held back by the sign-in's windows" do
+      now = 1_800_000_000
+      # The weekly window the Claude sign-in left at 100 %, three days from resetting.
+      stale = windows(%{"5h" => {30.0, now + 600}, "7d" => {100.0, now + 3 * 86_400}}, now)
+      key = [now: now, auth: auth(anthropic: @key)]
+
+      assert {:exhausted, _} = preflight(stale, @claude, now: now)
+      assert preflight(stale, @claude, key) == :ok
+
+      assert [%{kind: :api_key, windows: [], exhausted: nil, level: :ok, plan: nil}] =
+               Usage.summary(stale, key)
+
+      assert %{kind: :api_key, level: :ok} = Usage.meter(stale, @claude, key)
     end
   end
 
@@ -460,8 +536,8 @@ defmodule Bezalel.UsageTest do
   end
 
   test "token counts and dollars, short" do
-    assert Enum.map([0, 987, 1_250, 12_340, 999_999, 4_500_000], &Usage.tokens/1) ==
-             ["0", "987", "1.3k", "12.3k", "1.0M", "4.5M"]
+    assert Enum.map([0, 987, 1_250, 12_340, 99_960, 999_999, 4_500_000], &Usage.tokens/1) ==
+             ["0", "987", "1.3k", "12.3k", "100k", "1.0M", "4.5M"]
 
     assert Enum.map([0, 0.004, 0.84, 12.3], &Usage.money/1) == [
              "$0.00",
