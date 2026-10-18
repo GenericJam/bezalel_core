@@ -514,6 +514,12 @@ defmodule Bezalel.UsageTest do
       assert %{kind: :rate_limited, until: nil, action: :retry} =
                explain(Rho.LLM.describe({:http, 429, throttle.error}), state: state, now: now)
 
+      # rho's own text calls that throttle a used-up limit; its reset isn't trusted either.
+      used_up = "Claude (Anthropic)'s usage limit is used up until 20:40."
+
+      assert %{kind: :limit_reached, until: nil, action: :switch_model} =
+               explain(used_up, state: state, now: now, model: @claude)
+
       # A 429 with no windows is the latest word until a call or a Refresh says more.
       bare = Map.put(throttle, :headers, [{"anthropic-ratelimit-unified-reset", five_hours}])
       :ok = Rho.Usage.record(dir, @claude, bare, now + 10)

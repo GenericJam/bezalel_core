@@ -361,8 +361,8 @@ defmodule Bezalel.Usage do
   defp until(_error, %{resets_at: at}, _state, _provider, _now), do: at
 
   defp until(_error, nil, state, provider, now) do
-    case provider && Rho.Usage.rate_limited(state, provider) do
-      %{"resets_at" => at} when is_integer(at) and at > now -> at
+    case provider && latest_429(state, provider, now) do
+      %{resets_at: at} -> at
       _ -> nil
     end
   end
