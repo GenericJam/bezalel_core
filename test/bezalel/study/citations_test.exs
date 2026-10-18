@@ -89,6 +89,9 @@ defmodule Bezalel.Study.CitationsTest do
       assert Citations.abbott_smith("AS_ἀγγέλλω", "ἀγγέλλω").url =~ "/page/4/"
       refute Citations.strongs?("AS_ἀγγέλλω")
       assert Citations.strongs?("H7307G")
+
+      # STEPBible's extended numbers have no Bible Hub page: STEP's instead.
+      assert Citations.strongs("G20006").url == "https://www.stepbible.org/?q=strong=G20006"
     end
   end
 

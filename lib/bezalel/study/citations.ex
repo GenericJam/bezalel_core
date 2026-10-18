@@ -346,7 +346,7 @@ defmodule Bezalel.Study.Citations do
   """
   @spec strongs?(term()) :: boolean()
   def strongs?(key) when is_binary(key),
-    do: Regex.match?(Patterns.get(:strongs), String.upcase(String.trim(key)))
+    do: Regex.match?(Patterns.get(:citation_strongs), String.upcase(String.trim(key)))
 
   def strongs?(_key), do: false
 
@@ -393,9 +393,18 @@ defmodule Bezalel.Study.Citations do
       work: "strongs",
       label: Enum.join(Enum.reject(["Strong's #{letter}#{n}", word], &blank?/1), " "),
       locator: "#{letter}#{n}",
-      url: "https://biblehub.com/#{language}/#{n}.htm"
+      url:
+        if(classic?(letter, n),
+          do: "https://biblehub.com/#{language}/#{n}.htm",
+          else: "https://www.stepbible.org/?q=strong=#{letter}#{n}"
+        )
     }
   end
+
+  # Strong's own numbers (H1–H8674, G1–G5624), which Bible Hub has pages
+  # for; STEPBible's extended ones (G20006) are on STEP only.
+  defp classic?("H", n), do: n <= 8674
+  defp classic?("G", n), do: n <= 5624
 
   @doc "A word's entry in STEPBible's brief lexicons (TBESH, TBESG) on STEP Bible."
   @spec step_lexicon(String.t(), String.t() | nil) :: Citation.t()
@@ -1011,7 +1020,7 @@ defmodule Bezalel.Study.Citations do
   end
 
   defp strongs_number(strongs) do
-    case Regex.run(Patterns.get(:strongs), String.upcase(String.trim(strongs))) do
+    case Regex.run(Patterns.get(:citation_strongs), String.upcase(String.trim(strongs))) do
       [_, letter, digits | _] -> {letter, String.to_integer(digits)}
       nil -> raise ArgumentError, "not a Strong's number: #{inspect(strongs)}"
     end
