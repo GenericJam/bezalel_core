@@ -52,10 +52,20 @@ jobs:
 
       - name: No compile-time ~r regex in lib/
         run: |
-          if grep -rnE '~r[/|({"\[]' lib; then
+          if grep -rnE '~r[/|({"\[]' lib data/lib; then
             echo "Use Bezalel.Study.Patterns (Regex.compile! at run time): phones run another OTP."
             exit 1
           fi
 
       - name: Tests
         run: mix test
+
+      # The data build (data/, its own Mix project): no network in its tests.
+      - name: Data build checks
+        working-directory: data
+        run: |
+          mix deps.get
+          mix compile --warnings-as-errors
+          mix format --check-formatted
+          mix credo --strict
+          mix test

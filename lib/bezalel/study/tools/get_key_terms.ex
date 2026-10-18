@@ -6,11 +6,13 @@ defmodule Bezalel.Study.Tools.GetKeyTerms do
   Ported from studybible-mcp's `handle_get_key_terms`, `get_key_terms` and
   `format_key_terms` (MIT). Same text; the pack's own absence is the pack
   error, in place of their "Aquifer data not available" message.
-  `result/1` returns the entries untruncated.
+  `result/1` returns the entries untruncated. With the key terms switched
+  off (`Bezalel.Study.Sources`, `notes:key_terms`) the tool is withheld, and
+  if called anyway answers with an error saying so.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Aquifer, Args}
+  alias Bezalel.Study.{Aquifer, Args, Preferences, Sources}
 
   @impl true
   def name, do: "get_key_terms"
@@ -48,21 +50,26 @@ defmodule Bezalel.Study.Tools.GetKeyTerms do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @type t :: %{term: String.t(), terms: [Aquifer.article()]}
 
-  @doc "The entries for `args`' term (possibly none); no term is an error."
+  @doc "The entries for `args`' term, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The entries for `args`' term (possibly none); no term, or key terms switched off, is an error."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     case Args.string(args, "term") do
       "" ->
         {:error, "Please provide a term to look up."}
 
       term ->
-        with {:ok, terms} <- Aquifer.search("key_terms", term),
+        with :ok <- Sources.check(prefs, "notes:key_terms"),
+             {:ok, terms} <- Aquifer.search("key_terms", term),
              do: {:ok, %{term: term, terms: terms}}
     end
   end

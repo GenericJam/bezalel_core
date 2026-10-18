@@ -14,7 +14,7 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, Patterns}
+  alias Bezalel.Study.{Args, Patterns, Preferences}
 
   # Read at compile time (mix links priv into the build before compiling),
   # so the device needs no priv file.
@@ -22,7 +22,6 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
   @external_resource @catalogue_path
   @catalogue @catalogue_path |> File.read!() |> JSON.decode!()
 
-  @default_limit 4
   @max_limit 10
 
   # Topic words an agent is likely to use that differ from the catalogue's tags.
@@ -81,15 +80,16 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
         },
         "limit" => %{
           "type" => "integer",
-          "description" => "Maximum sources to return. Default: #{@default_limit}"
+          "description" =>
+            "Maximum sources to return. Default: the user's setting (8 unless changed), at most #{@max_limit}"
         }
       }
     }
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -113,21 +113,26 @@ defmodule Bezalel.Study.Tools.ListResearchSources do
   @spec catalogue() :: [source()]
   def catalogue, do: @catalogue
 
+  @doc "The listings matching `args`, under the host's current preferences."
+  @spec result(map()) :: {:ok, t()}
+  def result(args), do: result(args, Preferences.current())
+
   @doc """
   The listings matching `args`' perspective and topic (possibly none),
-  strongest topic matches first, up to the limit, with `total` the number
-  matching.
+  strongest topic matches first, up to the limit (by default `prefs`'),
+  with `total` the number matching.
   """
-  @spec result(map()) :: {:ok, t()}
-  def result(args) do
+  @spec result(map(), Preferences.t()) :: {:ok, t()}
+  def result(args, prefs) do
     topic = Args.optional(args, "topic")
     query = Args.optional(args, "query")
     perspective = Args.optional(args, "perspective")
+    default = Preferences.limit(prefs, @max_limit)
 
     limit =
-      case Args.integer(args, "limit", @default_limit) do
+      case Args.integer(args, "limit", default) do
         {:ok, n} when n != 0 -> n |> min(@max_limit) |> max(1)
-        _ -> @default_limit
+        _ -> default
       end
 
     matches = find(topic, perspective)

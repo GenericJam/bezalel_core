@@ -2,15 +2,17 @@ defmodule Bezalel.Study.Verses do
   @moduledoc """
   Verse queries on the core pack: a verse by reference, a passage, a
   book's chapter bounds, the verses with a Strong's number, and each row's
-  Berean Standard Bible text (`text_bsb`).
+  English in the chosen translation (`text_translation`, see
+  `attach_english/3`).
 
   Ported from studybible-mcp's `database.py` (MIT): `get_verse`,
   `get_passage`, `get_chapter_verse_bounds`, `get_verses_with_strongs`,
-  `attach_bsb_text`. The core pack always has the BSB, so every row gets
-  `text_bsb` (nil where the BSB lacks the verse).
+  `attach_bsb_text`. The English is the BSB (core pack) or the NET
+  (translations pack), by `Bezalel.Study.Translations`; every row gets
+  `text_translation` (nil where the translation lacks the verse).
   """
 
-  alias Bezalel.Study.{DB, Lexicon, Patterns, Reference}
+  alias Bezalel.Study.{DB, Lexicon, Patterns, Reference, Translations}
 
   @doc """
   The verse `reference` names ("John 3:16"; a range gives its first verse):
@@ -19,15 +21,15 @@ defmodule Bezalel.Study.Verses do
   ('Gen.32.1(32.2)') is found. Never a neighbour: a verse not in the pack
   is nil.
   """
-  @spec get(DB.conn(), String.t()) :: DB.row() | nil
-  def get(conn, reference) do
+  @spec get(DB.conn(), String.t(), Translations.t()) :: DB.row() | nil
+  def get(conn, reference, translation) do
     normalized = Reference.normalize(reference)
 
     row =
       DB.one(conn, "SELECT * FROM verses WHERE reference = ?", [normalized]) ||
         by_number(conn, normalized)
 
-    if row, do: hd(attach_bsb(conn, [row]))
+    if row, do: hd(attach_english(conn, [row], translation))
   end
 
   # A number beyond SQLite's 64-bit range can't be bound, and names no verse.
@@ -64,8 +66,14 @@ defmodule Bezalel.Study.Verses do
   ('Psa.40.6(40.7)') are found, and a verse stored as several rows returns
   all of them.
   """
-  @spec passage(DB.conn(), String.t(), integer(), integer(), integer(), integer()) :: [DB.row()]
-  def passage(conn, book, start_chapter, start_verse, end_chapter, end_verse) do
+  @spec passage(
+          DB.conn(),
+          String.t(),
+          {integer(), integer()},
+          {integer(), integer()},
+          Translations.t()
+        ) :: [DB.row()]
+  def passage(conn, book, {start_chapter, start_verse}, {end_chapter, end_verse}, translation) do
     rows =
       DB.all(
         conn,
@@ -88,7 +96,7 @@ defmodule Bezalel.Study.Verses do
         ]
       )
 
-    attach_bsb(conn, rows)
+    attach_english(conn, rows, translation)
   end
 
   @doc """
@@ -96,8 +104,8 @@ defmodule Bezalel.Study.Verses do
   STEPBible's one-letter sense suffix (H0430G), so a bare number also
   matches its suffixed forms; a suffixed number matches only itself.
   """
-  @spec with_strongs(DB.conn(), String.t(), pos_integer()) :: [DB.row()]
-  def with_strongs(conn, strongs, limit) do
+  @spec with_strongs(DB.conn(), String.t(), pos_integer(), Translations.t()) :: [DB.row()]
+  def with_strongs(conn, strongs, limit, translation) do
     strongs = Lexicon.normalize_strongs(strongs)
 
     patterns =
@@ -107,15 +115,15 @@ defmodule Bezalel.Study.Verses do
 
     where = Enum.map_join(patterns, " OR ", fn _ -> "word_data LIKE ?" end)
     rows = DB.all(conn, "SELECT * FROM verses WHERE #{where} LIMIT ?", patterns ++ [limit])
-    attach_bsb(conn, rows)
+    attach_english(conn, rows, translation)
   end
 
   @doc """
   The verse rows from id `first` to `last` (a passage's span), at most
   `limit`, with the columns a preview shows.
   """
-  @spec span(DB.conn(), integer(), integer(), pos_integer()) :: [DB.row()]
-  def span(conn, first, last, limit) do
+  @spec span(DB.conn(), integer(), integer(), pos_integer(), Translations.t()) :: [DB.row()]
+  def span(conn, first, last, limit, translation) do
     rows =
       DB.all(
         conn,
@@ -123,23 +131,29 @@ defmodule Bezalel.Study.Verses do
         [first, last, limit]
       )
 
-    attach_bsb(conn, rows)
+    attach_english(conn, rows, translation)
   end
 
   @doc """
-  Sets `text_bsb` on each verse row: the BSB text of the verse with the
-  same reference. A split-numbered row matches by its English numbering
+  Sets `text_translation` on each verse row (of the core pack, `conn`): the
+  `translation`'s text of the verse with the same reference, the BSB from
+  the core pack, the NET from the translations pack through
+  `translation.conn`, the connection `Translations.with_translation/2`
+  opened for the call (without one, the pack is opened for this lookup; a
+  pack that can't be read leaves every verse without text, so the tools
+  show the gloss). `translation_verses` use the core pack's references.
+  A split-numbered row matches by its English numbering
   ('Gen.32.1(32.2)' is 'Gen.32.1'), except that a row sharing its English
   verse with a plain-reference row gets nil (the plain row carries the
   text: '1Sa.20.42(21.1)' beside '1Sa.20.42'), and an NT row whose
   bracketed verse has no row of its own is that verse ('2Co.13.13[13.14]'
-  is '2Co.13.14'). nil also marks the verses the BSB omits and the Psalm
-  superscriptions.
+  is '2Co.13.14'). nil also marks the verses the translation omits (and,
+  in the BSB, the Psalm superscriptions).
   """
-  @spec attach_bsb(DB.conn(), [DB.row()]) :: [DB.row()]
-  def attach_bsb(_conn, []), do: []
+  @spec attach_english(DB.conn(), [DB.row()], Translations.t()) :: [DB.row()]
+  def attach_english(_conn, [], _translation), do: []
 
-  def attach_bsb(conn, rows) do
+  def attach_english(conn, rows, translation) do
     split =
       for {row, index} <- Enum.with_index(rows),
           match = Regex.run(Patterns.get(:split_reference), row["reference"]),
@@ -158,11 +172,11 @@ defmodule Bezalel.Study.Verses do
         end
       end)
 
-    texts = bsb_texts(conn, wanted |> Map.values() |> Enum.reject(&is_nil/1))
+    texts = texts(conn, translation, wanted |> Map.values() |> Enum.reject(&is_nil/1))
 
     rows
     |> Enum.with_index()
-    |> Enum.map(fn {row, index} -> Map.put(row, "text_bsb", texts[wanted[index]]) end)
+    |> Enum.map(fn {row, index} -> Map.put(row, "text_translation", texts[wanted[index]]) end)
   end
 
   defp plain_references(_conn, split) when map_size(split) == 0, do: MapSet.new()
@@ -198,9 +212,9 @@ defmodule Bezalel.Study.Verses do
     end
   end
 
-  defp bsb_texts(_conn, []), do: %{}
+  defp texts(_conn, _translation, []), do: %{}
 
-  defp bsb_texts(conn, references) do
+  defp texts(conn, %{key: "bsb"}, references) do
     references = Enum.uniq(references)
 
     conn
@@ -209,5 +223,29 @@ defmodule Bezalel.Study.Verses do
       references
     )
     |> Map.new(&{&1["reference"], &1["text"]})
+  end
+
+  defp texts(_conn, translation, references) do
+    references = Enum.uniq(references)
+
+    sql =
+      "SELECT reference, text FROM translation_verses WHERE translation = ? " <>
+        "AND reference IN (#{DB.placeholders(references)})"
+
+    params = [translation.key | references]
+
+    rows =
+      case translation do
+        %{conn: tconn} ->
+          DB.all(tconn, sql, params)
+
+        _ ->
+          case DB.with_pack(:translations, &DB.all(&1, sql, params)) do
+            {:ok, rows} -> rows
+            {:error, _} -> []
+          end
+      end
+
+    Map.new(rows, &{&1["reference"], &1["text"]})
   end
 end

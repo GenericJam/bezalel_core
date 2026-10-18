@@ -4,11 +4,16 @@ defmodule Bezalel.Study.Tools.GetCrossReferencesTest do
   # TSK cross reference from their chapters.
   use ExUnit.Case, async: true
 
+  alias Bezalel.Study.Preferences
   alias Bezalel.Study.Tools.GetCrossReferences
 
-  defp ok(args) do
-    assert {:ok, text} = GetCrossReferences.run(args, %{})
-    text
+  # studybible-mcp's default was four; the ported cases keep it as the
+  # user's setting.
+  @four Preferences.new(limit: 4)
+
+  defp ok(args, prefs \\ @four) do
+    assert {:ok, result} = GetCrossReferences.result(args, prefs)
+    GetCrossReferences.render(result)
   end
 
   # Targets in printed order, back in 'Rom.5.8' form, with their votes.
@@ -18,7 +23,7 @@ defmodule Bezalel.Study.Tools.GetCrossReferencesTest do
         do: {"#{book}.#{chapter}.#{verse}", String.to_integer(votes)}
   end
 
-  test "the default cap keeps the four strongest, by votes" do
+  test "the user's default cap (four here) keeps the four strongest, by votes" do
     text = ok(%{"reference" => "John 3:16"})
 
     assert text =~
@@ -33,6 +38,23 @@ defmodule Bezalel.Study.Tools.GetCrossReferencesTest do
              {"Rom.8.32", 511},
              {"Jhn.3.15", 503}
            ]
+  end
+
+  test "the default cap is the user's limit: 8 by default, capped only by the rows there are" do
+    assert Enum.count(targets(ok(%{"reference" => "John 3:16"}, %Preferences{}))) == 8
+    assert Enum.count(targets(ok(%{"reference" => "John 3:16"}, Preferences.new(limit: 2)))) == 2
+    # An explicit limit still wins.
+    assert Enum.count(targets(ok(%{"reference" => "John 3:16", "limit" => 3}))) == 3
+  end
+
+  test "with the theme chains switched off a theme is an error; verse cross references stay" do
+    prefs = Preferences.new(excluded_sources: ["crossrefs:themes"])
+
+    assert {:error, "The user has switched off Thematic cross-reference chains" <> _} =
+             GetCrossReferences.result(%{"theme" => "atonement"}, prefs)
+
+    assert {:ok, %{rows: [_ | _]}} =
+             GetCrossReferences.result(%{"reference" => "John 3:16"}, prefs)
   end
 
   test "Exodus 31:3, signal-poor, keeps its weaker links rather than returning one" do

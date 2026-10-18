@@ -9,6 +9,8 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
   # atonement_models theme).
   use ExUnit.Case, async: true
 
+  alias Bezalel.Study.Preferences
+
   alias Bezalel.Study.Tools.{
     GetAneContext,
     GetBibleDictionary,
@@ -18,13 +20,16 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
     ListResearchSources
   }
 
+  # studybible-mcp's default of four results, as the user's setting.
+  @four Preferences.new(limit: 4)
+
   defp ok(tool, args) do
-    assert {:ok, text} = tool.run(args, %{})
-    text
+    assert {:ok, result} = tool.result(args, @four)
+    tool.render(result)
   end
 
   defp error(tool, args) do
-    assert {:error, text} = tool.run(args, %{})
+    assert {:error, text} = tool.result(args, @four)
     text
   end
 
@@ -288,7 +293,7 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
 
     test "a theme's entries alternate between authors" do
       ids = fn args ->
-        {:ok, %{entries: entries}} = GetTheologyContext.result(args)
+        {:ok, %{entries: entries}} = GetTheologyContext.result(args, @four)
         Enum.map(entries, &{&1.source_author, &1.id})
       end
 
@@ -414,6 +419,12 @@ defmodule Bezalel.Study.Tools.NotesToolsTest do
       assert [_, _, _, _] = headings(default, "###")
       assert [_, _, _] = headings(ok(ListResearchSources, %{"limit" => 3}), "###")
       assert Enum.count(headings(ok(ListResearchSources, %{"limit" => 50}), "###")) == 10
+
+      # The default is the user's setting, 8 unless changed, at most the tool's 10.
+      assert {:ok, %{sources: eight}} = ListResearchSources.result(%{}, %Preferences{})
+      assert Enum.count(eight) == 8
+      assert {:ok, %{sources: ten}} = ListResearchSources.result(%{}, Preferences.new(limit: 50))
+      assert Enum.count(ten) == 10
       assert [_] = headings(ok(ListResearchSources, %{"limit" => -2}), "###")
 
       none = ok(ListResearchSources, %{"topic" => "quantum chromodynamics"})

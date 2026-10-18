@@ -13,11 +13,13 @@ defmodule Bezalel.Study.Tools.GetTorahWeave do
   a missing pack is the pack error.
 
   `result/1` returns each matching cell with its unit and its partner
-  cells by direction.
+  cells by direction. With the Torah weave switched off
+  (`Bezalel.Study.Sources`, `method:torah_weave`) the tool is withheld, and
+  if called anyway answers with an error saying so.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Reference}
+  alias Bezalel.Study.{Args, DB, Preferences, Reference, Sources}
 
   @torah ~w(Gen Exo Lev Num Deu)
 
@@ -107,8 +109,8 @@ defmodule Bezalel.Study.Tools.GetTorahWeave do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -152,13 +154,22 @@ defmodule Bezalel.Study.Tools.GetTorahWeave do
 
   @type t :: %{reference: String.t(), matches: [match()]}
 
+  @doc "The weave cells for `args`, under the host's current preferences."
+  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
+  def result(args), do: result(args, Preferences.current())
+
   @doc """
   The weave cells containing `args`' verse with their partners (none when
   no cell covers a Torah verse); a reference that isn't a verse of
-  Genesis–Deuteronomy is an error.
+  Genesis–Deuteronomy, or the Torah weave switched off in `prefs`, is an
+  error.
   """
-  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
+    with :ok <- Sources.check(prefs, "method:torah_weave"), do: find(args)
+  end
+
+  defp find(args) do
     reference = Args.reference(args)
 
     cond do

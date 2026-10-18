@@ -134,7 +134,7 @@ defmodule Bezalel.Study.Tools.AncientSourcesTest do
                "### Flavius Josephus, Antiquities 18.116–119 (Whiston 18.5.2)\n" <>
                  "*Not Scripture · Jewish history (AD 93–94) · tier A · Niese Greek, Whiston English*"
 
-      assert inside =~ "- Josephus: Not Scripture: a Jewish historian writing c. AD 75–100"
+      assert inside =~ "- Josephus: Not Scripture. A Jewish historian writing c. AD 75–100"
       assert inside =~ "License: CC BY-SA 4.0."
       assert inside =~ "**Greek:** "
       assert inside =~ "- Shared tradition: Mark 6:17–29 — Related account"

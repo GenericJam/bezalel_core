@@ -16,14 +16,16 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
 
   `result/1` returns the resolved citation (work, sort range, line window)
   and the passages as data (citation, corpus, tag, excerpts, notes, typed
-  links, provenance), or the out-of-range neighbours.
+  links, provenance), or the out-of-range neighbours. The user's preferences
+  (`Bezalel.Study.Preferences`) set the default `limit`, refuse a citation
+  in a switched-off corpus, and decide the scripture labels and editorial
+  verdicts (`Bezalel.Study.Ancient.Passages`).
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Ancient, Args, DB}
+  alias Bezalel.Study.{Ancient, Args, DB, Preferences, Sources}
   alias Bezalel.Study.Ancient.Passages
 
-  @default_limit 4
   @max_limit 10
 
   @impl true
@@ -36,11 +38,11 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
     original language: 'Antiquities 18.116', 'Ant. 15.320', 'War 6.316', 'Life 1',
     'Onkelos Gen 49:10', 'CD 6:11', 'Opif. 26', '1 Enoch 1:9', '4 Ezra 7:28',
     'm. Sukkah 4:9'. A work name or abbreviation is followed by a locator in that
-    work's numbering; a range returns the overlapping passages in order. None is
-    Scripture: each passage carries a canon, date and edition tag and any
-    editorial ⚠ notes; caveats and sources are printed once. An unknown or
-    ambiguous citation gets a short list of works or candidates. To find passages
-    by wording, use search_ancient_sources.\
+    work's numbering; a range returns the overlapping passages in order. Each
+    passage carries a date and edition tag (with a canon-status label unless the
+    user turned labels off) and any editorial ⚠ notes; caveats and sources are
+    printed once. An unknown or ambiguous citation gets a short list of works or
+    candidates. To find passages by wording, use search_ancient_sources.\
     """
   end
 
@@ -69,8 +71,8 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
           "type" => "integer",
           "minimum" => 1,
           "maximum" => @max_limit,
-          "default" => @default_limit,
-          "description" => "Maximum passages. Default: #{@default_limit}"
+          "description" =>
+            "Maximum passages. Default: the user's setting (8 unless changed), at most #{@max_limit}"
         },
         "full_text" => %{
           "type" => "boolean",
@@ -84,8 +86,8 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -98,16 +100,22 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
   """
   @type t :: map()
 
-  @doc "The passages `args` cites."
+  @doc "The passages `args` cites, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The passages `args` cites, under `prefs` (kept in the result as `prefs`)."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     citation = Args.string(args, "citation")
     corpus_key = Args.optional(args, "corpus")
 
-    with :ok <- check(citation, corpus_key),
-         {:ok, limit} <- limit(args) do
+    with :ok <- Sources.check_tool(prefs, name()),
+         :ok <- check(citation, corpus_key),
+         :ok <- if(corpus_key, do: Sources.check(prefs, Sources.ancient(corpus_key)), else: :ok),
+         {:ok, limit} <- limit(args, prefs) do
       corpora = if corpus_key, do: [Ancient.corpus(corpus_key)], else: Ancient.corpora()
-      resolve(citation, corpora, limit, args)
+      resolve(citation, corpora, limit, Map.put(args, :prefs, prefs))
     end
   end
 
@@ -128,8 +136,8 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
            "#{Enum.join(Ancient.keys(), ", ")}."}
   end
 
-  defp limit(args) do
-    case Args.integer(args, "limit", @default_limit) do
+  defp limit(args, prefs) do
+    case Args.integer(args, "limit", Preferences.limit(prefs, @max_limit)) do
       {:ok, limit} when limit in 1..@max_limit//1 -> {:ok, limit}
       _ -> {:error, "'limit' must be an integer from 1 to #{@max_limit}."}
     end
@@ -166,7 +174,9 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
            Enum.map_join(candidates, "; ", &Ancient.candidate/1) <> "; e.g. #{examples}."}
 
       {:ok, match} ->
-        with {:ok, found} <- DB.with_pack(:ancient, &lookup(&1, match, limit, args)), do: found
+        with :ok <- Sources.check(args.prefs, Sources.ancient(match.corpus.key)),
+             {:ok, found} <- DB.with_pack(:ancient, &lookup(&1, match, limit, args)),
+             do: found
     end
   end
 
@@ -225,7 +235,8 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
         work: Ancient.display_title(work),
         sort_range: %{start: start, end: end_},
         window: window && %{start: elem(window, 0), end: elem(window, 1)},
-        locator: Ancient.format_range(work.locator, start, end_)
+        locator: Ancient.format_range(work.locator, start, end_),
+        prefs: args.prefs
       }
 
       total =
@@ -257,7 +268,8 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
               include_original: Args.flag(args, "include_original", true),
               full_text: Args.flag(args, "full_text", false),
               note_cut: not Args.flag(args, "full_text", false),
-              window: window
+              window: window,
+              prefs: args.prefs
             )
           )
 
@@ -349,7 +361,7 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
           ],
           else: []
 
-    Passages.render(header, r.passages, nil, fn passage, shown ->
+    Passages.render(header, r.passages, nil, r.prefs, fn passage, shown ->
       resume =
         " Continue from #{r.work} " <>
           "#{Ancient.format_range(work.locator, passage.sort_start, passage.sort_start)}."

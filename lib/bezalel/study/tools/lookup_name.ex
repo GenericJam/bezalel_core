@@ -12,9 +12,8 @@ defmodule Bezalel.Study.Tools.LookupName do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format}
+  alias Bezalel.Study.{Args, DB, Format, Preferences}
 
-  @default_limit 4
   @max_limit 20
 
   @impl true
@@ -59,9 +58,9 @@ defmodule Bezalel.Study.Tools.LookupName do
           "type" => "integer",
           "minimum" => 1,
           "maximum" => @max_limit,
-          "default" => @default_limit,
           "description" =>
-            "Maximum entries; exact name matches come first. Default: #{@default_limit}"
+            "Maximum entries; exact name matches come first. Default: the user's setting " <>
+              "(8 unless changed), at most #{@max_limit}"
         }
       },
       "required" => ["name"]
@@ -69,8 +68,8 @@ defmodule Bezalel.Study.Tools.LookupName do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -83,13 +82,17 @@ defmodule Bezalel.Study.Tools.LookupName do
           entries: [%{entry: DB.row(), acai: DB.row() | nil}]
         }
 
-  @doc "The names matching `args` (possibly none)."
+  @doc "The names matching `args`, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The names matching `args` (possibly none), as many as `prefs` say by default."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     name = Args.string(args, "name")
     type = Args.optional(args, "type")
 
-    case {name, Args.integer(args, "limit", @default_limit)} do
+    case {name, Args.integer(args, "limit", Preferences.limit(prefs, @max_limit))} do
       {"", _} ->
         {:error, "Please provide a name to look up."}
 

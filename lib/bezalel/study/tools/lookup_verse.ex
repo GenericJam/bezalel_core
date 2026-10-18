@@ -1,22 +1,36 @@
 defmodule Bezalel.Study.Tools.LookupVerse do
   @moduledoc """
-  `lookup_verse`: a verse, range or chapter in English (BSB) and in Hebrew
-  or Greek, word by word with Strong's numbers.
+  `lookup_verse`: a verse, range or chapter in English (the user's
+  translation: the NET or the BSB) and in Hebrew or Greek, word by word with
+  Strong's numbers (STEPBible's).
 
   Ported from studybible-mcp's `handle_lookup_verse` (MIT). Same text,
   hints included: Torah weave partners (core pack), catalogued textual
   variants or translation notes and NT↔OT quotations in the passage (notes
   pack; left out silently when that pack isn't on the device). The
   cross-reference hint names only the TSK, the one cross-reference set in
-  the core pack.
+  the core pack. The user's preferences (`Bezalel.Study.Preferences`) pick
+  the translation and can switch off the genre guidance and the Torah
+  weave hint (`Bezalel.Study.Sources`).
 
   `result/1` returns the passage as data (`t:Bezalel.Study.Format.verse_view/0`
   rows: each word with its Strong's number) for the passage card, with the
-  hints as data.
+  hints and the translation (`translation`: key, abbreviation, link) as data.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Hermeneutics, Reference, Verses}
+  alias Bezalel.Study.{
+    Args,
+    DB,
+    Format,
+    Hermeneutics,
+    Preferences,
+    Reference,
+    Sources,
+    Translations,
+    Verses
+  }
+
   alias Bezalel.Study.Tools.GetTextualVariant
 
   @torah ~w(Gen Exo Lev Num Deu)
@@ -36,15 +50,16 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     Look up the text of a Bible verse, verse range, or whole chapter, in English and in the original language.
 
     Returns, for each verse in canonical order:
-    - The English text: the Berean Standard Bible (BSB), or STEPBible's word
-      gloss marked [gloss] where the BSB lacks the verse
+    - The English text in the user's chosen translation (NET or BSB), labelled with
+      its abbreviation, or STEPBible's word gloss marked [gloss] where it lacks the verse
     - The original Greek/Hebrew text (optional, on by default)
     - A word-by-word breakdown with Strong's numbers and glosses (single verses;
       for a passage only when include_morphology is set)
     - Optional grammatical parsing for each word
 
     And once for the passage:
-    - Genre-specific interpretive background for the passage's literary type
+    - Genre-specific interpretive background for the passage's literary type (when
+      the user has turned it on)
     - Availability notes for related data (cross-references, Torah weave partners,
       and NT/OT LXX-quotation variants) where the verses have such records
 
@@ -86,8 +101,9 @@ defmodule Bezalel.Study.Tools.LookupVerse do
 
   @doc "The Markdown for the model, with `result/1`'s data for the screens (rho's tool details)."
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, {:details, render(result), result}}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: {:ok, {:details, render(result), result}}
   end
 
   @typedoc """
@@ -116,7 +132,10 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   @typedoc """
   A looked-up passage. `label` is the heading of a passage (nil for a
   single verse), `notes` say how the request was cut, `hint_reference` is
-  the verse other tools are pointed at.
+  the verse other tools are pointed at. `translation` is the English
+  quoted (an app draws its label and link from it), `translation_note` says
+  why it isn't the one the user chose (nil when it is), `genre_guidance`
+  whether the genre guidance is shown.
   """
   @type t :: %{
           reference: String.t(),
@@ -126,20 +145,31 @@ defmodule Bezalel.Study.Tools.LookupVerse do
           label: String.t() | nil,
           notes: [String.t()],
           genre: Hermeneutics.genre() | nil,
+          genre_guidance: boolean(),
           hint_reference: String.t(),
           hints: hints(),
           include_original: boolean(),
           include_morphology: boolean(),
+          translation: Translations.ref(),
+          translation_note: String.t() | nil,
           verses: [Format.verse_view()]
         }
 
   @doc """
-  The passage `args` name, as data, or `{:error, message}` for a reference
-  the pack can't serve (unreadable, unknown book, chapter or verse).
+  The passage `args` name, as data, under the host's current preferences
+  (`result/2`).
   """
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
-    with {:ok, found} <- find(Args.reference(args)) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc """
+  The passage `args` name, as data, in `prefs`' translation, or `{:error,
+  message}` for a reference the pack can't serve (unreadable, unknown book,
+  chapter or verse).
+  """
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
+    with {:ok, found} <- find(Args.reference(args), prefs) do
       {:ok,
        Map.merge(found, %{
          include_original: Args.flag(args, "include_original", true),
@@ -148,23 +178,41 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     end
   end
 
-  defp find(""), do: {:error, "Please provide a verse reference (e.g., 'John 3:16')."}
+  defp find("", _prefs), do: {:error, "Please provide a verse reference (e.g., 'John 3:16')."}
 
-  defp find(reference) do
+  defp find(reference, prefs) do
     case Reference.parse_passage(reference) do
       nil ->
         {:error,
          "Could not read '#{reference}' as a Bible reference. Supported forms: #{@forms}."}
 
       parsed ->
-        with {:ok, found} <- DB.with_pack(:core, &fetch(&1, reference, parsed)),
-             {:ok, found} <- found do
-          {:ok, add_notes_hints(found)}
-        end
+        Translations.with_translation(
+          prefs.translation,
+          &passage(reference, parsed, prefs, &1, &2)
+        )
     end
   end
 
-  defp fetch(conn, reference, parsed) do
+  # The passage in `translation`, with its hints and the preferences' parts.
+  defp passage(reference, parsed, prefs, translation, note) do
+    with {:ok, found} <- DB.with_pack(:core, &fetch(&1, reference, parsed, translation)),
+         {:ok, found} <- found do
+      {:ok,
+       found
+       |> add_notes_hints()
+       |> Map.merge(%{
+         translation: Translations.ref(translation),
+         translation_note: note,
+         genre_guidance: Sources.enabled?(prefs, "method:genre_guidance")
+       })
+       |> update_in([:hints, :torah_weave], &(&1 and torah_weave_on?(prefs)))}
+    end
+  end
+
+  defp torah_weave_on?(prefs), do: Sources.enabled?(prefs, "method:torah_weave")
+
+  defp fetch(conn, reference, parsed, translation) do
     %{book: book, book_name: book_name, start_chapter: sc, end_chapter: ec} = parsed
     bounds = Verses.chapter_bounds(conn, book)
 
@@ -177,7 +225,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
          :ok <- check_order({sc, sv}, {ec, ev}, reference) do
       {ev, notes} = clamp(bounds, book_name, ec, ev)
 
-      case Verses.passage(conn, book, sc, sv, ec, ev) do
+      case Verses.passage(conn, book, {sc, sv}, {ec, ev}, translation) do
         [] -> {:error, "No verse text on file for #{reference}."}
         rows -> {:ok, shape(rows, reference, parsed, notes, torah_weave?(conn, book))}
       end
@@ -379,7 +427,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   @spec render(t()) :: String.t()
   def render(result) do
     plain = result.single and result.notes == []
-    bsb = Format.bsb_label(result.verses)
+    label = Format.translation_label(result.verses, result.translation)
 
     verse_text =
       result.verses
@@ -389,7 +437,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
           include_original: result.include_original,
           include_morphology: result.include_morphology,
           include_words: result.single or result.include_morphology,
-          heading_note: if(plain and index == 0, do: bsb, else: "")
+          heading_note: if(plain and index == 0, do: label, else: "")
         )
       end)
 
@@ -402,18 +450,24 @@ defmodule Bezalel.Study.Tools.LookupVerse do
             do: "",
             else: Enum.map_join(result.notes, &"*#{&1}*\n") <> "\n"
 
-        "# #{result.label}#{bsb}\n\n" <> notes <> verse_text
+        "# #{result.label}#{label}\n\n" <> notes <> verse_text
       end
 
-    text <>
-      genre(result.genre) <>
+    Format.translation_note(result.translation_note) <>
+      text <>
+      genre(result.genre_guidance && result.genre) <>
       torah_weave_hint(result) <>
       variant_hints(result) <>
       quotation_hint(result) <> cross_reference_hint(result.single, result.hint_reference)
   end
 
   defp genre(nil), do: ""
-  defp genre(genre), do: "\n\n---\n" <> Hermeneutics.format_guidance(genre)
+  defp genre(false), do: ""
+
+  defp genre(genre) do
+    "\n\n---\nGenre guidance after Fee & Stuart, *How to Read the Bible for All Its Worth* " <>
+      "(evangelical):\n\n" <> Hermeneutics.format_guidance(genre)
+  end
 
   defp torah_weave_hint(%{hints: %{torah_weave: false}}), do: ""
 

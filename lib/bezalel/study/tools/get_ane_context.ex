@@ -12,10 +12,13 @@ defmodule Bezalel.Study.Tools.GetAneContext do
   with their "No ANE context entries found" text; the pack's own absence
   is the pack error, in place of their "ANE context data not available"
   message. `result/1` returns the entries with their list fields decoded.
+  With the ANE background switched off (`Bezalel.Study.Sources`,
+  `ane:context`) the tool is withheld, and if called anyway answers with an
+  error saying so.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Patterns, Reference}
+  alias Bezalel.Study.{Args, DB, Format, Patterns, Preferences, Reference, Sources}
   require Args
 
   @dimensions ~w(cosmology_worldview religious_practices social_structure legal_covenant
@@ -121,8 +124,8 @@ defmodule Bezalel.Study.Tools.GetAneContext do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -156,13 +159,22 @@ defmodule Bezalel.Study.Tools.GetAneContext do
               entries: [entry()]
             }
 
+  @doc "The dimensions or entries `args` ask for, under the host's current preferences."
+  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
+  def result(args), do: result(args, Preferences.current())
+
   @doc """
   With no reference, dimension or period, the dimensions with their entry
   counts; else the entries matching them (possibly none). A reference that
-  doesn't parse, or an unknown dimension or period, is an error.
+  doesn't parse, an unknown dimension or period, or the source switched off
+  in `prefs`, is an error.
   """
-  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
+    with :ok <- Sources.check(prefs, "ane:context"), do: find(args)
+  end
+
+  defp find(args) do
     query = %{
       reference: nonempty(Args.reference(args)),
       dimension: Args.optional(args, "dimension"),

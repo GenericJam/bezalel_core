@@ -6,11 +6,13 @@ defmodule Bezalel.Study.Tools.GetBibleDictionary do
   Ported from studybible-mcp's `handle_get_bible_dictionary`,
   `get_bible_dictionary` and `format_dictionary_article` (MIT). Same text;
   the pack's own absence is the pack error, in place of their "Aquifer data
-  not available" message. `result/1` returns the articles untruncated.
+  not available" message. `result/1` returns the articles untruncated. With
+  the dictionary switched off (`Bezalel.Study.Sources`, `notes:dictionary`)
+  the tool is withheld, and if called anyway answers with an error saying so.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Aquifer, Args}
+  alias Bezalel.Study.{Aquifer, Args, Preferences, Sources}
 
   @impl true
   def name, do: "get_bible_dictionary"
@@ -51,21 +53,26 @@ defmodule Bezalel.Study.Tools.GetBibleDictionary do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @type t :: %{topic: String.t(), articles: [Aquifer.article()]}
 
-  @doc "The articles on `args`' topic (possibly none); no topic is an error."
+  @doc "The articles on `args`' topic, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The articles on `args`' topic (possibly none); no topic, or the dictionary switched off, is an error."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     case Args.string(args, "topic") do
       "" ->
         {:error, "Please provide a topic to look up."}
 
       topic ->
-        with {:ok, articles} <- Aquifer.search("dictionary", topic),
+        with :ok <- Sources.check(prefs, "notes:dictionary"),
+             {:ok, articles} <- Aquifer.search("dictionary", topic),
              do: {:ok, %{topic: topic, articles: articles}}
     end
   end

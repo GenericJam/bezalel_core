@@ -8,13 +8,14 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
   is the Treasury of Scripture Knowledge (Bezalel's build imports TSK
   alone; Harrison/Romhild is not built, Gage/Bradley and Burnett are
   excluded), so the ranking keeps studybible-mcp's TSK tiers and the text
-  and description name only the TSK. `result/1` returns the rows.
+  and description name only the TSK. `result/1` returns the rows. The
+  user's preferences (`Bezalel.Study.Preferences`) set the default `limit`
+  and can switch off the theme chains (`Bezalel.Study.Sources`,
+  `crossrefs:themes`; asking for a theme is then an error).
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Reference}
-
-  @default_limit 4
+  alias Bezalel.Study.{Args, DB, Preferences, Reference, Sources}
 
   @impl true
   def name, do: "get_cross_references"
@@ -55,7 +56,8 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
     Revelation's subject is "apocalyptic". `find_similar_passages` may surface a
     verbal parallel the topical index misses.
 
-    **Adaptive default — `limit` is a cap, not a target.** Default `limit=#{@default_limit}`. Rows
+    **Adaptive default — `limit` is a cap, not a target.** The default `limit` is the
+    user's setting (8 unless changed). Rows
     are returned in tier-then-strength order, and tier-1 noise (low-vote TSK) is
     suppressed by default whenever the verse has at least 3 rows from tier 2+. So:
 
@@ -108,7 +110,7 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
         "limit" => %{
           "type" => "integer",
           "description" =>
-            "Cap on rows returned (not a target). Default #{@default_limit}. The returned count may be smaller when the verse has fewer rows above the noise floor. Values of 20–30 combined with `source='tsk'` or `min_strength=0` return the long tail."
+            "Cap on rows returned (not a target). Default: the user's setting (8 unless changed). The returned count may be smaller when the verse has fewer rows above the noise floor. Values of 20–30 combined with `source='tsk'` or `min_strength=0` return the long tail."
         },
         "min_strength" => %{
           "type" => "integer",
@@ -120,8 +122,8 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -137,18 +139,23 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
           rows: [DB.row()]
         }
 
-  @doc "The cross references (or theme chain) `args` ask for, possibly none."
+  @doc "The cross references (or theme chain) `args` ask for, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The cross references (or theme chain) `args` ask for under `prefs`, possibly none."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     theme = Args.optional(args, "theme")
     reference = Args.reference(args)
     source = Args.optional(args, "source")
-    limit = Args.limit(args, @default_limit)
+    limit = Args.limit(args, Preferences.limit(prefs, nil))
     base = %{theme: theme, reference: nil, source: source, limit: limit, rows: []}
 
     cond do
       theme ->
-        with {:ok, rows} <- DB.with_pack(:core, &themed(&1, theme)),
+        with :ok <- Sources.check(prefs, "crossrefs:themes"),
+             {:ok, rows} <- DB.with_pack(:core, &themed(&1, theme)),
              do: {:ok, %{base | rows: rows}}
 
       reference == "" ->

@@ -8,9 +8,7 @@ defmodule Bezalel.Study.Tools.SearchLexicon do
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Lexicon}
-
-  @default_limit 4
+  alias Bezalel.Study.{Args, DB, Format, Lexicon, Preferences}
 
   @impl true
   def name, do: "search_lexicon"
@@ -46,7 +44,8 @@ defmodule Bezalel.Study.Tools.SearchLexicon do
         },
         "limit" => %{
           "type" => "integer",
-          "description" => "Maximum results to return. Default: #{@default_limit}"
+          "description" =>
+            "Maximum results to return. Default: the user's setting (8 unless changed)"
         }
       },
       "required" => ["query"]
@@ -54,22 +53,26 @@ defmodule Bezalel.Study.Tools.SearchLexicon do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @type t :: %{query: String.t(), entries: [DB.row()]}
 
-  @doc "The entries matching `args`' query (possibly none)."
+  @doc "The entries matching `args`' query, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The entries matching `args`' query (possibly none), as many as `prefs` say by default."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     case Args.string(args, "query") do
       "" ->
         {:error, "Please provide a search query."}
 
       query ->
         language = Args.optional(args, "language")
-        limit = Args.limit(args, @default_limit)
+        limit = Args.limit(args, Preferences.limit(prefs, nil))
 
         with {:ok, entries} <-
                DB.with_pack(:core, &Lexicon.search(&1, query, language, limit)),

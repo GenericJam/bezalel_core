@@ -11,10 +11,10 @@ defmodule Bezalel.Study.Format do
   nothing here, where Python printed "None".
   """
 
-  alias Bezalel.Study.Patterns
+  alias Bezalel.Study.{Patterns, Translations}
 
-  # Marks STEPBible's word-by-word gloss where a response labelled BSB has
-  # no BSB text for a verse.
+  # Marks STEPBible's word-by-word gloss where a response labelled with a
+  # translation has no text of it for a verse.
   @gloss_mark "[gloss]"
 
   @doc "`text` cut to `limit` code points, with `suffix` when cut."
@@ -75,23 +75,37 @@ defmodule Bezalel.Study.Format do
   def present?(value), do: value not in [nil, "", 0, []]
 
   @doc """
-  A verse row's English: its BSB text, else STEPBible's gloss marked
-  `[gloss]` (every row carries `text_bsb`, see `Bezalel.Study.Verses`).
+  A verse row's English: its text in the chosen translation, else
+  STEPBible's gloss marked `[gloss]` (every row from `Bezalel.Study.Verses`
+  carries `text_translation`).
   """
   @spec verse_english(map()) :: String.t()
-  def verse_english(%{"text_bsb" => bsb}) when bsb not in [nil, ""], do: bsb
+  def verse_english(%{"text_translation" => text}) when text not in [nil, ""], do: text
 
   def verse_english(row) do
     gloss = s(row["text_english"])
 
-    if Map.has_key?(row, "text_bsb"),
+    if Map.has_key?(row, "text_translation"),
       do: String.trim_trailing("#{@gloss_mark} #{gloss}"),
       else: gloss
   end
 
-  @doc ~S'" (BSB)" for the heading of a response showing any BSB text (verse views), else "".'
-  @spec bsb_label([verse_view()]) :: String.t()
-  def bsb_label(views), do: if(Enum.any?(views, & &1.bsb), do: " (BSB)", else: "")
+  @doc """
+  The " (BSB)" style label for the heading of a response showing any of
+  `translation`'s text (verse views), else "". The NET's is linked
+  (" ([NET](http://netbible.org))"), as its terms ask.
+  """
+  @spec translation_label([verse_view()], Translations.t() | Translations.ref()) :: String.t()
+  def translation_label(views, translation) do
+    if Enum.any?(views, & &1.translated),
+      do: " (#{Translations.label(translation)})",
+      else: ""
+  end
+
+  @doc "A translation fallback note as a Markdown line, or \"\" when there is none."
+  @spec translation_note(String.t() | nil) :: String.t()
+  def translation_note(nil), do: ""
+  def translation_note(note), do: "*#{note}*\n\n"
 
   @doc """
   A verse's heading: its reference, or for English verse 0 (a Psalm
@@ -120,8 +134,9 @@ defmodule Bezalel.Study.Format do
 
   @typedoc """
   A verse as the tools return it: `heading` is the reference as shown
-  (a superscription labelled), `english` the BSB (or the marked gloss),
-  `bsb` whether it is the BSB, `words` the word-by-word data.
+  (a superscription labelled), `english` the chosen translation's text (or
+  the marked gloss), `translated` whether it is the translation's text
+  (the response's `translation` names which), `words` the word-by-word data.
   """
   @type verse_view :: %{
           reference: String.t(),
@@ -130,12 +145,12 @@ defmodule Bezalel.Study.Format do
           chapter: integer(),
           verse: integer(),
           english: String.t(),
-          bsb: boolean(),
+          translated: boolean(),
           original: String.t(),
           words: [word()]
         }
 
-  @doc "A verse row (with `text_bsb`) as a `t:verse_view/0`."
+  @doc "A verse row (with `text_translation`) as a `t:verse_view/0`."
   @spec verse_view(map()) :: verse_view()
   def verse_view(row) do
     words =
@@ -164,7 +179,7 @@ defmodule Bezalel.Study.Format do
       chapter: row["chapter"],
       verse: row["verse"],
       english: verse_english(row),
-      bsb: present?(row["text_bsb"]),
+      translated: present?(row["text_translation"]),
       original: s(row["text_original"]),
       words: words
     }

@@ -155,15 +155,28 @@ defmodule Bezalel.Study.Ancient do
   The tag line and tiers of a passage (`corpus` and `work_key` of the row,
   or the default corpus): 'Not Scripture · Jewish history (AD 93–94) ·
   tier A · Niese Greek, Whiston English'. An unregistered corpus is just
-  'Not Scripture'.
+  'Not Scripture'. Without `labels` (the user's scripture labels off) the
+  canon status is left out ('' for an unregistered corpus).
   """
-  @spec row_tag(map(), String.t() | nil) :: {String.t(), [String.t()]}
-  def row_tag(row, default_corpus) do
+  @spec row_tag(map(), String.t() | nil, boolean()) :: {String.t(), [String.t()]}
+  def row_tag(row, default_corpus, labels \\ true) do
     with %{} = corpus <- corpus(row["corpus"] || default_corpus || ""),
          {%{} = tag, section} <- tag_for(corpus, row["work_key"], row["sort_start"]) do
-      {tag_line(tag, section), String.split(tier_for(tag, section), "/")}
+      {tag_line(tag, section, labels), String.split(tier_for(tag, section), "/")}
     else
-      _ -> {"Not Scripture", []}
+      _ -> {if(labels, do: "Not Scripture", else: ""), []}
+    end
+  end
+
+  @doc """
+  The canon status of corpus `key` as a whole ('Not Scripture'), or nil when
+  its works differ (each work's tag carries its own) or it isn't registered.
+  """
+  @spec corpus_status(String.t()) :: String.t() | nil
+  def corpus_status(key) do
+    case corpus(key) do
+      %{tag: %{status: status}} -> status
+      _ -> nil
     end
   end
 
@@ -202,15 +215,16 @@ defmodule Bezalel.Study.Ancient do
   defp manuscript(tag, nil), do: tag.manuscript
   defp manuscript(tag, section), do: section.manuscript || tag.manuscript
 
-  defp tag_line(tag, section) do
+  defp tag_line(tag, section, labels) do
     manuscript = manuscript(tag, section)
 
     [
-      tag.status,
+      if(labels, do: tag.status),
       "#{tag.kind} (#{section_date(tag, section)})",
       "tier #{tier_for(tag, section)}",
       tag.edition
     ]
+    |> Enum.reject(&is_nil/1)
     |> Kernel.++(if manuscript in [nil, ""], do: [], else: [manuscript])
     |> Enum.join(" · ")
   end

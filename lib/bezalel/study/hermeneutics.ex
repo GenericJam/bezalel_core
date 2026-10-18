@@ -3,8 +3,9 @@ defmodule Bezalel.Study.Hermeneutics do
   Genre-aware reading guidance, after Fee & Stuart's "How to Read the Bible
   for All Its Worth": each book's genre, and for each genre its key
   principle, approach, common errors and application questions.
-  `lookup_verse` appends the passage's genre guidance; the system prompt
-  (`Bezalel.Study.Prompt`) summarises the genres.
+  `lookup_verse` appends the passage's genre guidance, credited, when the
+  user turns it on (`Bezalel.Study.Sources`, `method:genre_guidance`, off by
+  default).
 
   Ported from studybible-mcp's `hermeneutics.py` (MIT), text unchanged.
   """

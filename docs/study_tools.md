@@ -11,14 +11,17 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 
 | Module | What |
 |---|---|
-| `Bezalel.Study.Tools` | `all/0`, every tool module (what the live agent offers) |
+| `Bezalel.Study.Tools` | `all/0`, every tool module; `withheld/1`, the tool names to withhold under a user's preferences |
 | `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core), `SearchAncientSources`, `LookupAncientSource` (ancient), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. `LookupVerse` and `WordStudy`'s `run/2` also hand `result/1` to rho as the result's details (`{:ok, {:details, markdown, result}}`): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card. The Mermaid diagrams of the graph tools stay in the Markdown only |
-| `Bezalel.Study.DB` | Opens the packs read-only |
+| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`) |
+| `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation; `current/1` asks the host |
+| `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
+| `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB) with their labels, links and acknowledgements |
 | `Bezalel.Study.Reference` | Book names and reference forms ("Ex 31:2-3", "Exodus 31", "Jn 3:16", "Jude 3") |
 | `Bezalel.Study.Verses`, `Bezalel.Study.Lexicon` | Verse and lexicon queries |
 | `Bezalel.Study.Format` | Shared Markdown (verses, lexicon entries) |
 | `Bezalel.Study.Hermeneutics` | Genres and their guidance (Fee & Stuart) |
-| `Bezalel.Study.Prompt` | The system prompt |
+| `Bezalel.Study.Prompt` | The system prompt: `fixed/1`, `default_approach/0`, `system_prompt/2` |
 | `Bezalel.Study.Args`, `Bezalel.Study.Patterns` | Argument reading; the regexes, compiled at run time (mob_dev rule) |
 | `Bezalel.Study.Graph` | Person lookup, family and Mermaid helpers shared by the graph tools |
 | `Bezalel.Study.Aquifer` | Dictionary and key-term search and article Markdown |
@@ -51,6 +54,12 @@ so `ATTACH` would save nothing but a millisecond, and two calls keep each pack's
 missing-pack handling separate. `lookup_verse` without the notes pack leaves those
 hints out and answers as before; `compare_biblical_versions` without lxx still gives an
 MT-only comparison in canonical numbering, as theirs did without the LXX table.
+
+The tools that quote English verses read the NET from the translations pack, opened
+once per tool call: `Translations.with_translation/2` opens it (which also checks it is
+readable) and hands the call's queries its connection (`translation.conn`, used by
+`Verses.attach_english/3`); without it the tools quote the BSB from core and say so
+(see Translation below).
 
 `list_research_sources` reads studybible-mcp's own catalogue
 (`src/study_bible_mcp/research_sources.json` at the pin, MIT), copied to
@@ -138,47 +147,168 @@ identical; the three that differ are the `get_theology_context` and
 - A `limit` of zero, a negative number or text is the default (theirs passed it to SQL,
   where -1 meant no limit), except `lookup_name`, which keeps their error for a limit
   outside 1–20, and the ancient tools, which keep their limit errors. A fractional limit
-  is refused or the default (Python truncated 2.5 to 2; `list_research_sources` gives its
-  default 4). A number outside SQLite's 64-bit range is treated as unreadable. String
-  arguments are trimmed (so " Hebron " finds Hebron).
+  is refused or the default (Python truncated 2.5 to 2). The default itself is the
+  user's setting (`Preferences`, `limit`, 8 unless changed; theirs was 4), held to each
+  tool's maximum (`lookup_name` and `search_ancient_sources` 20, `find_similar_passages`
+  20, `lookup_ancient_source` and `list_research_sources` 10). A number outside SQLite's
+  64-bit range is treated as unreadable. String arguments are trimmed (so " Hebron "
+  finds Hebron).
 - References, Strong's numbers and ancient-source locators take ASCII digits only ("Ps
   22:18", "G26", not other scripts' numerals), where their `\d` and `isdigit` accepted any
   Unicode digit.
 - Descriptions are theirs, except `parse_morphology` (it describes the Hebrew codes the
-  packs use, STEPBible's, e.g. 'HVqp3ms'), `get_cross_references` (TSK only) and
-  `find_similar_passages` (at most 20, examples the packs give).
+  packs use, STEPBible's, e.g. 'HVqp3ms'), `get_cross_references` (TSK only),
+  `find_similar_passages` (at most 20, examples the packs give), the default `limit`
+  (the user's setting), `lookup_verse` (the user's translation) and the ancient tools
+  (no "None is Scripture"; the canon label is described as a label the user can turn
+  off). Descriptions are static: they never change with the user's settings.
+- English verse text is the user's translation (below), where theirs was the BSB.
+- Canon labels, verdicts and source filters follow the user's preferences (below).
 - Known gap (also in tier 1): a name or topic over about 50 KB makes SQLite refuse the
   `LIKE` pattern, and the tool crashes (rho reports "Tool crashed") instead of
   returning an error.
 
+## Preferences
+
+A user's study settings live in the host app. Core asks for them on every tool call:
+`config :bezalel_core, :preferences, {module, function, args}` is called as
+`apply(module, function, args ++ [ctx])` with the `Rho.Tool` ctx (it carries
+`:session_id`, so a host serving several users can map the session to a user) and
+returns a `Bezalel.Study.Preferences` or a map, which `Preferences.new/1` checks (unknown
+keys ignored, an invalid value the default). Unset, every call gets the defaults. Each
+tool's `run/2` calls `Preferences.current(ctx)`; `result/2` takes the preferences
+explicitly (tests pass them, so they stay async), and `result/1` uses `current/0`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `approach` | nil (`Prompt.default_approach/0`) | The editable part of the system prompt |
+| `scripture_labels` | true | Canon-status labels on non-biblical sources |
+| `excluded_sources` | `["editorial:verdicts", "method:genre_guidance"]` | Sources left out (below) |
+| `limit` | 8 (1–50) | Default result count of the list tools, held to each tool's maximum |
+| `translation` | `"net"` (`"net"`, `"bsb"`) | The English the tools quote |
+
+### Sources
+
+`Bezalel.Study.Sources.all/0` lists them with a label, group and description for a
+settings screen; `keys/0`:
+
+- Ancient sources: `ancient:josephus`, `ancient:targum`, `ancient:qumran`,
+  `ancient:philo`, `ancient:pseudepigrapha`, `ancient:rabbinic` (one per registry
+  corpus). Off: the corpus is left out of a search of `all` (and josephus stops being
+  the default corpus); naming it, or citing one of its works, is an error saying the
+  user switched it off.
+- Editorial: `editorial:verdicts`, off by default. studybible-mcp's maintainer's
+  judgements: the curated "contrast" links on ancient passages, the verdict sentences
+  and the `contrast` field of the ⚠ notes, the confessional sentence of a corpus caveat
+  (`Registry` `verdict`: "the NT's judgment governs", "his Logos is not the incarnate
+  Son", "never a basis for doctrine"), and `compare_biblical_versions`'s Westminster
+  Confession line. Shown, they are credited: "Verdict (studybible-mcp): …". Factual
+  provenance warnings (interpolations, emendations, editions, dates, translation
+  caveats) are not a source and always stay.
+
+  The ⚠ notes (`Bezalel.Study.Ancient.Notes`): all 46 distinct notes in the pinned
+  ancient pack (83 rows) were read and sorted sentence by sentence. Those found to be
+  provenance only are listed and shown as they stand; the 26 that mix in a verdict or a
+  canon statement are kept in core, keyed by the CRC-32 of the note text, as their
+  provenance part (always shown), their canon statement (with scripture labels, reworded
+  by tradition: CD 16:2–4's "Jubilees … is not Scripture" becomes "Jubilees is Scripture
+  in the Ethiopian and Eritrean Orthodox Tewahedo canons and for Beta Israel; it is not
+  in other canons") and their verdict (with the verdicts: e.g. 4 Ezra 7:28–29's "Christ,
+  raised, dies no more", 1 Enoch 15:8–12's "compatible with, not taught by,
+  Scripture"). A note the table doesn't know (a rebuilt pack) is shown as it stands,
+  except that one of kind `contrast` then needs the verdicts.
+- Theologians: `theology:heiser`, `theology:bradley`, `theology:owen`,
+  `theology:stott`, `theology:lennox`, `theology:synthesis` (the `source_author` values
+  in the notes pack). Off: their entries and themes are left out; naming the author is
+  an error.
+- Notes and reference: `notes:study_notes` (Tyndale), `notes:translation_notes_uw`,
+  `notes:translation_notes_sil`, `notes:dictionary` (Tyndale), `notes:key_terms` (FIA),
+  `crossrefs:themes` (studybible-mcp's doctrinal theme chains; the TSK cross references
+  stay).
+- Background: `ane:context` (studybible-mcp's ANE summaries).
+- Methods: `method:torah_weave` (Kline; also drops `lookup_verse`'s Torah weave hint),
+  `method:genre_guidance` (Fee & Stuart's guidance appended by `lookup_verse`; off by
+  default, an evangelical method; when on it is credited: "Genre guidance after Fee &
+  Stuart, *How to Read the Bible for All Its Worth* (evangelical):").
+
+A tool whose every source is off is withheld (`Sources.withheld_tools/1`,
+`Tools.withheld/1`): the ancient tools, `get_theology_context`, `get_study_notes`,
+`get_bible_dictionary`, `get_key_terms`, `get_ane_context`, `get_torah_weave`. A tool
+with content of its own (`lookup_verse`, `get_cross_references`,
+`compare_biblical_versions`) only loses that part. A withheld tool called anyway
+answers with the switched-off error; so do the multi-source tools (the ancient tools,
+`get_theology_context`, `get_study_notes`) when every one of their sources is off
+(`Sources.check_tool/2`), naming them, instead of an empty answer.
+
+### Scripture labels
+
+The registry's tags carry a canon status, now by tradition where traditions differ:
+"Not Scripture" for Josephus, the Targum, Qumran, Philo and the Mishnah; 1 Enoch
+"Scripture in the Ethiopian and Eritrean Orthodox Tewahedo canons and for Beta Israel;
+not in other canons"; 4 Ezra "Scripture in the Ethiopian Orthodox Tewahedo canon (as
+Ezra Sutuel); printed in Slavonic Orthodox Bibles (as 3 Esdras) and the Vulgate's
+appendix (as 4 Esdras); not in the Jewish, Catholic or Protestant canons". The
+corpus caveat leads with the corpus's status ("- Josephus: Not Scripture. A Jewish
+historian…"). `compare_biblical_versions` replaces their Apocrypha line with a canon
+line by tradition ("Tobit is in the Catholic and Orthodox canons, not the Jewish or
+Protestant ones"; 1 Esdras, 3 Maccabees, Psalm 151 and the Prayer of Manasseh: the
+Eastern Orthodox canon; 4 Maccabees: an appendix to Greek Orthodox Bibles; the Psalms of
+Solomon: no church's canon), and marks such rows "(not in the Hebrew Bible)" where theirs
+said "(Apocrypha)". With `scripture_labels` false, the statuses and the canon line are
+left out and the provenance stays.
+
+### Translation
+
+`lookup_verse`, `word_study`'s examples, `search_by_strongs`, `find_similar_passages`
+and `graph_enriched_search` quote the user's translation: the NET (default) from the
+translations pack (`translation_verses`, keyed by the core pack's references), or the
+BSB from the core pack (`bsb_verses`). The words, Strong's numbers and glosses stay
+STEPBible's. The heading labels it, "(BSB)" or, as the NET's terms ask for software on
+the internet, "([NET](http://netbible.org))"; each result's data carries `translation:
+%{key, abbreviation, url}` and `translation_note`. A verse the translation lacks shows
+STEPBible's gloss marked [gloss]. If the NET is chosen and the translations pack isn't
+readable, the tools quote the BSB and say so in one line ("The NET Bible isn't on this
+device…"). The NET's permission (netbible.com/copyright) is for non-commercial use, with
+"(NET)" after each quotation and the acknowledgement in `Translations.get("net").copyright`
+shown by the app; the NET's notes are not licensed and are not in the pack.
+
+Changed result data: a verse view's `bsb` (was it the BSB) is now `translated` (is it
+the chosen translation's text), and `lookup_verse`'s result adds `translation`,
+`translation_note` and `genre_guidance`.
+
 ## The system prompt
 
-From their `prompts/system_prompt.md` and `hermeneutics.py`. Kept: the Fee & Stuart
-principles, the seven-step reasoning pattern, the genre table (generated from
-`Bezalel.Study.Hermeneutics`), the original-language format, the interpretation errors,
-"when you don't know" and humility. Added: Bezalel's role (a sermon-prep companion for
-pastors), and ground rules: look passages up and cite them; keep text and interpretation
-apart; say what a tool returned versus what is inference; report tool errors and missing
-packs instead of filling in from memory. The tool guidance covers all 25 tools.
+`Prompt.system_prompt(prefs, surface: text)` is three parts:
 
-Left out: the "Reading Scripture in its ancient context" section (populated divine realm,
-derivation hierarchy, hourglass narrative, 1 Enoch, "recovery not novelty") and their
-guidance for integrating ANE context. These present one school's framework (largely
-Heiser's) as the default reading. A general study companion for pastors of different
-traditions should not take a side there by default. In their place, a "Background
-scholarship" section covers `get_ane_context`, `get_theology_context`, the ancient
-sources and `list_research_sources` as background with their sources and authors named
-(Walton, Milgrom, King and Stager, deSilva, Heiser, Rillera for ANE entries; Heiser,
-Bradley, Stott, Owen, Lennox for theology), each one voice among several, attributed
-and set beside other readings, never the frame of the answer. `get_torah_weave` is
-presented as Kline's hypothesis, `get_textual_variant` as evidence before conclusions.
-The translation-shift point (check *nephesh*, *ruach* in their Hebrew range) stays, as a
-word-study habit.
+1. `Prompt.fixed(prefs)`, the part no user edits and kept minimal: Bezalel is a
+   companion for studying the Bible; use the tools, quote what they return and cite it,
+   say where each claim comes from, don't invent, and label every quotation with its
+   translation (the NET linked to netbible.org, unaltered). Then a neutral guide to the
+   tools the user's preferences leave on (withheld tools are not named), and a line
+   naming the sources the user switched off, so the model doesn't supply them from
+   memory.
+2. The approach: `prefs.approach`, else `Prompt.default_approach/0`. Everything else
+   lives here (persona, audience, hermeneutics, treatment of traditions, answer style),
+   so the user can move it. The default is neutral: a companion for pastors, teachers and
+   curious readers; the text in its own languages, the world it came from (ancient Near
+   Eastern and Greco-Roman context, neighbouring texts) and how Jewish, Christian
+   (Catholic, Orthodox, Protestant) and historical-critical readers have understood it,
+   each reading credited to who holds it; the evidence and range of readings laid out
+   without settling disputed questions unless asked; depth on the first pass; marked
+   uncertainty; and method warnings (proof-texting, ignoring genre and context,
+   parallelomania, building on low-confidence claims) stated neutrally. No sermon-prep
+   frame and no default doctrinal frame; Christian typological readings are one credited
+   lens among others.
+3. `opts[:surface]`, the host's section on how its screen renders an answer (the phone
+   app passes its narrow-column formatting). Core has no platform formatting.
 
-Formatting for a phone (added for Bezalel): the reader sees a column about 40
-characters wide, so tables are limited to three short columns and anything wider becomes
-a list; no unwrappable long lines. The Markdown renderer can wrap a wide table only
-badly, so the model is asked not to write one.
+From their `prompts/system_prompt.md` and `hermeneutics.py`: the tool guidance, the
+warnings against proof-texting, ignoring genre and context, parallelomania and building
+on low-confidence claims, the original-language format and "go deep on the first pass".
+Left out of the default: their sermon-prep and "connect to Christ" framing, the "Reading
+Scripture in its ancient context" section (one school's framework, largely Heiser's),
+the genre table (the genre guidance stays in `lookup_verse`) and the evangelical
+interpretation-error list; a user who wants any of it can write it into their approach.
 
 ## Tests and fixtures
 
@@ -190,7 +320,11 @@ and ancient passages the tests name; about 6 MB in all; its docstring lists what
 table keeps; `--pack <name>` cuts one). Tests in `test/bezalel/study/` run against
 those, never the real packs; they port studybible-mcp's handler tests (and its
 theology, research-sources, broad-entry, textual-variant, biblical-versions and
-ancient-corpus tests) and add the Exodus 31 cases. The phone app's tests read the same
-fixtures from this dependency. In the phone app, `mix run --no-start
-scripts/study_tools_smoke.exs` runs every tool in `Tools.all/0` against the real packs
-and fails if one errors or is left out.
+ancient-corpus tests) and add the Exodus 31 cases. `translations.sqlite` holds the NET
+of exactly the verses the core fixture's `bsb_verses` has. The ported cases that assert
+studybible-mcp's wording pass `Preferences` with the BSB and a limit of four (their
+defaults); `preferences_test.exs`, `source_filters_test.exs` and `translations_test.exs`
+cover the settings, the source filters and verdicts, the labels, the translations and
+the prompt. The phone app's tests read the same fixtures from this dependency. In the
+phone app, `mix run --no-start scripts/study_tools_smoke.exs` runs every tool in
+`Tools.all/0` against the real packs and fails if one errors or is left out.

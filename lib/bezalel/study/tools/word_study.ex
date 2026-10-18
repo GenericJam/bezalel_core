@@ -1,14 +1,15 @@
 defmodule Bezalel.Study.Tools.WordStudy do
   @moduledoc """
   `word_study`: the lexicon entry for a Strong's number or a word, with
-  five example verses.
+  five example verses in the user's translation.
 
   Ported from studybible-mcp's `handle_word_study` (MIT); same text.
-  `result/1` returns the entry row and the example verses as data.
+  `result/1` returns the entry row and the example verses as data, with
+  the translation they are quoted in.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Lexicon, Verses}
+  alias Bezalel.Study.{Args, DB, Format, Lexicon, Preferences, Translations, Verses}
 
   @examples 5
 
@@ -62,19 +63,34 @@ defmodule Bezalel.Study.Tools.WordStudy do
 
   @doc "The Markdown for the model, with `result/1`'s data for the screens (rho's tool details)."
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, {:details, render(result), result}}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)),
+         do: {:ok, {:details, render(result), result}}
   end
 
-  @typedoc "The entry (a lexicon row; nil when a word matched none) and its example verses."
-  @type t :: %{entry: DB.row() | nil, examples: [Format.verse_view()]}
+  @typedoc """
+  The entry (a lexicon row; nil when a word matched none) and its example
+  verses, in `translation` (`translation_note` says why it isn't the one
+  chosen; nil when it is).
+  """
+  @type t :: %{
+          entry: DB.row() | nil,
+          examples: [Format.verse_view()],
+          translation: Translations.ref(),
+          translation_note: String.t() | nil
+        }
+
+  @doc "The entry `args` asks for, under the host's current preferences (`result/2`)."
+  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
+  def result(args), do: result(args, Preferences.current())
 
   @doc """
-  The entry `args` asks for. An unknown Strong's number is an error; a
-  word that matches no entry is `%{entry: nil}`.
+  The entry `args` asks for, its examples in `prefs`' translation. An
+  unknown Strong's number is an error; a word that matches no entry is
+  `%{entry: nil}`.
   """
-  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     strongs = Args.optional(args, "strongs")
     word = Args.optional(args, "word")
 
@@ -85,20 +101,33 @@ defmodule Bezalel.Study.Tools.WordStudy do
         _ -> "greek"
       end
 
-    cond do
-      strongs ->
-        with {:ok, %{entry: nil}} <- DB.with_pack(:core, &study(&1, strongs, nil)),
-             do: {:error, not_found()}
+    query =
+      cond do
+        strongs -> {strongs, nil}
+        word -> {nil, {word, language}}
+        true -> nil
+      end
 
-      word ->
-        DB.with_pack(:core, &study(&1, nil, {word, language}))
+    if query,
+      do: Translations.with_translation(prefs.translation, &study(query, &1, &2)),
+      else: {:error, "Please provide either 'strongs' number or 'word' to study."}
+  end
 
-      true ->
-        {:error, "Please provide either 'strongs' number or 'word' to study."}
+  defp study({strongs, word}, translation, note) do
+    case DB.with_pack(:core, &study(&1, strongs, word, translation)) do
+      {:ok, %{entry: nil}} when strongs != nil ->
+        {:error, not_found()}
+
+      {:ok, study} ->
+        {:ok,
+         Map.merge(study, %{translation: Translations.ref(translation), translation_note: note})}
+
+      error ->
+        error
     end
   end
 
-  defp study(conn, strongs, word) do
+  defp study(conn, strongs, word, translation) do
     entry =
       case word do
         nil -> Lexicon.entry(conn, strongs)
@@ -109,7 +138,7 @@ defmodule Bezalel.Study.Tools.WordStudy do
       if entry,
         do:
           conn
-          |> Verses.with_strongs(entry["strongs"], @examples)
+          |> Verses.with_strongs(entry["strongs"], @examples, translation)
           |> Enum.map(&Format.verse_view/1),
         else: []
 
@@ -124,11 +153,12 @@ defmodule Bezalel.Study.Tools.WordStudy do
 
   def render(%{entry: entry, examples: []}), do: Format.lexicon_entry(entry)
 
-  def render(%{entry: entry, examples: examples}) do
-    bsb = Format.bsb_label(examples)
+  def render(%{entry: entry, examples: examples} = result) do
+    label = Format.translation_label(examples, result.translation)
 
     Format.lexicon_entry(entry) <>
-      "\n\n## Example Passages#{bsb}\n" <>
+      "\n\n## Example Passages#{label}\n" <>
+      Format.translation_note(result.translation_note) <>
       Enum.map_join(examples, &"\n**#{&1.reference}**: #{&1.english}\n")
   end
 end

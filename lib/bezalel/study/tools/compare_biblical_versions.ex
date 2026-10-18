@@ -16,10 +16,18 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   SQLite (theirs raised an overflow) is the unparseable-reference error.
 
   `result/1` returns the rows (MT and LXX, in display order) as data.
+
+  Changed for Bezalel: their Apocrypha line ("not in the Protestant canon
+  (cf. Westminster Confession 1.3); background only") is now a neutral
+  line saying which traditions' canons hold each book, shown with the
+  user's scripture labels on; their wording is shown, credited, only with
+  the `editorial:verdicts` source (`Bezalel.Study.Sources`). A row outside
+  the Hebrew Bible is marked "(not in the Hebrew Bible)", where theirs said
+  "(Apocrypha)".
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Ancient, Args, DB, Format, Patterns}
+  alias Bezalel.Study.{Ancient, Args, DB, Format, Patterns, Preferences, Sources}
 
   @max_verses 10
 
@@ -84,6 +92,31 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
     "#{@azariah} (Odes 7–8)"
   ]
 
+  # Which canons hold each book or addition outside the Hebrew Bible.
+  @deuterocanon [
+    "1 Maccabees",
+    "2 Maccabees",
+    "Baruch",
+    "Bel and the Dragon",
+    "Judith",
+    "the Letter of Jeremiah",
+    "Sirach",
+    "Susanna",
+    "Tobit",
+    "Wisdom",
+    @esther_additions,
+    "#{@azariah} (Dan 3:24–90)",
+    "#{@azariah} (Odes 7–8)"
+  ]
+  @orthodox ["1 Esdras", "3 Maccabees", "Psalm 151", "the Prayer of Manasseh (Ode 12)"]
+  @canons [
+    {@deuterocanon, "in the Catholic and Orthodox canons, not the Jewish or Protestant ones"},
+    {@orthodox, "in the Eastern Orthodox canon, not the Jewish, Catholic or Protestant ones"},
+    {["4 Maccabees"], "in an appendix to Greek Orthodox Bibles, not in other canons"},
+    {["the Psalms of Solomon"], "in no church's canon"}
+  ]
+  @outside_canons "not in the Jewish, Catholic or Protestant canons"
+
   @lxx_columns """
   edition, canonical_reference, canonical_book, canonical_chapter,
   canonical_verse, canonical_verse_suffix, edition_reference,
@@ -146,8 +179,8 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -201,7 +234,8 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   A comparison. `numbering` is the one used ("lxx" for an LXX-only book);
   `lxx_only` the LXX-only verses at the requested Greek positions (for a
   canonical lookup); `cap_note` says where a cut comparison continues. No
-  rows: nothing matched.
+  rows: nothing matched. `prefs` are the preferences it ran under (they
+  decide the canon and verdict lines).
   """
   @type t :: %{
           reference: String.t(),
@@ -211,16 +245,21 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
           include_morphology: boolean(),
           rows: [row()],
           lxx_only: [%{edition: String.t(), edition_reference: String.t()}],
-          cap_note: String.t()
+          cap_note: String.t(),
+          prefs: Preferences.t()
         }
+
+  @doc "The rows comparing `args`' passage, under the host's current preferences."
+  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
+  def result(args), do: result(args, Preferences.current())
 
   @doc """
   The rows comparing `args`' passage (none when nothing matched), or
   `{:error, message}` for arguments the tool can't use, a New Testament or
   uncovered book, an MT-only request for an LXX-only book, or a missing pack.
   """
-  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     reference = Args.reference(args)
 
     with :ok <- present(reference),
@@ -241,7 +280,8 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
          include_morphology: Args.flag(args, "include_morphology", false),
          rows: rows,
          lxx_only: lxx_only,
-         cap_note: cap_note
+         cap_note: cap_note,
+         prefs: prefs
        }}
     end
   end
@@ -658,7 +698,7 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
         {heading ++ row_lines(row, result), group}
       end)
 
-    (header ++ lines ++ sources(result.rows))
+    (header ++ lines ++ sources(result.rows, result.prefs))
     |> Enum.join("\n")
     |> String.trim_trailing()
   end
@@ -678,7 +718,7 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
         else: ""
 
     "#### #{row.version} #{row.edition} · #{row.edition_reference}#{mapping}" <>
-      if(row.apocrypha, do: " (Apocrypha)", else: "")
+      if(row.apocrypha, do: " (not in the Hebrew Bible)", else: "")
   end
 
   defp brenton_lines(%{status: :differs, greek: greek, difference: difference}, include_original) do
@@ -727,9 +767,11 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   end
 
   # Provenance once: each edition's licence, English and source, the
-  # verse-mapping credit, and the Apocrypha, Brenton and KJV notes.
-  defp sources(rows) do
+  # verse-mapping credit, the canon and verdict lines (by `prefs`), and the
+  # Brenton and KJV notes.
+  defp sources(rows, prefs) do
     editions = rows |> Enum.map(&{&1.version, &1.edition}) |> Enum.uniq()
+    outside = rows |> Enum.map(& &1.apocrypha) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     ["---", "**Sources**"] ++
       Enum.map(editions, &edition_line(&1, rows)) ++
@@ -737,7 +779,8 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
         "- Brenton's Greek: public domain. #{@brenton_greek_source_url}"
       ]) ++
       ["- Verse mapping: #{@verse_mapping_credit}"] ++
-      apocrypha_line(rows |> Enum.map(& &1.apocrypha) |> Enum.reject(&is_nil/1) |> Enum.uniq()) ++
+      if(prefs.scripture_labels, do: canon_line(outside), else: []) ++
+      if(Sources.enabled?(prefs, "editorial:verdicts"), do: verdict_line(outside), else: []) ++
       when_any(rows, &(not &1.kjv_apocrypha and &1.translation_note != nil), [
         "\n*Brenton's English: #{@brenton_note}*"
       ]) ++
@@ -763,17 +806,44 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
       "English: #{english}. #{first.source_url}"
   end
 
-  defp apocrypha_line([]), do: []
+  defp canon_line([]), do: []
 
-  defp apocrypha_line(names) do
+  # 'Canon: Sirach is in the Catholic and Orthodox canons, not the Jewish or
+  # Protestant ones.', one sentence per group of canons.
+  defp canon_line(names) do
+    sentences =
+      names
+      |> Enum.group_by(&canons/1)
+      |> Enum.sort_by(fn {canons, _} -> canon_order(canons) end)
+      |> Enum.map_join(" ", fn {canons, group} -> "#{listed(group)} #{canons}." end)
+
+    ["\n*Canon: #{sentences}*"]
+  end
+
+  defp canons(name) do
+    Enum.find_value(@canons, @outside_canons, fn {names, canons} ->
+      if name in names, do: canons
+    end)
+  end
+
+  defp canon_order(canons),
+    do: Enum.find_index(@canons, &(elem(&1, 1) == canons)) || length(@canons)
+
+  defp verdict_line([]), do: []
+
+  defp verdict_line(names) do
+    [
+      "\n*Verdict (studybible-mcp): #{listed(names)} not in the Protestant canon " <>
+        "(cf. Westminster Confession 1.3); background only.*"
+    ]
+  end
+
+  # 'Sirach is', 'Sirach and Tobit are'.
+  defp listed(names) do
     {init, [last]} = Enum.split(names, -1)
     listed = if init == [], do: last, else: "#{Enum.join(init, ", ")} and #{last}"
     verb = if init != [] or last in @apocrypha_plural, do: "are", else: "is"
-
-    [
-      "\n*Apocrypha: #{listed} #{verb} not in the Protestant canon " <>
-        "(cf. Westminster Confession 1.3); background only.*"
-    ]
+    "#{listed} #{verb}"
   end
 
   defp lxx_only_note([]), do: ""

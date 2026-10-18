@@ -5,11 +5,15 @@ defmodule Bezalel.Study.Tools.FindSimilarPassagesTest do
   # computed them.
   use ExUnit.Case, async: true
 
+  alias Bezalel.Study.Preferences
   alias Bezalel.Study.Tools.FindSimilarPassages
 
+  # studybible-mcp's default of four, and the BSB the vectors were computed from.
+  @prefs Preferences.new(limit: 4, translation: "bsb")
+
   defp ok(args) do
-    assert {:ok, text} = FindSimilarPassages.run(args, %{})
-    text
+    assert {:ok, result} = FindSimilarPassages.result(args, @prefs)
+    FindSimilarPassages.render(result)
   end
 
   defp ranked(text) do
@@ -17,7 +21,7 @@ defmodule Bezalel.Study.Tools.FindSimilarPassagesTest do
         do: {String.to_integer(rank), ref, percent}
   end
 
-  test "ranked by similarity, default four, with the caution and the source verse" do
+  test "ranked by similarity, the user's default count, with the caution and the source verse" do
     text = ok(%{"reference" => "Psalm 22:18"})
 
     assert text =~

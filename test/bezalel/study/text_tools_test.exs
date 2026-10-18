@@ -7,6 +7,7 @@ defmodule Bezalel.Study.TextToolsTest do
   # EXTRA_VERSES / LXX_EXTRA).
   use ExUnit.Case, async: true
 
+  alias Bezalel.Study.Preferences
   alias Bezalel.Study.Tools.{CompareBiblicalVersions, GetTextualVariant, GetTorahWeave}
 
   defp ok(tool, args) do
@@ -284,11 +285,12 @@ defmodule Bezalel.Study.TextToolsTest do
       greek = ok(CompareBiblicalVersions, %{"reference" => "Daniel 3:25", "numbering" => "lxx"})
       assert greek =~ "## Biblical Version Comparison: Daniel 3:25 (Septuagint edition numbering)"
       assert greek =~ "### Dan.3.25 (LXX-only, no MT counterpart)"
-      assert occurrences(greek, " (Apocrypha)\n") == 2
+      assert occurrences(greek, " (not in the Hebrew Bible)\n") == 2
       assert greek =~ "**English (KJV Apocrypha):** Then Azarias stood up"
 
       assert greek =~
-               "*Apocrypha: the Prayer of Azariah and Song of the Three (Dan 3:24–90) are not"
+               "*Canon: the Prayer of Azariah and Song of the Three (Dan 3:24–90) are in the " <>
+                 "Catholic and Orthodox canons, not the Jewish or Protestant ones.*"
 
       refute greek =~ "Brenton's English:"
     end
@@ -296,18 +298,42 @@ defmodule Bezalel.Study.TextToolsTest do
     test "an LXX-only book uses Greek numbering and needs the LXX" do
       text = ok(CompareBiblicalVersions, %{"reference" => "Tobit 1:1"})
 
-      assert text =~ "#### LXX Rahlfs Septuagint (1935) · Tob.1.1 (mapping: lxx-only) (Apocrypha)"
+      assert text =~
+               "#### LXX Rahlfs Septuagint (1935) · Tob.1.1 (mapping: lxx-only) (not in the Hebrew Bible)"
+
       assert text =~ "**English (KJV Apocrypha):** "
       assert text =~ "English: KJV (Authorized Version) Apocrypha, lightly adapted by Brenton."
 
       assert text =~
-               "*Apocrypha: Tobit is not in the Protestant canon (cf. Westminster Confession 1.3); background only.*"
+               "*Canon: Tobit is in the Catholic and Orthodox canons, not the Jewish or Protestant ones.*"
+
+      # The Protestant verdict is an editorial source, off by default.
+      refute text =~ "Westminster"
 
       assert text =~ ~r/\*KJV Apocrypha English: [^\n]*\*\z/
       refute text =~ "Brenton's English:"
 
       assert error(CompareBiblicalVersions, %{"reference" => "Tobit 1:1", "versions" => ["MT"]}) ==
                "Tobit 1:1 is in a Septuagint-only book with no Masoretic Text; include 'LXX' in versions."
+    end
+
+    test "the canon line follows the scripture labels; the Westminster line the editorial verdicts" do
+      args = %{"reference" => "Tobit 1:1"}
+      render = &CompareBiblicalVersions.render(elem(CompareBiblicalVersions.result(args, &1), 1))
+
+      unlabelled = render.(Preferences.new(scripture_labels: false))
+      refute unlabelled =~ "*Canon:"
+      refute unlabelled =~ "Westminster"
+      # The provenance stays.
+      assert unlabelled =~ "(not in the Hebrew Bible)"
+      assert unlabelled =~ "*KJV Apocrypha English: "
+
+      verdicts = render.(Preferences.new(excluded_sources: []))
+      assert verdicts =~ "*Canon: Tobit is in the Catholic and Orthodox canons"
+
+      assert verdicts =~
+               "*Verdict (studybible-mcp): Tobit is not in the Protestant canon " <>
+                 "(cf. Westminster Confession 1.3); background only.*"
     end
 
     test "Brenton's differing Greek is flagged; matching Greek gets only the standing note" do

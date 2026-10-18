@@ -8,14 +8,15 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
   that the pack build precomputed (`similar_passages`, BGE-small vectors of
   the BSB; data/README.md), so it needs no vector extension and returns at
   most 20. The similarity printed is the stored cosine similarity, and the
-  text is the same as theirs. `result/1` returns the source verse and the
-  passages with their preview verses.
+  text is the same as theirs, in the user's translation (the vectors stay
+  the BSB's). `result/1` returns the source verse and the passages with
+  their preview verses.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Hermeneutics, Verses}
+  alias Bezalel.Study.{Args, DB, Format, Hermeneutics, Preferences, Translations, Verses}
 
-  @default_limit 4
+  @max_limit 20
   # Verses fetched for a passage's preview: ample for the 500 characters shown.
   @preview_verses 30
 
@@ -68,7 +69,8 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
         "limit" => %{
           "type" => "integer",
           "description" =>
-            "Number of similar passages to return (at most 20). Default: #{@default_limit}"
+            "Number of similar passages to return (at most 20). Default: the user's setting " <>
+              "(8 unless changed)"
         }
       },
       "required" => ["reference"]
@@ -76,8 +78,8 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -93,28 +95,44 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
           preview: [Format.verse_view()]
         }
 
-  @typedoc "The source verse (nil when not in the pack) and its similar passages."
+  @typedoc """
+  The source verse (nil when not in the pack) and its similar passages, in
+  `translation` (`translation_note`: why it isn't the one chosen, or nil).
+  """
   @type t :: %{
           reference: String.t(),
           source: Format.verse_view() | nil,
-          passages: [passage()]
+          passages: [passage()],
+          translation: Translations.ref(),
+          translation_note: String.t() | nil
         }
 
-  @doc "The passages similar to `args`' verse (none when the verse isn't in the pack)."
+  @doc "The passages similar to `args`' verse, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The passages similar to `args`' verse under `prefs` (none when the verse isn't in the pack)."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     case Args.reference(args) do
       "" ->
         {:error, "Please provide a verse reference (e.g., 'John 3:16')."}
 
       reference ->
-        limit = Args.limit(args, @default_limit)
-        DB.with_pack(:core, &similar(&1, reference, limit))
+        limit = Args.limit(args, Preferences.limit(prefs, @max_limit))
+        Translations.with_translation(prefs.translation, &found(reference, limit, &1, &2))
     end
   end
 
-  defp similar(conn, reference, limit) do
-    case Verses.get(conn, reference) do
+  defp found(reference, limit, translation, note) do
+    with {:ok, found} <- DB.with_pack(:core, &similar(&1, reference, limit, translation)) do
+      {:ok,
+       Map.merge(found, %{translation: Translations.ref(translation), translation_note: note})}
+    end
+  end
+
+  defp similar(conn, reference, limit, translation) do
+    case Verses.get(conn, reference, translation) do
       nil ->
         %{reference: reference, source: nil, passages: []}
 
@@ -132,13 +150,13 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
             """,
             [verse["id"], limit]
           )
-          |> Enum.map(&passage(conn, &1))
+          |> Enum.map(&passage(conn, &1, translation))
 
         %{reference: reference, source: Format.verse_view(verse), passages: passages}
     end
   end
 
-  defp passage(conn, row) do
+  defp passage(conn, row, translation) do
     %{
       reference:
         if(row["reference_start"] == row["reference_end"],
@@ -151,7 +169,7 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
       verse_count: row["verse_count"],
       preview:
         conn
-        |> Verses.span(row["start_verse_id"], row["end_verse_id"], @preview_verses)
+        |> Verses.span(row["start_verse_id"], row["end_verse_id"], @preview_verses, translation)
         |> Enum.map(&Format.verse_view/1)
     }
   end
@@ -162,12 +180,13 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
     "No similar passages found for #{reference}. The verse may not be in the database."
   end
 
-  def render(%{reference: reference, source: source, passages: passages}) do
+  def render(%{reference: reference, source: source, passages: passages} = result) do
     shown = [source | Enum.flat_map(passages, & &1.preview)]
-    bsb = Format.bsb_label(shown)
+    label = Format.translation_label(shown, result.translation)
     source_genre = Hermeneutics.genre_from_reference(reference)
 
-    "## Passages Similar to #{reference}#{bsb}\n\n" <>
+    "## Passages Similar to #{reference}#{label}\n\n" <>
+      Format.translation_note(result.translation_note) <>
       "**Source**: #{source.english}\n\n" <>
       "---\n\n" <>
       "⚠️ **Hermeneutical Caution**: Semantic similarity indicates shared vocabulary " <>

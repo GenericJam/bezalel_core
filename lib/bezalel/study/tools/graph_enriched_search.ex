@@ -10,12 +10,13 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
   would pick for the mentioned name (not necessarily the namesake the verse
   means); a mention without a name shows its id instead of "None". A verse
   not in the pack still lists the verse's entities (there are none for a
-  reference that isn't a verse). `result/1` returns the verse and the
-  entities, each person with their family.
+  reference that isn't a verse). The verse is in the user's translation.
+  `result/1` returns the verse and the entities, each person with their
+  family.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Graph, Reference, Verses}
+  alias Bezalel.Study.{Args, DB, Format, Graph, Preferences, Reference, Translations, Verses}
 
   @impl true
   def name, do: "graph_enriched_search"
@@ -51,34 +52,54 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc "A person mentioned, with the family of the person their name finds (nil if none)."
   @type person :: %{id: String.t(), name: String.t(), family: Graph.family() | nil}
 
+  @typedoc """
+  The verse in `translation` (`translation_note`: why it isn't the one
+  chosen, or nil) and its entities.
+  """
   @type t :: %{
           reference: String.t(),
           verse: Format.verse_view() | nil,
           people: [person()],
           places: [Graph.entity()],
-          events: [Graph.entity()]
+          events: [Graph.entity()],
+          translation: Translations.ref(),
+          translation_note: String.t() | nil
         }
 
-  @doc "The verse and entities of `args`' reference (either possibly missing)."
+  @doc "The verse and entities of `args`' reference, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The verse (in `prefs`' translation) and entities of `args`' reference (either possibly missing)."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     case Args.reference(args) do
       "" ->
         {:error, "Please provide a verse reference (e.g., 'Genesis 22:1')."}
 
       reference ->
-        with {:ok, entities} <- DB.with_pack(:graph, &entities(&1, reference)),
-             {:ok, row} <- DB.with_pack(:core, &Verses.get(&1, reference)) do
-          {:ok,
-           Map.merge(entities, %{reference: reference, verse: row && Format.verse_view(row)})}
+        with {:ok, entities} <- DB.with_pack(:graph, &entities(&1, reference)) do
+          Translations.with_translation(prefs.translation, &verse(entities, reference, &1, &2))
         end
+    end
+  end
+
+  defp verse(entities, reference, translation, note) do
+    with {:ok, row} <- DB.with_pack(:core, &Verses.get(&1, reference, translation)) do
+      {:ok,
+       Map.merge(entities, %{
+         reference: reference,
+         verse: row && Format.verse_view(row),
+         translation: Translations.ref(translation),
+         translation_note: note
+       })}
     end
   end
 
@@ -129,17 +150,11 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
         verse: verse,
         people: people,
         places: places,
-        events: events
+        events: events,
+        translation: translation,
+        translation_note: note
       }) do
-    verse_lines =
-      case verse do
-        nil ->
-          []
-
-        view ->
-          [view.english, ""] ++
-            if(view.original != "", do: ["**Original**: #{view.original}", ""], else: [])
-      end
+    verse_lines = verse_lines(verse, note)
 
     people_lines =
       if people == [],
@@ -147,7 +162,7 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
         else: ["### People Mentioned" | Enum.flat_map(people, &person_lines/1)] ++ [""]
 
     lines =
-      ["## #{reference}#{Format.bsb_label(List.wrap(verse))}\n"] ++
+      ["## #{reference}#{Format.translation_label(List.wrap(verse), translation)}\n"] ++
         verse_lines ++
         people_lines ++
         list("Places Mentioned", places) ++
@@ -158,6 +173,15 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
         )
 
     Enum.join(lines, "\n")
+  end
+
+  # The verse's English (after the translation note, if any) and original.
+  defp verse_lines(nil, _note), do: []
+
+  defp verse_lines(view, note) do
+    if(note, do: ["*#{note}*\n"], else: []) ++
+      [view.english, ""] ++
+      if(view.original != "", do: ["**Original**: #{view.original}", ""], else: [])
   end
 
   defp person_lines(%{name: name, family: family}) do

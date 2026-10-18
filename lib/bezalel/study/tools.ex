@@ -17,9 +17,13 @@ defmodule Bezalel.Study.Tools do
   textual variants (notes); the Septuagint beside the Hebrew (lxx);
   Second Temple sources (ancient); and a list of research sources shipped
   with the app.
+
+  `withheld/1` names the tools a host should not offer the model under a
+  user's preferences: those whose every source the user switched off
+  (`Bezalel.Study.Sources.withheld_tools/1`).
   """
 
-  alias Bezalel.Study.Tools
+  alias Bezalel.Study.{Sources, Tools}
 
   @tier1 [
     Tools.LookupVerse,
@@ -55,4 +59,8 @@ defmodule Bezalel.Study.Tools do
   @doc "Every study tool module."
   @spec all() :: [module()]
   def all, do: @tier1 ++ @tier2
+
+  @doc "The names of the tools to withhold from the model under `prefs`."
+  @spec withheld(Bezalel.Study.Preferences.t()) :: [String.t()]
+  def withheld(prefs), do: Sources.withheld_tools(prefs)
 end

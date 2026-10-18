@@ -11,7 +11,8 @@ defmodule Bezalel.Study.Ancient.Passages do
   Python's `casefold` that matter here (final sigma, ß, Greek symbol forms).
   """
 
-  alias Bezalel.Study.{Ancient, DB, Patterns}
+  alias Bezalel.Study.{Ancient, DB, Patterns, Preferences, Sources}
+  alias Bezalel.Study.Ancient.Notes
 
   @english_excerpt 1500
   @original_excerpt 600
@@ -328,14 +329,20 @@ defmodule Bezalel.Study.Ancient.Passages do
   original excerpts, notes, links and provenance.
 
   Options: `:query` (centres the excerpts), `:default_corpus`,
-  `:include_original`, `:full_text`, `:note_cut`, `:window`.
+  `:include_original`, `:full_text`, `:note_cut`, `:window`, `:prefs` (a
+  `Bezalel.Study.Preferences`, default the defaults): without scripture
+  labels the tag has no canon status; without the `editorial:verdicts`
+  source the curated "contrast" links are left out, and each ⚠ note shows
+  only what `Bezalel.Study.Ancient.Notes.shown/2` allows.
   """
   @spec passage(DB.row(), keyword()) :: passage()
   def passage(row, opts) do
+    prefs = Keyword.get_lazy(opts, :prefs, fn -> %Preferences{} end)
+    verdicts = Sources.enabled?(prefs, "editorial:verdicts")
     default_corpus = Keyword.get(opts, :default_corpus)
     corpus = Ancient.corpus(row["corpus"] || default_corpus || "")
     language = language(row, corpus)
-    {tag, tiers} = Ancient.row_tag(row, default_corpus)
+    {tag, tiers} = Ancient.row_tag(row, default_corpus, prefs.scripture_labels)
     {english, original, original_only, lines_note} = texts(row, corpus, language, opts)
 
     %{
@@ -357,12 +364,13 @@ defmodule Bezalel.Study.Ancient.Passages do
       original: original,
       original_only: original_only,
       lines_shown: lines_note,
-      notes:
-        Enum.map(
-          row["editorial_notes"] || [],
-          &Map.take(&1, ~w(citation kind note contrast aligned))
+      notes: Enum.flat_map(row["editorial_notes"] || [], &List.wrap(Notes.shown(&1, prefs))),
+      links:
+        for(
+          link <- row["biblical_links"] || [],
+          verdicts or link["relation"] != "contrast",
+          do: link(link)
         ),
-      links: Enum.map(row["biblical_links"] || [], &link/1),
       source: source(row, corpus, default_corpus, language)
     }
   end
@@ -451,17 +459,20 @@ defmodule Bezalel.Study.Ancient.Passages do
   The Markdown of `passages` after `header` lines: each passage's block
   until the response budget, then the caveats, tiers and sources of the
   passages shown. `cut.(passage, shown_count)` is the line printed when the
-  budget stops the list; `suffix` is appended to each heading.
+  budget stops the list; `suffix` is appended to each heading. `prefs`
+  decide the caveats: each corpus's canon status with scripture labels on,
+  and its verdict (credited to studybible-mcp) with `editorial:verdicts` on.
   """
   @spec render(
           [String.t()],
           [passage()],
           String.t() | nil,
+          Preferences.t(),
           (passage(), non_neg_integer() -> String.t()),
           String.t()
         ) ::
           String.t()
-  def render(header, passages, default_corpus, cut, suffix \\ "") do
+  def render(header, passages, default_corpus, prefs, cut, suffix \\ "") do
     {lines, shown, _seen} =
       Enum.reduce_while(passages, {header, [], MapSet.new()}, fn passage, {lines, shown, seen} ->
         {block, seen_after} = block(passage, seen, suffix)
@@ -473,7 +484,7 @@ defmodule Bezalel.Study.Ancient.Passages do
         end
       end)
 
-    (lines ++ closing(shown, default_corpus)) |> Enum.join("\n") |> String.trim_trailing()
+    (lines ++ closing(shown, default_corpus, prefs)) |> Enum.join("\n") |> String.trim_trailing()
   end
 
   # Python len: code points, not graphemes.
@@ -485,7 +496,8 @@ defmodule Bezalel.Study.Ancient.Passages do
     links =
       if p.links == [], do: [], else: ["" | Enum.map(p.links, &"- #{link_line(&1)}")]
 
-    {[heading(p, suffix), "*#{p.tag}*"] ++
+    {[heading(p, suffix)] ++
+       if(p.tag == "", do: [], else: ["*#{p.tag}*"]) ++
        editorial_heading(p) ++ text_lines(p) ++ notes ++ links ++ ["", "---", ""], seen}
   end
 
@@ -546,12 +558,12 @@ defmodule Bezalel.Study.Ancient.Passages do
     "⚠ #{where}#{note["note"]}" <> if(related != "", do: " (#{related})", else: "")
   end
 
-  defp closing(shown, default_corpus) do
+  defp closing(shown, default_corpus, prefs) do
     caveats =
       shown
       |> Enum.map(&(&1.corpus || default_corpus || ""))
       |> Enum.uniq()
-      |> Enum.flat_map(&caveat/1)
+      |> Enum.flat_map(&caveat(&1, prefs))
 
     tiers =
       for tier <- shown |> Enum.flat_map(& &1.tiers) |> Enum.uniq() |> Enum.sort(),
@@ -562,13 +574,31 @@ defmodule Bezalel.Study.Ancient.Passages do
     ["**Caveats**"] ++ caveats ++ tiers ++ ["", "**Sources**"] ++ sources(shown)
   end
 
-  defp caveat(""), do: []
+  defp caveat("", _prefs), do: []
 
-  defp caveat(key) do
+  # An unregistered corpus has only its status.
+  defp caveat(key, prefs) do
     case Ancient.corpus(key) do
-      %{caveat: caveat, label: label} when caveat != "" -> ["- #{label}: #{caveat}"]
-      %{label: label} -> ["- #{label}: Not Scripture."]
-      nil -> ["- #{key}: Not Scripture."]
+      nil -> if prefs.scripture_labels, do: ["- #{key}: Not Scripture."], else: []
+      corpus -> corpus_caveat(corpus, prefs)
+    end
+  end
+
+  # 'Josephus: Not Scripture. A Jewish historian …', the status only with
+  # scripture labels, the verdict only with editorial verdicts.
+  defp corpus_caveat(corpus, prefs) do
+    status = prefs.scripture_labels && Ancient.corpus_status(corpus.key)
+    verdicts = Sources.enabled?(prefs, "editorial:verdicts")
+
+    parts = [
+      status && status <> ".",
+      if(corpus.caveat != "", do: corpus.caveat),
+      verdicts && corpus.verdict && "Verdict (studybible-mcp): #{corpus.verdict}"
+    ]
+
+    case Enum.filter(parts, &is_binary/1) do
+      [] -> []
+      parts -> ["- #{corpus.label}: #{Enum.join(parts, " ")}"]
     end
   end
 

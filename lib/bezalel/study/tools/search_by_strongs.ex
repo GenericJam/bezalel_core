@@ -4,13 +4,13 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
   number) appears.
 
   Ported from studybible-mcp's `handle_search_by_strongs` (MIT); same
-  text. `result/1` returns the lexicon row and the verses.
+  text, the verses in the user's translation, and as many as the user's
+  default result count unless `limit` says. `result/1` returns the lexicon
+  row and the verses.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Lexicon, Verses}
-
-  @default_limit 4
+  alias Bezalel.Study.{Args, DB, Format, Lexicon, Preferences, Translations, Verses}
 
   @impl true
   def name, do: "search_by_strongs"
@@ -38,7 +38,8 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
         },
         "limit" => %{
           "type" => "integer",
-          "description" => "Maximum verses to return. Default: #{@default_limit}"
+          "description" =>
+            "Maximum verses to return. Default: the user's setting (8 unless changed)"
         }
       },
       "required" => ["strongs"]
@@ -46,49 +47,76 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
-  @typedoc "`strongs` as given, its lexicon entry, and the verses that carry it."
-  @type t :: %{strongs: String.t(), entry: DB.row(), verses: [Format.verse_view()]}
+  @typedoc """
+  `strongs` as given, its lexicon entry, and the verses that carry it, in
+  `translation` (`translation_note`: why it isn't the one chosen, or nil).
+  """
+  @type t :: %{
+          strongs: String.t(),
+          entry: DB.row(),
+          verses: [Format.verse_view()],
+          translation: Translations.ref(),
+          translation_note: String.t() | nil
+        }
 
-  @doc "The verses with `args`' Strong's number; an unknown number is an error."
+  @doc "The verses with `args`' Strong's number, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The verses with `args`' Strong's number under `prefs`; an unknown number is an error."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     case Args.string(args, "strongs") do
       "" ->
         {:error, "Please provide a Strong's number (e.g., 'G26' or 'H3068')."}
 
       strongs ->
-        limit = Args.limit(args, @default_limit)
-
-        case DB.with_pack(:core, &search(&1, strongs, limit)) do
-          {:ok, nil} -> {:error, "Unknown Strong's number: #{strongs}"}
-          {:ok, result} -> {:ok, result}
-          error -> error
-        end
+        limit = Args.limit(args, Preferences.limit(prefs, nil))
+        Translations.with_translation(prefs.translation, &verses(strongs, limit, &1, &2))
     end
   end
 
-  defp search(conn, strongs, limit) do
+  defp verses(strongs, limit, translation, note) do
+    case DB.with_pack(:core, &search(&1, strongs, limit, translation)) do
+      {:ok, nil} ->
+        {:error, "Unknown Strong's number: #{strongs}"}
+
+      {:ok, result} ->
+        {:ok,
+         Map.merge(result, %{translation: Translations.ref(translation), translation_note: note})}
+
+      error ->
+        error
+    end
+  end
+
+  defp search(conn, strongs, limit, translation) do
     if entry = Lexicon.entry(conn, strongs) do
-      verses = conn |> Verses.with_strongs(strongs, limit) |> Enum.map(&Format.verse_view/1)
+      verses =
+        conn
+        |> Verses.with_strongs(strongs, limit, translation)
+        |> Enum.map(&Format.verse_view/1)
+
       %{strongs: strongs, entry: entry, verses: verses}
     end
   end
 
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
-  def render(%{strongs: strongs, entry: entry, verses: verses}) do
-    bsb = Format.bsb_label(verses)
+  def render(%{strongs: strongs, entry: entry, verses: verses} = result) do
+    label = Format.translation_label(verses, result.translation)
 
     body =
       if verses == [],
         do: "No verses found with this Strong's number in the database.\n",
         else: Enum.map_join(verses, &"**#{&1.reference}**: #{&1.english}\n\n")
 
-    "## Verses with #{strongs} (#{Format.s(entry["word"])} - #{Format.s(entry["transliteration"])})#{bsb}\n\n" <>
+    "## Verses with #{strongs} (#{Format.s(entry["word"])} - #{Format.s(entry["transliteration"])})#{label}\n\n" <>
+      Format.translation_note(result.translation_note) <>
       "*#{Format.s(entry["short_definition"])}*\n\n" <> body
   end
 end

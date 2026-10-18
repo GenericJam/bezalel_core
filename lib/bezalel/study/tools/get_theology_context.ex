@@ -21,10 +21,15 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
 
   A verse's entries are those indexed to it, else those indexed to its
   chapter; theme results alternate between authors.
+
+  The user's preferences (`Bezalel.Study.Preferences`) set the default
+  `limit` and leave out the theologians they switched off
+  (`Bezalel.Study.Sources`, `theology:<author>`): asking for one is an
+  error, and the others' entries and themes are all there is.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Reference}
+  alias Bezalel.Study.{Args, DB, Format, Preferences, Reference, Sources}
   require Args
 
   @provenance "*Provenance: these entries are original summaries of the named author's " <>
@@ -98,15 +103,16 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
         },
         "limit" => %{
           "type" => "integer",
-          "description" => "Maximum entries to return. Default: 4"
+          "description" =>
+            "Maximum entries to return. Default: the user's setting (8 unless changed)"
         }
       }
     }
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -147,38 +153,54 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
               entries: [entry()]
             }
 
+  @doc "The themes or entries `args` ask for, under the host's current preferences."
+  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
+  def result(args), do: result(args, Preferences.current())
+
   @doc """
   With neither a reference nor a theme, the themes (those `author` wrote
   on, with an author); else the entries for the theme or, without one, the
-  reference (possibly none). An unknown author or theme, or a reference
-  that isn't a verse, is an error.
+  reference (possibly none), from the authors `prefs` leave on. An unknown
+  or switched-off author or theme, or a reference that isn't a verse, is an
+  error.
   """
-  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     query = %{
       reference: nonempty(Args.reference(args)),
       theme: Args.optional(args, "theme"),
       author: Args.optional(args, "author")
     }
 
-    limit = Args.limit(args, 4)
+    limit = Args.limit(args, Preferences.limit(prefs, nil))
 
-    with {:ok, answer} <- DB.with_pack(:notes, &answer(&1, query, limit)), do: answer
+    excluded =
+      for author <- Sources.theology_authors(),
+          not Sources.enabled?(prefs, Sources.theology(author)),
+          do: author
+
+    with :ok <- Sources.check_tool(prefs, name()),
+         :ok <-
+           if(query.author, do: Sources.check(prefs, Sources.theology(query.author)), else: :ok),
+         {:ok, answer} <- DB.with_pack(:notes, &answer(&1, query, excluded, limit)),
+         do: answer
   end
 
-  defp answer(conn, query, limit) do
+  defp answer(conn, query, excluded, limit) do
+    filter = author_filter(query.author, excluded)
+
     cond do
       query.author && not author?(conn, query.author) ->
         {:error, "No scholarship data found for author '#{query.author}'."}
 
       query.theme == nil and query.reference == nil ->
-        {:ok, %{themes: themes(conn, query.author)}}
+        {:ok, %{themes: themes(conn, filter)}}
 
       query.theme ->
-        entries(query, theme?(conn, query.theme) && by_theme(conn, query, limit))
+        entries(query, theme?(conn, query.theme) && by_theme(conn, query, filter, limit))
 
       true ->
-        entries(query, by_reference(conn, query, limit))
+        entries(query, by_reference(conn, query, filter, limit))
     end
   end
 
@@ -196,7 +218,7 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
   defp nonempty(""), do: nil
   defp nonempty(text), do: text
 
-  defp themes(conn, nil) do
+  defp themes(conn, {"", []}) do
     conn
     |> DB.all("""
     SELECT tt.*,
@@ -207,23 +229,23 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
     |> Enum.map(&theme/1)
   end
 
-  defp themes(conn, author) do
+  defp themes(conn, {author_filter, author_params}) do
     conn
     |> DB.all(
       """
       SELECT tt.*,
              (SELECT COUNT(*) FROM theology_theme_index tti
               JOIN theology_content tc ON tti.content_id = tc.id
-              WHERE tti.theme_key = tt.theme_key AND tc.source_author = ?) AS entry_count
+              WHERE tti.theme_key = tt.theme_key#{author_filter}) AS entry_count
       FROM theology_themes tt
       WHERE EXISTS (
           SELECT 1 FROM theology_theme_index tti
           JOIN theology_content tc ON tti.content_id = tc.id
-          WHERE tti.theme_key = tt.theme_key AND tc.source_author = ?
+          WHERE tti.theme_key = tt.theme_key#{author_filter}
       )
       ORDER BY tt.theme_key
       """,
-      [author, author]
+      author_params ++ author_params
     )
     |> Enum.map(&theme/1)
   end
@@ -240,9 +262,7 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
 
   # Entries alternate between authors (each author's in id order), so a
   # small limit still shows every scholar's view of the theme.
-  defp by_theme(conn, query, limit) do
-    {author_filter, author_params} = author_filter(query.author)
-
+  defp by_theme(conn, query, {author_filter, author_params}, limit) do
     conn
     |> DB.all(
       """
@@ -271,13 +291,11 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
   @best_match "MIN(CASE vi.relevance WHEN 'primary' THEN 0 ELSE 1 END * 1000" <>
                 " + COALESCE(vi.verse, 0)) AS match_rank"
 
-  defp by_reference(conn, query, limit) do
+  defp by_reference(conn, query, {author_filter, author_params}, limit) do
     normalized = Reference.normalize(query.reference)
 
     with [book | rest] when rest != [] <- String.split(normalized, "."),
          {:ok, chapter} <- chapter(hd(rest)) do
-      {author_filter, author_params} = author_filter(query.author)
-
       select = fn where, params ->
         conn
         |> DB.all(
@@ -319,8 +337,13 @@ defmodule Bezalel.Study.Tools.GetTheologyContext do
     end
   end
 
-  defp author_filter(nil), do: {"", []}
-  defp author_filter(author), do: {" AND tc.source_author = ?", [author]}
+  # The author asked for, else every author but the switched-off ones.
+  defp author_filter(nil, []), do: {"", []}
+
+  defp author_filter(nil, excluded),
+    do: {" AND tc.source_author NOT IN (#{DB.placeholders(excluded)})", excluded}
+
+  defp author_filter(author, _excluded), do: {" AND tc.source_author = ?", [author]}
 
   defp entry(row) do
     %{

@@ -5,6 +5,13 @@ defmodule Bezalel.Study.Ancient.Registry do
   tag, and citable works with their names, collections, tags and locator
   grammars. Generated from the Python registry (`CORPORA`); the passages
   themselves are in the ancient pack. Display order is the registry's.
+
+  Changed for Bezalel: each Python caveat is split into `caveat`, the
+  neutral provenance (always shown), and `verdict`, the maintainer's
+  confessional judgement (shown only with the `editorial:verdicts` source,
+  `Bezalel.Study.Sources`); the "Not Scripture" lead is the tag's `status`
+  (a scripture label, shown unless the user turns labels off), which for 1
+  Enoch and 4 Ezra names the canon that has them.
   """
 
   # Date tiers: how much a text can testify to about the first century.
@@ -37,8 +44,8 @@ defmodule Bezalel.Study.Ancient.Registry do
       },
       aliases: ["Flavius Josephus", "Josephus", "Jos."],
       key: "josephus",
-      caveat:
-        "Not Scripture: a Jewish historian writing c. AD 75–100; his editorial framing is his own.",
+      caveat: "A Jewish historian writing c. AD 75–100; his editorial framing is his own.",
+      verdict: nil,
       example_citation: "Antiquities 18.116",
       heading_label: "Whiston chapter heading",
       line_numbered: false,
@@ -190,7 +197,8 @@ defmodule Bezalel.Study.Ancient.Registry do
       aliases: ["Targum", "Targums", "Tg."],
       key: "targum",
       caveat:
-        "Not Scripture: a Jewish Aramaic rendering of the Torah (final form c. 3rd–5th c. AD) that avoids describing God bodily.",
+        "A Jewish Aramaic rendering of the Torah (final form c. 3rd–5th c. AD) that avoids describing God bodily.",
+      verdict: nil,
       example_citation: "Onkelos Genesis 1:2",
       heading_label: "Editorial heading",
       line_numbered: false,
@@ -311,7 +319,8 @@ defmodule Bezalel.Study.Ancient.Registry do
       aliases: ["Dead Sea Scrolls", "Qumran", "DSS"],
       key: "qumran",
       caveat:
-        "Not Scripture: sectarian texts of a strict priestly movement (c. 150–50 BC). [ ] marks modern reconstruction, never evidence; any English is the assistant's own.",
+        "Sectarian texts of a strict priestly movement (c. 150–50 BC). [ ] marks modern reconstruction, never evidence; any English is the assistant's own.",
+      verdict: nil,
       example_citation: "CD 6:11",
       heading_label: "Editorial heading",
       line_numbered: true,
@@ -454,7 +463,8 @@ defmodule Bezalel.Study.Ancient.Registry do
       aliases: ["Philo of Alexandria", "Philo Judaeus", "Philo"],
       key: "philo",
       caveat:
-        "Not Scripture; not Christian. Platonising allegory on the Greek Pentateuch; his Logos is not the incarnate Son (John 1:14; Heb 1).",
+        "A Jewish philosopher of Alexandria (c. AD 20–50): Platonising allegory on the Greek Pentateuch.",
+      verdict: "Not Christian; his Logos is not the incarnate Son (John 1:14; Heb 1).",
       example_citation: "Opif. 26",
       heading_label: "Yonge treatise heading",
       line_numbered: false,
@@ -1047,7 +1057,9 @@ defmodule Bezalel.Study.Ancient.Registry do
       aliases: [],
       key: "pseudepigrapha",
       caveat:
-        "Not Scripture: pseudepigrapha outside the 66-book canon; background only, never a basis for doctrine. Jude 14–15 quotes 1 Enoch 1:9 without making the book Scripture.",
+        "Jewish pseudepigrapha (works written in the name of an ancient figure). Jude 14–15 quotes 1 Enoch 1:9.",
+      verdict:
+        "Outside the 66-book canon; background only, never a basis for doctrine. Jude's quotation does not make the book Scripture.",
       example_citation: "1 Enoch 89:73",
       heading_label: "Charles section heading",
       line_numbered: false,
@@ -1057,7 +1069,8 @@ defmodule Bezalel.Study.Ancient.Registry do
       works: [
         %{
           tag: %{
-            status: "Not Scripture",
+            status:
+              "Scripture in the Ethiopian and Eritrean Orthodox Tewahedo canons and for Beta Israel; not in other canons",
             date: "c. 300 BC–1st c. AD",
             kind: "Jewish pseudepigraphon",
             edition: "Charles 1912",
@@ -1126,7 +1139,8 @@ defmodule Bezalel.Study.Ancient.Registry do
         },
         %{
           tag: %{
-            status: "Not Scripture",
+            status:
+              "Scripture in the Ethiopian Orthodox Tewahedo canon (as Ezra Sutuel); printed in Slavonic Orthodox Bibles (as 3 Esdras) and the Vulgate's appendix (as 4 Esdras); not in the Jewish, Catholic or Protestant canons",
             date: "c. AD 100",
             kind: "Jewish apocalypse, 2 Esd 3–14",
             edition: "KJV 2 Esdras, Clementine Latin",
@@ -1167,7 +1181,9 @@ defmodule Bezalel.Study.Ancient.Registry do
       aliases: ["Rabbinic"],
       key: "rabbinic",
       caveat:
-        "Not Scripture: rabbinic tradition redacted c. AD 200; attributions to pre-70 sages are unverified, and Kulp's bracketed Bible references sometimes use Hebrew numbering or contain errors. Where the NT evaluates these traditions (Mark 7; Matt 19; Heb 9–10), the NT's judgment governs.",
+        "Rabbinic tradition redacted c. AD 200; attributions to pre-70 sages are unverified, and Kulp's bracketed Bible references sometimes use Hebrew numbering or contain errors.",
+      verdict:
+        "Where the NT evaluates these traditions (Mark 7; Matt 19; Heb 9–10), the NT's judgment governs.",
       example_citation: "Mishnah Shekalim 1:1",
       heading_label: "Editorial heading",
       line_numbered: false,

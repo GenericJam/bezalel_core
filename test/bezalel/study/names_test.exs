@@ -5,6 +5,7 @@ defmodule Bezalel.Study.Tools.NamesTest do
   # the real pack's.
   use ExUnit.Case, async: true
 
+  alias Bezalel.Study.Preferences
   alias Bezalel.Study.Tools.{LookupName, PeopleInPassage}
 
   defp ok(tool, args) do
@@ -44,12 +45,18 @@ defmodule Bezalel.Study.Tools.NamesTest do
       refute levite =~ "Patriarch"
     end
 
-    test "exact matches first, then prefix, then substring; the default cap is four" do
-      text = ok(LookupName, %{"name" => "ai"})
+    test "exact matches first, then prefix, then substring; the default cap is the user's limit" do
+      assert {:ok, result} = LookupName.result(%{"name" => "ai"}, Preferences.new(limit: 4))
+      text = LookupName.render(result)
       assert name_hits(text) == ["Ai", "Ai", "Aiah", "Aiah"]
 
       assert text =~
                "*Showing 4 of 327 matching names; set type or raise limit (at most 20) to see more.*"
+
+      # 8 by default; a setting above the tool's maximum is held to it.
+      assert Enum.count(name_hits(ok(LookupName, %{"name" => "ai"}))) == 8
+      assert {:ok, many} = LookupName.result(%{"name" => "ai"}, Preferences.new(limit: 50))
+      assert Enum.count(many.entries) == 20
     end
 
     test "limit and type" do

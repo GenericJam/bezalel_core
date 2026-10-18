@@ -17,14 +17,17 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     * a device whose SQLite lacks FTS5 gets an error saying so.
 
   `result/1` returns the passages as data (citation, corpus, tag, excerpts,
-  notes, typed links, provenance).
+  notes, typed links, provenance). The user's preferences
+  (`Bezalel.Study.Preferences`) set the default `limit`, leave out switched-off
+  corpora (a search of 'all' covers the rest; with josephus off the default
+  corpus is 'all'), and decide the scripture labels and editorial verdicts
+  (`Bezalel.Study.Ancient.Passages`).
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Ancient, Args, DB}
+  alias Bezalel.Study.{Ancient, Args, DB, Preferences, Sources}
   alias Bezalel.Study.Ancient.Passages
 
-  @default_limit 4
   @max_limit 20
 
   @impl true
@@ -36,9 +39,9 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     Find an ancient source passage by searching its words: Jewish texts of the
     Second Temple world to c. AD 200 (Josephus on Herod, the temple, John the
     Baptist and the Jewish revolt; Targum Onkelos; the Qumran rules; Philo;
-    1 Enoch and 4 Ezra; the Mishnah). None is Scripture: each result carries a
-    canon, date and edition tag, and each corpus's caveat and the sources are
-    printed once at the end.
+    1 Enoch and 4 Ezra; the Mishnah). Each result carries a date and edition tag
+    (with a canon-status label unless the user turned labels off), and each
+    corpus's caveat and the sources are printed once at the end.
 
     English search is stemmed and matches only the translation's wording. Search
     Greek, Hebrew and Aramaic in their own script (accents, vowel points and case
@@ -48,9 +51,9 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     without prefix letters (ו ב ה ל מ כ ש), and those results are marked.
 
     Only passage text is searched, not titles or references. `biblical_reference`
-    keeps passages with a curated editorial link (aligned, echo, shared tradition,
-    contrast) to that range, never keyword overlap. To read a passage by its
-    citation, use lookup_ancient_source.\
+    keeps passages with a curated editorial link (aligned, echo, shared tradition;
+    contrast when editorial verdicts are on) to that range, never keyword overlap.
+    To read a passage by its citation, use lookup_ancient_source.\
     """
   end
 
@@ -85,8 +88,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           "type" => "integer",
           "minimum" => 1,
           "maximum" => @max_limit,
-          "default" => @default_limit,
-          "description" => "Maximum passages. Default: #{@default_limit}"
+          "description" =>
+            "Maximum passages. Default: the user's setting (8 unless changed), at most #{@max_limit}"
         }
       },
       "required" => ["query"]
@@ -94,14 +97,15 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
   The search and its filters, then either the passages found (`match`
   `"all"` or `"any"`, `prefix_match` when only prefix-stripped Hebrew
   matched) or `status` `:no_match` / `:no_link` (with the link coverage).
+  `prefs` are the preferences it ran under.
   """
   @type t :: %{
           required(:query) => String.t(),
@@ -109,6 +113,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           required(:biblical_reference) => String.t() | nil,
           required(:period) => String.t() | nil,
           required(:terms) => [String.t()],
+          required(:prefs) => Preferences.t(),
           required(:status) => :ok | :no_match | :no_link,
           optional(:match) => String.t(),
           optional(:prefix_match) => boolean(),
@@ -117,17 +122,27 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           optional(:linked_passage_count) => non_neg_integer()
         }
 
-  @doc "The passages matching `args`."
+  @doc "The passages matching `args`, under the host's current preferences."
   @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  def result(args), do: result(args, Preferences.current())
+
+  @doc "The passages matching `args` under `prefs`."
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     query = Args.string(args, "query")
-    corpus_arg = args |> Args.optional("corpus") |> Kernel.||("josephus") |> String.downcase()
+
+    default =
+      if Sources.enabled?(prefs, Sources.ancient("josephus")), do: "josephus", else: "all"
+
+    corpus_arg = args |> Args.optional("corpus") |> Kernel.||(default) |> String.downcase()
     corpus = if corpus_arg == "all", do: nil, else: corpus_arg
     period = Args.optional(args, "period")
 
-    with :ok <- check(query, corpus_arg, corpus, period),
-         {:ok, limit} <- limit(args) do
-      search(query, corpus_arg, corpus, reference(args), period, limit)
+    with :ok <- Sources.check_tool(prefs, name()),
+         :ok <- check(query, corpus_arg, corpus, period),
+         :ok <- if(corpus, do: Sources.check(prefs, Sources.ancient(corpus)), else: :ok),
+         {:ok, limit} <- limit(args, prefs) do
+      search(query, corpus_arg, corpus, reference(args), period, limit, prefs)
     end
   end
 
@@ -157,8 +172,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     end
   end
 
-  defp limit(args) do
-    case Args.integer(args, "limit", @default_limit) do
+  defp limit(args, prefs) do
+    case Args.integer(args, "limit", Preferences.limit(prefs, @max_limit)) do
       {:ok, limit} when limit in 1..@max_limit//1 -> {:ok, limit}
       _ -> {:error, "'limit' must be an integer from 1 to #{@max_limit}."}
     end
@@ -170,7 +185,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   defp label(nil), do: "ancient-source"
   defp label(corpus), do: Ancient.corpus(corpus).label
 
-  defp search(query, corpus_arg, corpus, reference, period, limit) do
+  defp search(query, corpus_arg, corpus, reference, period, limit, prefs) do
     terms = Passages.terms(query)
     link_range = reference && Ancient.biblical_range(reference)
 
@@ -192,7 +207,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           corpus: corpus_arg,
           biblical_reference: reference,
           period: period,
-          terms: terms
+          terms: terms,
+          prefs: prefs
         }
 
         with {:ok, found} <-
@@ -202,7 +218,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   end
 
   defp find(conn, base, corpus, link_range, limit) do
-    {corpus_condition, corpus_params} = if corpus, do: {"p.corpus = ?", [corpus]}, else: {"1", []}
+    {corpus_condition, corpus_params} = scope(corpus, base.prefs)
+    verdicts = Sources.enabled?(base.prefs, "editorial:verdicts")
 
     present =
       DB.one(
@@ -225,27 +242,43 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
            "device's SQLite build lacks. lookup_ancient_source still reads a passage by " <>
            "its citation (e.g. 'Antiquities 18.116')."}
 
-      not linked?(conn, corpus_condition, corpus_params, link_range) ->
-        {:ok, Map.merge(base, no_link(conn, corpus_condition, corpus_params))}
+      not linked?(conn, {corpus_condition, corpus_params}, link_range, verdicts) ->
+        {:ok, Map.merge(base, no_link(conn, corpus_condition, corpus_params, verdicts))}
 
       true ->
-        {where, params} = filters(corpus_condition, corpus_params, base.period, link_range)
+        {where, params} =
+          filters(corpus_condition, corpus_params, base.period, link_range, verdicts)
+
         {:ok, stages(conn, base, corpus, where, params, limit)}
     end
   end
 
-  # Has any passage in scope a curated link covering the range?
-  defp linked?(_conn, _corpus_condition, _corpus_params, nil), do: true
+  # The corpora searched: the one asked for, or every corpus the user hasn't
+  # switched off (at least one is on: `Sources.check_tool/2`).
+  defp scope(nil, prefs) do
+    all = Ancient.keys()
 
-  defp linked?(conn, corpus_condition, corpus_params, link_range) do
+    case Enum.filter(all, &Sources.enabled?(prefs, Sources.ancient(&1))) do
+      ^all -> {"1", []}
+      keys -> {"p.corpus IN (#{DB.placeholders(keys)})", keys}
+    end
+  end
+
+  defp scope(corpus, _prefs), do: {"p.corpus = ?", [corpus]}
+
+  # Has any passage in scope a curated link covering the range?
+  defp linked?(_conn, _scope, nil, _verdicts), do: true
+
+  defp linked?(conn, {corpus_condition, corpus_params}, link_range, verdicts) do
     DB.one(
       conn,
-      "SELECT 1 FROM ancient_source_passages p WHERE #{link_where(corpus_condition)} LIMIT 1",
+      "SELECT 1 FROM ancient_source_passages p WHERE #{corpus_condition} AND " <>
+        "#{link_condition(verdicts)} LIMIT 1",
       corpus_params ++ link_params(link_range)
     ) != nil
   end
 
-  defp no_link(conn, corpus_condition, corpus_params) do
+  defp no_link(conn, corpus_condition, corpus_params, verdicts) do
     coverage =
       DB.one(
         conn,
@@ -253,7 +286,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         SELECT COUNT(*) AS link_count, COUNT(DISTINCT bl.passage_id) AS linked_passage_count
         FROM ancient_source_biblical_links bl
         JOIN ancient_source_passages p ON p.id = bl.passage_id
-        WHERE #{corpus_condition}
+        WHERE #{corpus_condition}#{if verdicts, do: "", else: " AND bl.relation != 'contrast'"}
         """,
         corpus_params
       )
@@ -278,16 +311,20 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     end
   end
 
-  @link_condition """
-  EXISTS (SELECT 1 FROM ancient_source_biblical_links bl
-          WHERE bl.passage_id = p.id AND bl.biblical_book = ?
-            AND bl.sort_start <= ? AND bl.sort_end >= ?)
-  """
+  # A curated link (a "contrast" link only with the editorial verdicts on).
+  defp link_condition(verdicts) do
+    relation = if verdicts, do: "", else: " AND bl.relation != 'contrast'"
 
-  defp link_where(corpus_condition), do: "#{corpus_condition} AND #{@link_condition}"
+    """
+    EXISTS (SELECT 1 FROM ancient_source_biblical_links bl
+            WHERE bl.passage_id = p.id AND bl.biblical_book = ?
+              AND bl.sort_start <= ? AND bl.sort_end >= ?#{relation})
+    """
+  end
+
   defp link_params({book, start, end_}), do: [book, end_, start]
 
-  defp filters(corpus_condition, corpus_params, period, link_range) do
+  defp filters(corpus_condition, corpus_params, period, link_range, verdicts) do
     {where, params} = {["ancient_source_passages_fts MATCH ?", corpus_condition], corpus_params}
 
     {where, params} =
@@ -296,7 +333,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         else: {where, params}
 
     if link_range,
-      do: {where ++ [@link_condition], params ++ link_params(link_range)},
+      do: {where ++ [link_condition(verdicts)], params ++ link_params(link_range)},
       else: {where, params}
   end
 
@@ -333,7 +370,9 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         passages =
           conn
           |> Passages.annotate(rows)
-          |> Enum.map(&Passages.passage(&1, query: base.query, default_corpus: corpus))
+          |> Enum.map(
+            &Passages.passage(&1, query: base.query, default_corpus: corpus, prefs: base.prefs)
+          )
 
         Map.merge(base, %{
           status: :ok,
@@ -408,6 +447,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
       header,
       r.passages,
       default_corpus(r),
+      r.prefs,
       fn _passage, shown ->
         "*#{total - shown} more results omitted to keep the response short.*"
       end,

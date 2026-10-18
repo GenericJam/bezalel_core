@@ -11,11 +11,12 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
   verse or chapter of the 66 books ("not a reference", "Tobit 1") is an
   error with their "No study notes found" text; the pack's own absence is
   the pack error, in place of their "Aquifer data not available" message.
-  `result/1` returns the notes untruncated.
+  `result/1` returns the notes untruncated. The note types the user
+  switched off (`Bezalel.Study.Sources`, `notes:<type>`) are left out.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, DB, Format, Reference}
+  alias Bezalel.Study.{Args, DB, Format, Preferences, Reference, Sources}
   require Args
 
   @books ~w(Gen Exo Lev Num Deu Jos Jdg Rut 1Sa 2Sa 1Ki 2Ki 1Ch 2Ch Ezr Neh Est Job Psa Pro
@@ -73,8 +74,8 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
   end
 
   @impl true
-  def run(args, _ctx) do
-    with {:ok, result} <- result(args), do: {:ok, render(result)}
+  def run(args, ctx) do
+    with {:ok, result} <- result(args, Preferences.current(ctx)), do: {:ok, render(result)}
   end
 
   @typedoc """
@@ -92,13 +93,18 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
 
   @type t :: %{reference: String.t(), notes: [note()]}
 
+  @doc "The notes `args` ask for, under the host's current preferences."
+  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
+  def result(args), do: result(args, Preferences.current())
+
   @doc """
   The notes on `args`' verse, or on its chapter with `chapter_only` or a
-  chapter reference (possibly none). No reference, or one naming no verse
-  or chapter of the 66 books, is an error.
+  chapter reference (possibly none), of the types `prefs` leave on. No
+  reference, or one naming no verse or chapter of the 66 books, is an
+  error.
   """
-  @spec result(map()) :: {:ok, t()} | {:error, String.t()}
-  def result(args) do
+  @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
+  def result(args, prefs) do
     reference = Args.reference(args)
     chapter_only = Args.flag(args, "chapter_only", false)
 
@@ -122,10 +128,15 @@ defmodule Bezalel.Study.Tools.GetStudyNotes do
         {:error, "No study notes found for #{reference}."}
 
       {sql, params} ->
-        with {:ok, rows} <- DB.with_pack(:notes, &DB.all(&1, sql, params)) do
-          {:ok, %{reference: reference, notes: Enum.map(rows, &note/1)}}
-        end
+        with :ok <- Sources.check_tool(prefs, name()),
+             {:ok, rows} <- DB.with_pack(:notes, &DB.all(&1, sql, params)),
+             do: {:ok, %{reference: reference, notes: notes(rows, prefs)}}
     end
+  end
+
+  # The rows of the note types `prefs` leave on.
+  defp notes(rows, prefs) do
+    for row <- rows, Sources.enabled?(prefs, "notes:" <> row["resource_type"]), do: note(row)
   end
 
   @columns "resource_type, title, content_plain, start_ref, end_ref"

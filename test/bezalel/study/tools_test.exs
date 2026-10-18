@@ -34,7 +34,7 @@ defmodule Bezalel.Study.ToolsTest do
   end
 
   test "the system prompt covers every tool and names no other" do
-    named = tools_named(Prompt.system_prompt())
+    named = tools_named(Prompt.system_prompt(%Bezalel.Study.Preferences{}))
     assert named -- @names == []
     assert @names -- named == []
   end

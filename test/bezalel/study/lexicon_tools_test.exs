@@ -6,15 +6,20 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
   # 'craftsman', so those rankings are the real pack's.
   use ExUnit.Case, async: true
 
-  alias Bezalel.Study.{DB, Verses}
+  alias Bezalel.Study.{DB, Preferences, Translations, Verses}
   alias Bezalel.Study.Tools.{ParseMorphology, SearchByStrongs, SearchLexicon, WordStudy}
 
-  # word_study answers with its data too (rho's tool details); the others with text.
+  # studybible-mcp's default of four results, and the BSB.
+  @prefs Preferences.new(limit: 4, translation: "bsb")
+
+  defp ok(ParseMorphology, args) do
+    assert {:ok, text} = ParseMorphology.run(args, %{})
+    text
+  end
+
   defp ok(tool, args) do
-    case tool.run(args, %{}) do
-      {:ok, {:details, text, _result}} -> text
-      {:ok, text} when is_binary(text) -> text
-    end
+    assert {:ok, result} = tool.result(args, @prefs)
+    tool.render(result)
   end
 
   defp error(tool, args) do
@@ -108,10 +113,24 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
   end
 
   describe "search_by_strongs" do
-    test "the default cap is four verses, in canonical order" do
+    test "the default cap is the user's limit (four here), in canonical order" do
       text = ok(SearchByStrongs, %{"strongs" => "H7307"})
       assert text =~ ~r/\A## Verses with H7307 \(\S+ - ruach\) \(BSB\)\n\n\*masculine\*\n\n/
       assert verse_hits(text) == ["Gen.1.2", "Exo.31.3", "Exo.35.31", "Ezk.27.26"]
+    end
+
+    test "the default cap is 8 unless the user changes it" do
+      assert {:ok, %{verses: verses}} =
+               SearchByStrongs.result(
+                 %{"strongs" => "H7307"},
+                 Preferences.new(translation: "bsb")
+               )
+
+      # The fixture holds six verses with H7307, all within the default 8.
+      assert Enum.count(verses) == 6
+
+      assert {:ok, %{verses: [_, _]}} =
+               SearchByStrongs.result(%{"strongs" => "H7307"}, Preferences.new(limit: 2))
     end
 
     test "a bare number finds every sense; a suffixed number only its own" do
@@ -127,7 +146,9 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
       # Exodus 31:2 has H0221G (Uri) but not H0022 ('H22').
       {:ok, refs} =
         DB.with_pack(:core, fn conn ->
-          conn |> Verses.with_strongs("H22", 1000) |> Enum.map(& &1["reference"])
+          conn
+          |> Verses.with_strongs("H22", 1000, Translations.get("bsb"))
+          |> Enum.map(& &1["reference"])
         end)
 
       refute "Exo.31.2" in refs

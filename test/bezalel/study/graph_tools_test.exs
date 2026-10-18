@@ -7,6 +7,8 @@ defmodule Bezalel.Study.Tools.GraphToolsTest do
   # so these answers are the real pack's.
   use ExUnit.Case, async: true
 
+  alias Bezalel.Study.Preferences
+
   alias Bezalel.Study.Tools.{
     ExploreGenealogy,
     ExplorePersonEvents,
@@ -18,6 +20,13 @@ defmodule Bezalel.Study.Tools.GraphToolsTest do
   defp ok(tool, args) do
     assert {:ok, text} = tool.run(args, %{})
     text
+  end
+
+  # graph_enriched_search's verse in the BSB (the NET's: translations_test.exs).
+  defp bsb(args) do
+    prefs = Preferences.new(translation: "bsb")
+    assert {:ok, result} = GraphEnrichedSearch.result(args, prefs)
+    GraphEnrichedSearch.render(result)
   end
 
   defp section(text, heading) do
@@ -263,7 +272,7 @@ defmodule Bezalel.Study.Tools.GraphToolsTest do
 
   describe "graph_enriched_search" do
     test "verse text, entities and each person's family" do
-      text = ok(GraphEnrichedSearch, %{"reference" => "Exodus 31:2"})
+      text = bsb(%{"reference" => "Exodus 31:2"})
 
       assert text =~
                ~r/\A## Exodus 31:2 \(BSB\)\n\n“See, I have called by name Bezalel son of Uri/
@@ -292,7 +301,7 @@ defmodule Bezalel.Study.Tools.GraphToolsTest do
 
     test "a verse stored with split numbering" do
       # Psalm 22:1 is the row 'Psa.22.1(22.2)'.
-      text = ok(GraphEnrichedSearch, %{"reference" => "Psalm 22:1"})
+      text = bsb(%{"reference" => "Psalm 22:1"})
       assert text =~ ~r/\A## Psalm 22:1 \(BSB\)\n\nMy God, my God, why have You forsaken me\?/
     end
 

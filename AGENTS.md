@@ -16,10 +16,12 @@ too unless this file says otherwise.
   the genre guidance and the system prompt. Anything every Bezalel app must
   answer the same way.
 - **Not here:** UI, Mob, Phoenix, settings storage, where files live on a
-  device, pack downloads. The host app supplies those through config (today
-  just `config :bezalel_core, :packs_dir`: a path or `{m, f, a}`). A new
-  platform need gets a config key or a behaviour the app implements, never
-  a dependency on the app's framework.
+  device, pack downloads, platform formatting. The host app supplies those
+  through config (`config :bezalel_core, :packs_dir`: a path or `{m, f, a}`;
+  `config :bezalel_core, :preferences`: `{m, f, a}` called with the tool ctx,
+  returning the user's `Bezalel.Study.Preferences`) or arguments (the
+  prompt's `surface` section). A new platform need gets a config key or a
+  behaviour the app implements, never a dependency on the app's framework.
 - Why the split: the phone app's
   `decisions/2026-10-17-study-code-in-bezalel-core.md`.
 
@@ -33,10 +35,17 @@ too unless this file says otherwise.
 2. **Commit with a pathspec:** `git add <paths>`, `git diff --cached
    --stat`, `git commit -m "…" -- <paths>`.
 3. **Tests that change global state are not async** (`Application.put_env`
-   of `:packs_dir`, `:persistent_term`); restore what they change.
+   of `:packs_dir` or `:preferences`, `:persistent_term`); restore what they
+   change. Tools take preferences explicitly in `result/2`, so a test of a
+   setting passes a `%Preferences{}` instead of setting config.
 4. **New behaviour ships with a test** that would fail if the change were
    reverted.
-5. **A change here is a change to every app.** Before pushing, run the phone
+5. **Neutral by default.** The fixed prompt, the tool descriptions and the
+   default results take no confessional side: a judgement goes in the
+   `editorial:verdicts` source (off by default, credited when shown), a
+   canon label says which tradition's canon (and is switchable), and
+   descriptions stay static whatever the user's settings.
+6. **A change here is a change to every app.** Before pushing, run the phone
    app's suite against this checkout (`BEZALEL_LOCAL_DEPS=bezalel_core mix
    test` there), then bump its pin to the pushed commit.
 

@@ -7,11 +7,16 @@ defmodule Bezalel.Study.Tools.LookupVerseTest do
   # names, and all the notes pack's textual-variant cases and quotations).
   use ExUnit.Case, async: true
 
+  alias Bezalel.Study.Preferences
   alias Bezalel.Study.Tools.LookupVerse
 
+  # These cases read the BSB (the core pack) with the genre guidance on, as
+  # studybible-mcp's output had it; the NET's are in translations_test.exs.
+  @bsb Preferences.new(translation: "bsb", excluded_sources: ["editorial:verdicts"])
+
   defp lookup(reference, args \\ %{}) do
-    {:ok, {:details, text, _result}} = LookupVerse.run(Map.put(args, "reference", reference), %{})
-    text
+    {:ok, result} = LookupVerse.result(Map.put(args, "reference", reference), @bsb)
+    LookupVerse.render(result)
   end
 
   defp error(reference) do
@@ -138,12 +143,20 @@ defmodule Bezalel.Study.Tools.LookupVerseTest do
   end
 
   test "result/1 gives the passage card its words with Strong's numbers" do
-    {:ok, result} = LookupVerse.result(%{"reference" => "Ex 31:2-3"})
+    {:ok, result} = LookupVerse.result(%{"reference" => "Ex 31:2-3"}, @bsb)
     assert result.book == "Exo"
     assert result.label == "Ex 31:2-3"
+
+    assert result.translation == %{
+             key: "bsb",
+             abbreviation: "BSB",
+             url: "https://bereanbible.com"
+           }
+
+    assert result.translation_note == nil
     assert [bezalel_verse, spirit_verse] = result.verses
     assert bezalel_verse.reference == "Exo.31.2"
-    assert bezalel_verse.bsb
+    assert bezalel_verse.translated
     assert bezalel_verse.english =~ "Bezalel son of Uri"
     assert %{gloss: "Bezalel"} = Enum.find(bezalel_verse.words, &(&1.strongs == "H1212G"))
     assert ~w(H4390 H7307G H2451) -- Enum.map(spirit_verse.words, & &1.strongs) == []
