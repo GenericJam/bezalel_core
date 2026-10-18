@@ -84,6 +84,7 @@ defmodule Bezalel.Study.Citations do
   @leon_levy_sigla %{"1QSa" => "1Q28a", "1QSb" => "1Q28b"}
   @cd_a "https://cudl.lib.cam.ac.uk/view/MS-TS-00010-K-00006"
   @cd_b "https://cudl.lib.cam.ac.uk/view/MS-TS-00016-00311"
+  @etcbc_dss "https://github.com/ETCBC/dss"
   @hodayot %{
     author: "Hartmut Stegemann with Eileen Schuller",
     title: "Qumran Cave 1.III: 1QHodayot a (DJD 40)",
@@ -727,7 +728,8 @@ defmodule Bezalel.Study.Citations do
   19–20), and the DJD volume for 1QHa, which has no page. `locator` (the
   passage, '4Q37 12:13–14', 'CD 20:1') picks CD's copy. Options:
   `leon_levy: false` for a siglum Leon Levy has no page for (the biblical
-  manuscripts with no name in the scrolls pack). The tools give the
+  manuscripts with no name in the scrolls pack): those link the ETCBC/dss
+  transcription the reading came from. The tools give the
   scrolls' Hebrew and Aramaic only, so any English is the assistant's.
   """
   @spec dss_manuscript(String.t(), String.t() | nil, keyword()) :: Citation.t()
@@ -747,7 +749,9 @@ defmodule Bezalel.Study.Citations do
         Map.has_key?(@scroll_pages, canonical) -> %{base | url: @scroll_pages[canonical]}
         canonical == "1QHa" -> %{base | book: @hodayot}
         Keyword.get(opts, :leon_levy, true) -> %{base | url: leon_levy(canonical)}
-        true -> base
+        # No page of its own anywhere we can trust (Leon Levy files unnamed
+        # sigla under other manuscripts): the transcription it was read from.
+        true -> %{base | url: @etcbc_dss}
       end
 
     translated(citation, false)

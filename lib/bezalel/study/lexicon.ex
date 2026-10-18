@@ -11,20 +11,30 @@ defmodule Bezalel.Study.Lexicon do
 
   @doc """
   A Strong's number in the packs' form: 'G26' is 'G0026', 'h430g' is
-  'H0430G'. Anything else comes back upper-cased and trimmed.
+  'H0430G'. An Abbott-Smith key ('AS_ῥοπή') keeps its lemma's case: the
+  pack keys it by the lemma as written. Anything else comes back
+  upper-cased and trimmed.
   """
   @spec normalize_strongs(String.t()) :: String.t()
   def normalize_strongs(strongs) do
-    strongs = strongs |> String.upcase() |> String.trim()
+    trimmed = String.trim(strongs)
 
-    case Regex.run(Patterns.get(:strongs), strongs) do
-      [_, prefix, number, suffix] ->
-        prefix <>
-          String.pad_leading(Integer.to_string(String.to_integer(number)), 4, "0") <>
-          suffix
+    case String.split_at(trimmed, 3) do
+      {prefix, lemma} when prefix in ~w(AS_ As_ aS_ as_) ->
+        "AS_" <> lemma
 
-      nil ->
-        strongs
+      _ ->
+        upper = String.upcase(trimmed)
+
+        case Regex.run(Patterns.get(:strongs), upper) do
+          [_, prefix, number, suffix] ->
+            prefix <>
+              String.pad_leading(Integer.to_string(String.to_integer(number)), 4, "0") <>
+              suffix
+
+          nil ->
+            upper
+        end
     end
   end
 

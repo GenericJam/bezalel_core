@@ -180,7 +180,7 @@ defmodule Bezalel.Study.ScrollsTest do
       assert text =~ "CC BY-NC 4.0"
     end
 
-    test "each scroll cites its manuscript: Leon Levy's page when the pack names it, else none" do
+    test "each scroll cites its manuscript: Leon Levy's page when the pack names it, else the ETCBC transcription" do
       {text, citations} =
         cited(CompareBiblicalVersions.run(%{"reference" => "Deuteronomy 32:8"}, %{}))
 
@@ -196,7 +196,10 @@ defmodule Bezalel.Study.ScrollsTest do
       # 5/6Hev 1b has no name in the pack, so no Leon Levy page to link.
       {_text, psalm} = cited(CompareBiblicalVersions.run(%{"reference" => "Psalm 22:16"}, %{}))
 
-      assert [%Citation{url: url}, %Citation{label: "5/6hev1b " <> _, url: nil}] =
+      assert [
+               %Citation{url: url},
+               %Citation{label: "5/6hev1b " <> _, url: "https://github.com/ETCBC/dss"}
+             ] =
                Enum.filter(psalm, &(&1.work == "dss"))
 
       assert url == @leon_levy <> "4Q88-1"

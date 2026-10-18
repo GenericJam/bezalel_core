@@ -313,4 +313,12 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
       assert url =~ "/page/4/"
     end
   end
+
+  # word_study upper-cased the key, so 436 of the 455 ('AS_ῥοπή' became
+  # 'AS_ῬΟΠΉ') were "No entry found".
+  test "an Abbott-Smith key keeps its lemma's case" do
+    assert Bezalel.Study.Lexicon.normalize_strongs(" as_ῥοπή ") == "AS_ῥοπή"
+    assert Bezalel.Study.Lexicon.normalize_strongs("g26") == "G0026"
+    assert Bezalel.Study.Lexicon.normalize_strongs("h430g") == "H0430G"
+  end
 end

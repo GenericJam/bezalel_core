@@ -270,7 +270,10 @@ defmodule Bezalel.Study.CitationsTest do
                "https://www.deadseascrolls.org.il/explore-the-archive/manuscript/4Q37-1"
 
       assert Citations.dss_manuscript("1Qisaa").url == "http://dss.collections.imj.org.il/isaiah"
-      assert Citations.dss_manuscript("Mur88", nil, leon_levy: false).url == nil
+      # Leon Levy's Mur88-1 is a 404 and its 4Q51-1 another manuscript: an
+      # unnamed siglum links the transcription it was read from.
+      assert Citations.dss_manuscript("Mur88", nil, leon_levy: false).url ==
+               "https://github.com/ETCBC/dss"
     end
   end
 
