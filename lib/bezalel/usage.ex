@@ -630,13 +630,16 @@ defmodule Bezalel.Usage do
           is_number(used) and used >= 100 and is_integer(at) and at > now,
           do: %{window: w["label"], resets_at: at}
 
+    if full == [],
+      do: latest_429(state, provider, now),
+      else: Enum.max_by(full, & &1.resets_at)
+  end
+
+  defp latest_429(state, provider, now) do
     checked = (Rho.Usage.limits(state, provider) || %{})["checked_at"]
 
-    case {full, Rho.Usage.rate_limited(state, provider)} do
-      {[_ | _], _} ->
-        Enum.max_by(full, & &1.resets_at)
-
-      {[], %{"resets_at" => at, "at" => seen}}
+    case Rho.Usage.rate_limited(state, provider) do
+      %{"resets_at" => at, "at" => seen}
       when is_integer(at) and at > now and (checked == nil or seen > checked) ->
         %{window: nil, resets_at: at}
 
