@@ -51,6 +51,8 @@ defmodule Bezalel.Study.DrawImageTest do
 
     def expired(:openai_codex), do: {:error, {:refresh_failed, "invalid_grant"}}
 
+    def unsaved(:openai_codex), do: {:error, {:store_failed, :disk_full}}
+
     # Rho.Auth.signed_in?/1 as the process's test set it (API keys only by default).
     def signed_in?(provider), do: provider in Process.get(:signed_in, [:openai, :google])
   end
@@ -246,6 +248,8 @@ defmodule Bezalel.Study.DrawImageTest do
       assert_received {:images, "The ark in a desert", opts}
       assert opts[:size] == "1536x1024"
       assert opts[:format] == "jpeg"
+      # Rho.Images gives up (and says so) before the tool runner would.
+      assert opts[:timeout] < DrawImage.timeout_ms() - 75_000
       assert opts[:references] == [{"image/png", "photo bytes"}]
       # The sign-in is passed as the credential function, never as a key.
       assert {:ok, %{type: :oauth}} = opts[:credential].(:openai_codex)
@@ -303,7 +307,7 @@ defmodule Bezalel.Study.DrawImageTest do
       refute_received {:images, _, _}
     end
 
-    test "signed out: it says to sign in with ChatGPT, and draws nothing" do
+    test "signed out, or a sign-in that can't refresh or be saved: it says so, and draws nothing" do
       use_key({Fake, :openai_only})
 
       assert {:error, message} =
@@ -312,14 +316,22 @@ defmodule Bezalel.Study.DrawImageTest do
       assert message =~ "ChatGPT (your sign-in) (asked for in `model`) needs a ChatGPT sign-in"
       assert message =~ "sign in with ChatGPT in Settings (ChatGPT, Sign in)"
       assert message =~ "count against their ChatGPT plan"
-      refute_received {:images, _, _}
 
       use_key({Fake, :expired})
 
       assert {:error, message} =
                DrawImage.run(%{"prompt" => "x"}, @ctx, chose("openai_codex:gpt-image"))
 
-      assert message =~ "The ChatGPT sign-in has expired (invalid_grant)"
+      assert message =~ "The ChatGPT sign-in couldn't be refreshed (invalid_grant)"
+      assert message =~ "try again in a moment"
+
+      use_key({Fake, :unsaved})
+
+      assert {:error, message} =
+               DrawImage.run(%{"prompt" => "x"}, @ctx, chose("openai_codex:gpt-image"))
+
+      assert message =~ "The refreshed ChatGPT (OpenAI Codex) sign-in couldn't be saved"
+      refute message =~ "needs a ChatGPT sign-in"
       refute_received {:images, _, _}
     end
 

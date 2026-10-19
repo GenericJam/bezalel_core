@@ -58,6 +58,10 @@ defmodule Bezalel.Study.Tools.DrawImage do
 
   @fallback_model "openai:gpt-image-2"
 
+  # A ChatGPT drawing's whole call (`Rho.Images`' `:timeout`): within
+  # `timeout_ms/0` with room for a sign-in refresh before it.
+  @codex_timeout 150_000
+
   # Each shape as OpenAI's size and as Gemini's aspect ratio.
   @sizes %{
     "square" => {"1024x1024", "1:1"},
@@ -128,7 +132,7 @@ defmodule Bezalel.Study.Tools.DrawImage do
   @impl true
   def description do
     """
-    Draw a picture for the user: a scene, a diagram, a map, an illustration of a passage. Describe it fully in `prompt`: the subject, what to show, the style, any words to letter in it. To draw from a picture (change it, or keep its look), give its ref in `references`: the ref of a picture the user attached (the ref attribute of its attachment) or of an earlier drawing. It draws with the image model the user chose in Settings; when the user asks for a particular one to draw ("have ChatGPT draw…", "get Gemini to draw…"), name it in `model`: openai_codex:gpt-image is ChatGPT on the user's ChatGPT sign-in, openai:gpt-image-2 is OpenAI on their API key, google:… are Gemini on their Gemini key. Another model's drawing comes only through this tool, never ask_model, which answers in words. The user sees the drawing in the chat and it is kept in their Materials; you get its ref back. Draw when the user asks for a picture, or one plainly helps.\
+    Draw a picture for the user: a scene, a diagram, a map, an illustration of a passage. Describe it fully in `prompt`: the subject, what to show, the style, any words to letter in it. To draw from a picture (change it, or keep its look), give its ref in `references`: the ref of a picture the user attached (the ref attribute of its attachment) or of an earlier drawing. Who draws: the image model the user chose in Settings, or with none chosen their ChatGPT sign-in when they have one, else an image model on their API key. When the user asks for a particular one to draw ("have ChatGPT draw…", "get Gemini to draw…"), name it in `model`: openai_codex:gpt-image is ChatGPT on the user's ChatGPT sign-in, openai:gpt-image-2 is OpenAI on their API key, google:… are Gemini on their Gemini key. Another model's drawing comes only through this tool, never ask_model, which answers in words. The user sees the drawing in the chat and it is kept in their Materials; you get its ref back. Draw when the user asks for a picture, or one plainly helps.\
     """
   end
 
@@ -156,16 +160,18 @@ defmodule Bezalel.Study.Tools.DrawImage do
           "type" => "string",
           "enum" => Enum.map(@models, & &1.id),
           "description" =>
-            "Who draws, only when the user asks for one (optional; else their Settings choice)."
+            "Who draws, only when the user asks for one (optional; else their Settings choice, " <>
+              "else their ChatGPT sign-in or an API key)."
         }
       },
       "required" => ["prompt"]
     }
   end
 
-  # A drawing takes a minute or more.
+  # A drawing takes a minute or more. ChatGPT's is bounded inside this by
+  # @codex_timeout, with room for a sign-in refresh (up to 75 s) before it.
   @impl true
-  def timeout_ms, do: 180_000
+  def timeout_ms, do: 240_000
 
   @impl true
   def run(args, ctx), do: run(args, ctx, Preferences.current(ctx))
@@ -313,11 +319,17 @@ defmodule Bezalel.Study.Tools.DrawImage do
 
       {:openai_codex, {:error, {:refresh_failed, message}}} ->
         {:error,
-         "The ChatGPT sign-in has expired (#{message}). Tell the user to sign in with " <>
-           "ChatGPT again in Settings (ChatGPT, Sign in), or to choose another image model " <>
-           "under Pictures by."}
+         "The ChatGPT sign-in couldn't be refreshed (#{message}). Tell the user to try " <>
+           "again in a moment and, if it keeps failing, to sign in with ChatGPT again in " <>
+           "Settings (ChatGPT, Sign in), or to choose another image model under Settings, " <>
+           "Pictures by."}
 
-      _ ->
+      {_provider, {:error, {:store_failed, reason}}} ->
+        {:error,
+         "The refreshed #{Rho.Auth.label(provider)} sign-in couldn't be saved " <>
+           "(#{Rho.Auth.describe_error(reason)}); it is retried, so try again in a moment."}
+
+      _signed_out ->
         {:error,
          "Drawing a picture with #{label} (#{why}) needs #{@needs[provider]}, and there is " <>
            "none. Tell the user to #{@where[provider]}, or to choose another image model " <>
@@ -333,7 +345,8 @@ defmodule Bezalel.Study.Tools.DrawImage do
       size: size,
       format: "jpeg",
       references: for({_material, picture} <- refs, do: picture),
-      credential: credential
+      credential: credential,
+      timeout: @codex_timeout
     ]
 
     case apply(m, f, [prompt, opts]) do

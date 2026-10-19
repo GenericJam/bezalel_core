@@ -185,7 +185,9 @@ drawing still shows.
 
 > Superseded in part by `2026-10-18-pushback.md`: the model is now the
 > user's "Pictures by" (gpt-image or a Gemini image model), and a missing
-> key is named per provider. The rest stands.
+> key is named per provider. The rest stands. And in part by
+> `2026-10-18-pictures-by-chatgpt-sign-in.md`: ChatGPT draws on the
+> user's sign-in through `Rho.Images`, and who draws is `DrawImage.model/2`.
 
 `Bezalel.Study.Tools.DrawImage` (`draw_image`): `prompt` (required),
 `references` (one material id), `size` (`square` 1024×1024, `landscape`
