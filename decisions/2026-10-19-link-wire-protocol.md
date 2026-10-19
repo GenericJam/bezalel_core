@@ -41,7 +41,12 @@ draw_image's `:credential`/`:signed_in` hooks taking `(provider, ctx)`
 takes the common entries themselves, not only their ids: Delete and Undo
 copy entries with new ids, so a website that deleted or undid while apart
 holds copies of common entries, which are recognised by what a copy keeps
-(everything but `id`, `parentId` and `timestamp`). The website's Delete or
-Undo wins over the common part (when both moved, the phone's is lost:
-the originals stay on an inactive branch); each side's new turns follow in
-the order they began, by message time, which copies keep.
+(everything but `id`, `parentId` and `timestamp`). Only in a branch that
+moved off the common leaf (no other holds copies), and only as its leading
+run; and against the phone's own entries only for messages (which carry
+their own time): a model switch or a notice can equal an unrelated
+earlier one, so a website switching back to an earlier model keeps it.
+The website's Delete or Undo wins over the common part (when both moved,
+the phone's is lost: the originals stay on an inactive branch); each
+side's new turns follow in the order they began, by message time, which
+copies keep.

@@ -396,15 +396,17 @@ defmodule Bezalel.Library.Transcript do
   `server_branch` are each copy's active branch now (`Rho.Session.open/2`'s).
 
   Each branch starts with its part of the common conversation: entries of
-  `base`, or copies of them (Delete and Undo copy entries without their
-  `id`, `parentId` and `timestamp`, so a copy equals its original but for
-  those); the rest are that side's own turns. The website's own turns are
-  the server branch's minus what the phone already holds (by id, or as a
-  copy). The common part is the website's when its branch moved off the
-  last entry both had (a Delete or Undo there), else the phone's (which may
-  have moved itself). The two sides' own turns follow it in the order they
-  began (by their first entry's message time, which copies keep; a tie
-  keeps the phone's first).
+  `base`, and when the branch moved off the last entry both had (a Delete
+  or Undo since), copies of them too (Delete and Undo copy entries without
+  their `id`, `parentId` and `timestamp`, so a copy equals its original but
+  for those); the rest are that side's own turns. The website's own turns
+  are the server branch's minus what the phone already holds (by id, or a
+  copy of one of its messages: entries without a message time, such as a
+  model switch or a notice, can repeat an earlier one and are only matched
+  by id). The common part is the website's when its branch moved, else the
+  phone's (which may have moved itself). The two sides' own turns follow
+  it in the order they began (by their first entry's message time, which
+  copies keep; a tie keeps the phone's first).
 
   The move branches from the last entry the phone's branch shares with
   that result and copies the rest of it (the phone's originals stay on an
@@ -419,14 +421,14 @@ defmodule Bezalel.Library.Transcript do
   @spec merge([Session.entry()], [Session.entry()], [Session.entry()]) ::
           {:ok, move(), non_neg_integer()} | :none
   def merge(base, phone_branch, server_branch) do
-    common? = held_in(base)
-    {phone_common, phone_own} = Enum.split_while(phone_branch, common?)
-    {server_common, server_own} = Enum.split_while(server_branch, common?)
+    leaf = leaf_id(base)
+    {phone_common, phone_own} = common_part(phone_branch, base, leaf)
+    {server_common, server_own} = common_part(server_branch, base, leaf)
 
     phone_has? = held_in(phone_branch)
     theirs = Enum.reject(server_own, &(&1["customType"] == @marker or phone_has?.(&1)))
 
-    moved? = moved?(base, server_branch)
+    moved? = moved?(server_branch, leaf)
     count = length(messages(theirs, ""))
     common = if moved?, do: server_common, else: phone_common
 
@@ -442,26 +444,50 @@ defmodule Bezalel.Library.Transcript do
       else: {:ok, {parent, copies(rest) ++ notice(count)}, count}
   end
 
-  # Is an entry one of `entries`, or a copy of one? A copy keeps all of its
-  # original but `id`, `parentId` and `timestamp` (`copies/1`).
+  # The branch's leading run of `base` entries; on a branch that moved off
+  # the common leaf (the only kind that holds copies), of copies of them
+  # too. A copy keeps all of its original but `id`, `parentId` and
+  # `timestamp` (`copies/1`).
+  defp common_part(branch, base, leaf) do
+    ids = MapSet.new(base, & &1["id"])
+
+    if moved?(branch, leaf) do
+      signatures = MapSet.new(base, &signature/1)
+      common? = &(MapSet.member?(ids, &1["id"]) or MapSet.member?(signatures, signature(&1)))
+      Enum.split_while(branch, common?)
+    else
+      Enum.split_while(branch, &MapSet.member?(ids, &1["id"]))
+    end
+  end
+
+  # Is an entry one of `entries`, or a copy of one of their messages? An
+  # entry with no message time of its own (a model switch, a notice) may
+  # equal an unrelated earlier one, so it only matches by id.
   defp held_in(entries) do
     ids = MapSet.new(entries, & &1["id"])
-    signatures = MapSet.new(entries, &signature/1)
-    &(MapSet.member?(ids, &1["id"]) or MapSet.member?(signatures, signature(&1)))
+    signatures = for e <- entries, timed?(e), into: MapSet.new(), do: signature(e)
+    &(MapSet.member?(ids, &1["id"]) or (timed?(&1) and MapSet.member?(signatures, signature(&1))))
   end
+
+  defp timed?(%{"message" => %{"timestamp" => ms}}), do: is_integer(ms)
+  defp timed?(_entry), do: false
 
   defp signature(entry), do: Map.drop(entry, ["id", "parentId", "timestamp"])
 
   defp notice(0), do: []
   defp notice(count), do: [Session.custom(:notice, notice_text(count))]
 
-  # Has the website's branch moved off the last entry both copies had?
-  defp moved?(base, server_branch) do
+  # The last entry both copies had (the file's last is its leaf).
+  defp leaf_id(base) do
     case base |> Enum.filter(&(is_binary(&1["id"]) and &1["type"] != "session")) |> List.last() do
-      nil -> false
-      %{"id" => leaf} -> not Enum.any?(server_branch, &(&1["id"] == leaf))
+      nil -> nil
+      %{"id" => id} -> id
     end
   end
+
+  # Has `branch` moved off the common leaf (a Delete or Undo since)?
+  defp moved?(_branch, nil), do: false
+  defp moved?(branch, leaf), do: not Enum.any?(branch, &(&1["id"] == leaf))
 
   # Where `branch` and `target` part: the last entry they share from the
   # start (nil for none), and what's left of each.

@@ -7,6 +7,7 @@ defmodule Bezalel.Library.TranscriptMergeTest do
   @moduletag :tmp_dir
 
   @model "anthropic:claude-haiku-4-5"
+  @other "openai:gpt-5"
 
   defp turn(s, question) do
     {s, _} = Session.append(s, Transcript.user(question))
@@ -30,6 +31,8 @@ defmodule Bezalel.Library.TranscriptMergeTest do
   end
 
   defp branch(path), do: elem(open(path), 1)
+  defp model(path), do: elem(open(path), 0).model
+  defp append(path, entry), do: path |> open() |> elem(0) |> Session.append(entry)
 
   defp lines(path),
     do: path |> File.read!() |> String.split("\n", trim: true) |> Enum.map(&Jason.decode!/1)
@@ -43,10 +46,11 @@ defmodule Bezalel.Library.TranscriptMergeTest do
         do: if(m.role == :user, do: m.text, else: hd(m.blocks)["first"])
   end
 
-  # A conversation both had (`base` turns): the phone's file, the website's
-  # copy of it, and the entries they share.
-  defp shared(dir, base) do
+  # A conversation both had (`base` turns, then `more` on the file): the
+  # phone's file, the website's copy of it, and the entries they share.
+  defp shared(dir, base, more \\ fn _path -> :ok end) do
     s = Enum.reduce(base, Session.new(Path.join(dir, "phone"), @model, dir), &turn(&2, &1))
+    more.(s.path)
     server = Path.join(dir, "server.jsonl")
     File.cp!(s.path, server)
     {s.path, server, lines(s.path)}
@@ -203,6 +207,59 @@ defmodule Bezalel.Library.TranscriptMergeTest do
     refute Enum.any?(copies, &Session.notice_kind/1)
     apply_move(phone, move)
     assert shown(branch(phone)) == ["q1", "re q1", "p1", "re p1"]
+  end
+
+  test "a model switch on the website survives the merge, also back to an earlier model",
+       %{tmp_dir: dir} do
+    # base: q1 on @model, a switch to @other, q2
+    on_other = fn path ->
+      append(path, Session.model_change(@other))
+      turns(path, ["q2"])
+    end
+
+    for {website, i} <- Enum.with_index([[@model, "s1"], ["s0", @model, "s1"]]),
+        first <- [:phone, :server] do
+      dir = Path.join(dir, "#{i}-#{first}")
+      {phone, server, base} = shared(dir, ["q1"], on_other)
+
+      on_server = fn ->
+        for step <- website,
+            do:
+              if(step == @model,
+                do: append(server, Session.model_change(@model)),
+                else: turns(server, [step])
+              )
+      end
+
+      if first == :server, do: on_server.()
+      turns(phone, ["p1"])
+      if first == :phone, do: on_server.()
+      assert model(server) == @model
+
+      {branch, count} = merged(phone, server, base)
+      asked = Enum.reject(website, &(&1 == @model))
+      assert count == 2 * length(asked)
+      new = if first == :phone, do: ["p1" | asked], else: asked ++ ["p1"]
+      assert questions(branch) == ["q1", "q2" | new], "case #{i}, #{first}"
+      assert model(phone) == @model, "case #{i}, #{first}"
+      assert Enum.count(branch, &(&1["type"] == "model_change")) == 3
+      assert_sound(phone, branch, count)
+    end
+  end
+
+  test "a notice the website repeats (one the phone or the base also has) stays", %{tmp_dir: dir} do
+    stopped = Session.custom(:notice, "Stopped.")
+    {phone, server, base} = shared(dir, ["q1"], &append(&1, stopped))
+
+    turns(phone, ["p1"])
+    append(phone, stopped)
+    turns(server, ["s1"])
+    append(server, stopped)
+
+    {branch, 2} = merged(phone, server, base)
+    assert questions(branch) == ["q1", "p1", "s1"]
+    assert Enum.count(branch, &(&1["content"] == "Stopped.")) == 3
+    assert_sound(phone, branch, 2)
   end
 
   test "nothing new from the website, or only what the phone has: nothing to merge",
