@@ -33,8 +33,11 @@ too unless this file says otherwise.
   cost, the check before sending, a failed call explained with what to do;
   why: `decisions/2026-10-18-usage.md`) and pushback
   (`Bezalel.Agent.Pushback`: the study critic's brief, one round per reply,
-  on rho's `Rho.Consult`). Anything every Bezalel app must answer the same
-  way.
+  on rho's `Rho.Consult`) and a conversation's title and summary
+  (`Bezalel.Agent.Title`: the lead's provider's small model after each
+  finished reply, a consult with no loop; the name before it,
+  `from_question/1`; why: `decisions/2026-10-19-titles.md`). Anything every
+  Bezalel app must answer the same way.
 - **Not here:** UI, Mob, Phoenix, settings storage, where files live on a
   device, pack downloads, platform formatting, recording, transcribing and
   speaking. The host app supplies those
