@@ -9,8 +9,9 @@ defmodule Bezalel.Study.DrawImageTest do
   alias ReqLLM.Error.API.Request
   alias ReqLLM.Message.ContentPart
 
-  # Stands in for ReqLLM.generate_image/3 and Rho.Auth.credential/1: no
-  # network, no secure store. The tool runs in the test's process.
+  # Stands in for ReqLLM.generate_image/3, Rho.Images.generate/2,
+  # Rho.Auth.credential/1 and Rho.Auth.signed_in?/1: no network, no secure
+  # store. The tool runs in the test's process.
   defmodule Fake do
     def generate(model, prompt, opts) do
       send(self(), {:generate, model, prompt, opts})
@@ -29,6 +30,17 @@ defmodule Bezalel.Study.DrawImageTest do
       end
     end
 
+    def images(prompt, opts) do
+      send(self(), {:images, prompt, opts})
+
+      case Process.get(:codex_reply, :ok) do
+        :ok -> {:ok, %{mime: "image/jpeg", bytes: "drawn by chatgpt", action: "generate"}}
+        {:error, error} -> {:error, error}
+      end
+    end
+
+    def key(:openai_codex), do: {:ok, %{type: :oauth, token: "codex-token", account_id: "acc"}}
+
     def key(provider) when provider in [:openai, :google],
       do: {:ok, %{type: :api_key, key: "#{provider}-key"}}
 
@@ -36,6 +48,13 @@ defmodule Bezalel.Study.DrawImageTest do
     def openai_only(_provider), do: {:error, :signed_out}
 
     def signed_out(_provider), do: {:error, :signed_out}
+
+    def expired(:openai_codex), do: {:error, {:refresh_failed, "invalid_grant"}}
+
+    def unsaved(:openai_codex), do: {:error, {:store_failed, :disk_full}}
+
+    # Rho.Auth.signed_in?/1 as the process's test set it (API keys only by default).
+    def signed_in?(provider), do: provider in Process.get(:signed_in, [:openai, :google])
   end
 
   @ctx %{session_id: "s1", call_id: "call_1"}
@@ -56,9 +75,13 @@ defmodule Bezalel.Study.DrawImageTest do
   defp use_key(credential) do
     Application.put_env(:bezalel_core, :draw_image,
       generate: {Fake, :generate},
-      credential: credential
+      images: {Fake, :images},
+      credential: credential,
+      signed_in: {Fake, :signed_in?}
     )
   end
+
+  defp chose(model), do: Preferences.new(image_model: model)
 
   defp gemini(model \\ "google:gemini-3.1-flash-image"),
     do: Preferences.new(image_model: model)
@@ -187,20 +210,150 @@ defmodule Bezalel.Study.DrawImageTest do
     refute_received {:generate, _, _, _}
   end
 
-  test "the image models a user can choose, and the default" do
-    assert DrawImage.default_model() == "openai:gpt-image-2"
-    assert %Preferences{}.image_model == DrawImage.default_model()
-
+  test "the image models a user can choose" do
     assert Enum.map(DrawImage.models(), &{&1.id, &1.provider}) == [
+             {"openai_codex:gpt-image", :openai_codex},
              {"openai:gpt-image-2", :openai},
              {"google:gemini-3.1-flash-image", :google},
              {"google:gemini-3-pro-image", :google}
            ]
 
-    # Each is a model req_llm can resolve, and makes pictures.
-    for %{id: id} <- DrawImage.models() do
-      assert {:ok, model} = ReqLLM.model(id)
-      assert :image in model.modalities.output
+    # Each API-key one is a model req_llm can resolve, and makes pictures
+    # (ChatGPT's goes through Rho.Images); each id names its provider.
+    for %{id: id, provider: provider} <- DrawImage.models() do
+      assert Rho.Auth.provider_for_model(id) == {:ok, provider}
+
+      if provider != :openai_codex do
+        assert {:ok, model} = ReqLLM.model(id)
+        assert :image in model.modalities.output
+      end
+    end
+  end
+
+  describe "ChatGPT (the user's sign-in)" do
+    test "chosen: it draws on the sign-in, in the shape asked, and says who drew" do
+      photo = keep(Materials.new("photo bytes", name: "ark.png"), "photo bytes")
+
+      assert {:ok, {:images, [image], text}} =
+               DrawImage.run(
+                 %{
+                   "prompt" => "The ark in a desert",
+                   "references" => [photo.id],
+                   "size" => "landscape"
+                 },
+                 @ctx,
+                 chose("openai_codex:gpt-image")
+               )
+
+      assert_received {:images, "The ark in a desert", opts}
+      assert opts[:size] == "1536x1024"
+      assert opts[:format] == "jpeg"
+      # Rho.Images gives up (and says so) before the tool runner would.
+      assert opts[:timeout] < DrawImage.timeout_ms() - 75_000
+      assert opts[:references] == [{"image/png", "photo bytes"}]
+      # The sign-in is passed as the credential function, never as a key.
+      assert {:ok, %{type: :oauth}} = opts[:credential].(:openai_codex)
+      refute_received {:generate, _, _, _}
+
+      {:ok, drawing} = Materials.fetch(image.ref, @ctx)
+      assert drawing.id == Materials.id("drawn by chatgpt")
+      assert drawing.meta.model == "openai_codex:gpt-image"
+      assert drawing.derived_from == [photo.id]
+      assert text =~ "with ChatGPT (your sign-in)"
+    end
+
+    test "none chosen: the ChatGPT sign-in draws when there is one, else an API key's model" do
+      Process.put(:signed_in, [:openai_codex, :openai, :google])
+      assert DrawImage.automatic_model().id == "openai_codex:gpt-image"
+      assert {:ok, _} = DrawImage.run(%{"prompt" => "a menorah"}, @ctx, %Preferences{})
+      assert_received {:images, "a menorah", _opts}
+
+      Process.put(:signed_in, [:google])
+      assert DrawImage.model(%Preferences{}).id == "google:gemini-3.1-flash-image"
+
+      # Nothing signed in: gpt-image, whose missing key the tool reports.
+      Process.put(:signed_in, [])
+      use_key({Fake, :signed_out})
+      assert DrawImage.model(%Preferences{}).id == "openai:gpt-image-2"
+      assert {:error, message} = DrawImage.run(%{"prompt" => "a menorah"}, @ctx)
+      assert message =~ "(the default: none is chosen in Settings) needs an OpenAI API key"
+    end
+
+    test "a model chosen in Settings wins over the ChatGPT sign-in" do
+      Process.put(:signed_in, [:openai_codex, :openai])
+
+      assert {:ok, _} =
+               DrawImage.run(%{"prompt" => "a menorah"}, @ctx, chose("openai:gpt-image-2"))
+
+      assert_received {:generate, "openai:gpt-image-2", "a menorah", _opts}
+      refute_received {:images, _, _}
+    end
+
+    test "the call's model wins over Settings: \"have ChatGPT draw it\"" do
+      assert {:ok, {:images, _, text}} =
+               DrawImage.run(
+                 %{"prompt" => "the ark", "model" => "openai_codex:gpt-image"},
+                 @ctx,
+                 gemini()
+               )
+
+      assert_received {:images, "the ark", _opts}
+      assert text =~ "ChatGPT"
+
+      assert {:error, message} =
+               DrawImage.run(%{"prompt" => "the ark", "model" => "dall-e"}, @ctx)
+
+      assert message =~ "model is one of openai_codex:gpt-image, openai:gpt-image-2"
+      refute_received {:images, _, _}
+    end
+
+    test "signed out, or a sign-in that can't refresh or be saved: it says so, and draws nothing" do
+      use_key({Fake, :openai_only})
+
+      assert {:error, message} =
+               DrawImage.run(%{"prompt" => "the ark", "model" => "openai_codex:gpt-image"}, @ctx)
+
+      assert message =~ "ChatGPT (your sign-in) (asked for in `model`) needs a ChatGPT sign-in"
+      assert message =~ "sign in with ChatGPT in Settings (ChatGPT, Sign in)"
+      assert message =~ "count against their ChatGPT plan"
+
+      use_key({Fake, :expired})
+
+      assert {:error, message} =
+               DrawImage.run(%{"prompt" => "x"}, @ctx, chose("openai_codex:gpt-image"))
+
+      assert message =~ "The ChatGPT sign-in couldn't be refreshed (invalid_grant)"
+      assert message =~ "try again in a moment"
+
+      use_key({Fake, :unsaved})
+
+      assert {:error, message} =
+               DrawImage.run(%{"prompt" => "x"}, @ctx, chose("openai_codex:gpt-image"))
+
+      assert message =~ "The refreshed ChatGPT (OpenAI Codex) sign-in couldn't be saved"
+      refute message =~ "needs a ChatGPT sign-in"
+      refute_received {:images, _, _}
+    end
+
+    test "a used-up ChatGPT plan reaches the model as rho describes it" do
+      limit = %{
+        status: 429,
+        message: "The usage limit has been reached",
+        provider: :openai_codex,
+        retry_after_ms: nil,
+        resets_at: System.os_time(:second) + 3600,
+        window: "5 hours"
+      }
+
+      Process.put(:codex_reply, {:error, {:rate_limited, limit}})
+
+      assert {:error, message} =
+               DrawImage.run(%{"prompt" => "x"}, @ctx, chose("openai_codex:gpt-image"))
+
+      assert message ==
+               "The drawing failed: " <> Rho.LLM.describe({:rate_limited, limit})
+
+      assert message =~ "5 hours"
     end
   end
 
