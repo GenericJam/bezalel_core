@@ -26,7 +26,7 @@ defmodule Bezalel.Usage do
 
   @warn_at 80
   # A limit that lifts within a minute isn't worth stopping a question for
-  # (the loop waits it out), as `Rho.LLM.usable/3` judges.
+  # (the loop waits it out), as `Rho.LLM.usable/2` judges.
   @grace_s 60
 
   @billing %{

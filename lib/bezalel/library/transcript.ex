@@ -32,6 +32,15 @@ defmodule Bezalel.Library.Transcript do
   move with nothing to copy appends a `custom` entry (`"bezalel.branch"`)
   under the entry it moves to, since the last entry in the file is the
   leaf; `custom` entries never reach a model.
+
+  **Merging two copies.** When the phone and the website both added to a
+  conversation while apart, `merge/3` plans the phone's (canonical) file
+  taking the website's turns too: the branch that began later goes after
+  the other's tip as copies, so the active branch holds both in order,
+  then a notice says how many came from the computer. A Delete or Undo on
+  the website meanwhile wins over the common part (its copies of common
+  entries are recognised as such, not taken for new turns). Same technique
+  as Delete: nothing is rewritten, the originals stay on an inactive branch.
   """
 
   alias Bezalel.Agent.Details
@@ -379,6 +388,142 @@ defmodule Bezalel.Library.Transcript do
       {_, []} -> :gone
     end
   end
+
+  @doc """
+  Plans taking the website's turns into the phone's copy of a conversation
+  after both went on while apart. `base` is the entries the two copies had
+  in common (the file up to the last offset both had); `phone_branch` and
+  `server_branch` are each copy's active branch now (`Rho.Session.open/2`'s).
+
+  Each branch starts with its part of the common conversation: entries of
+  `base`, and when the branch moved off the last entry both had (a Delete
+  or Undo since), copies of them too (Delete and Undo copy entries without
+  their `id`, `parentId` and `timestamp`, so a copy equals its original but
+  for those); the rest are that side's own turns. The website's own turns
+  are the server branch's minus what the phone already holds (by id, or a
+  copy of one of its messages: entries without a message time, such as a
+  model switch or a notice, can repeat an earlier one and are only matched
+  by id). The common part is the website's when its branch moved, else the
+  phone's (which may have moved itself). The two sides' own turns follow
+  it in the order they began (by their first entry's message time, which
+  copies keep; a tie keeps the phone's first).
+
+  The move branches from the last entry the phone's branch shares with
+  that result and copies the rest of it (the phone's originals stay on an
+  inactive branch), then a notice (`Rho.Session.custom/2`) saying how many
+  messages came from the computer, when any did. Copies get new ids when
+  appended (`Rho.Session.append/2`), so they never collide with the
+  file's. `{:ok, move, count}` (`count` the website's new messages; 0 when
+  the website only deleted or undid, with no notice), or `:none` when the
+  website added nothing the phone lacks and left the common part as it
+  was.
+  """
+  @spec merge([Session.entry()], [Session.entry()], [Session.entry()]) ::
+          {:ok, move(), non_neg_integer()} | :none
+  def merge(base, phone_branch, server_branch) do
+    leaf = leaf_id(base)
+    {phone_common, phone_own} = common_part(phone_branch, base, leaf)
+    {server_common, server_own} = common_part(server_branch, base, leaf)
+
+    phone_has? = held_in(phone_branch)
+    theirs = Enum.reject(server_own, &(&1["customType"] == @marker or phone_has?.(&1)))
+
+    moved? = moved?(server_branch, leaf)
+    count = length(messages(theirs, ""))
+    common = if moved?, do: server_common, else: phone_common
+
+    own =
+      if began_later?(theirs, phone_own),
+        do: phone_own ++ theirs,
+        else: theirs ++ phone_own
+
+    {parent, left, rest} = fork(phone_branch, common ++ own, nil)
+
+    if count == 0 and (not moved? or (left == [] and rest == [])),
+      do: :none,
+      else: {:ok, {parent, copies(rest) ++ notice(count)}, count}
+  end
+
+  # The branch's leading run of `base` entries; on a branch that moved off
+  # the common leaf (the only kind that holds copies), of copies of them
+  # too. A copy keeps all of its original but `id`, `parentId` and
+  # `timestamp` (`copies/1`).
+  defp common_part(branch, base, leaf) do
+    ids = MapSet.new(base, & &1["id"])
+
+    if moved?(branch, leaf) do
+      signatures = MapSet.new(base, &signature/1)
+      common? = &(MapSet.member?(ids, &1["id"]) or MapSet.member?(signatures, signature(&1)))
+      Enum.split_while(branch, common?)
+    else
+      Enum.split_while(branch, &MapSet.member?(ids, &1["id"]))
+    end
+  end
+
+  # Is an entry one of `entries`, or a copy of one of their messages? An
+  # entry with no message time of its own (a model switch, a notice) may
+  # equal an unrelated earlier one, so it only matches by id.
+  defp held_in(entries) do
+    ids = MapSet.new(entries, & &1["id"])
+    signatures = for e <- entries, timed?(e), into: MapSet.new(), do: signature(e)
+    &(MapSet.member?(ids, &1["id"]) or (timed?(&1) and MapSet.member?(signatures, signature(&1))))
+  end
+
+  defp timed?(%{"message" => %{"timestamp" => ms}}), do: is_integer(ms)
+  defp timed?(_entry), do: false
+
+  defp signature(entry), do: Map.drop(entry, ["id", "parentId", "timestamp"])
+
+  defp notice(0), do: []
+  defp notice(count), do: [Session.custom(:notice, notice_text(count))]
+
+  # The last entry both copies had (the file's last is its leaf).
+  defp leaf_id(base) do
+    case base |> Enum.filter(&(is_binary(&1["id"]) and &1["type"] != "session")) |> List.last() do
+      nil -> nil
+      %{"id" => id} -> id
+    end
+  end
+
+  # Has `branch` moved off the common leaf (a Delete or Undo since)?
+  defp moved?(_branch, nil), do: false
+  defp moved?(branch, leaf), do: not Enum.any?(branch, &(&1["id"] == leaf))
+
+  # Where `branch` and `target` part: the last entry they share from the
+  # start (nil for none), and what's left of each.
+  defp fork([%{"id" => id} | branch], [%{"id" => id} | target], _parent),
+    do: fork(branch, target, id)
+
+  defp fork(branch, target, parent), do: {parent, branch, target}
+
+  defp notice_text(1),
+    do: "1 message from your computer was added while your phone was offline."
+
+  defp notice_text(n),
+    do: "#{n} messages from your computer were added while your phone was offline."
+
+  # Did `theirs` begin after `ours`? With none of ours, they simply follow.
+  defp began_later?(_theirs, []), do: true
+
+  defp began_later?(theirs, ours) do
+    case {Enum.find_value(theirs, &time/1), Enum.find_value(ours, &time/1)} do
+      {t, o} when is_integer(t) and is_integer(o) -> t >= o
+      _ -> true
+    end
+  end
+
+  # When an entry was first written, in ms: its message's time (a copy
+  # keeps it), else the entry's own.
+  defp time(%{"message" => %{"timestamp" => ms}}) when is_integer(ms), do: ms
+
+  defp time(%{"timestamp" => ts}) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, at, _offset} -> DateTime.to_unix(at, :millisecond)
+      _ -> nil
+    end
+  end
+
+  defp time(_entry), do: nil
 
   @doc """
   The move that takes the last question off the branch, so it can be

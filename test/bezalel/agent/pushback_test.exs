@@ -44,7 +44,7 @@ defmodule Bezalel.Agent.PushbackTest do
     ]
   end
 
-  defp start(dir, scripts, tools \\ [Lexicon]) do
+  defp start(dir, scripts, tools \\ [Lexicon], llm_opts \\ []) do
     {:ok, llm} = FakeLLM.start(scripts)
     sup = start_supervised!(Task.Supervisor, id: make_ref())
 
@@ -53,7 +53,7 @@ defmodule Bezalel.Agent.PushbackTest do
         {Loop,
          session: Session.new(dir, @lead, dir),
          entries: [],
-         llm: {FakeLLM, llm},
+         llm: {FakeLLM, [fake: llm] ++ llm_opts},
          tools: tools,
          task_supervisor: sup,
          data_dir: dir,
@@ -235,6 +235,24 @@ defmodule Bezalel.Agent.PushbackTest do
 
     assert Enum.all?(FakeLLM.requests(llm), &(&1.model == @lead))
     assert [_, %Message{role: :agent}] = messages(loop)
+  end
+
+  test "the critic's sign-in is the loop's (a website account's), not the node's",
+       %{tmp_dir: dir} do
+    # the node has only Claude; the loop's account has Gemini
+    CredentialStore.install([:anthropic])
+    signed_out = %{signed_in: false, type: nil, email: nil, expires: nil}
+    status = Map.new(Rho.Auth.providers(), &{&1, signed_out})
+    gemini = fn -> %{status | google: %{signed_out | signed_in: true, type: :api_key}} end
+
+    %{loop: loop, sup: sup} =
+      start(dir, %{@lead => lead_script(), @critic => [[{:text, @critique}]]}, [Lexicon],
+        status: gemini
+      )
+
+    first = ask(loop)
+    assert {:ok, _task} = Pushback.auto(loop, first, @critic, task_supervisor: sup)
+    assert_receive {:llm_request, %{model: @critic}}, 2_000
   end
 
   test "a critic that fails ends the pushback with its error, as no failed run: the answer stays",

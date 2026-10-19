@@ -57,6 +57,24 @@ defmodule Bezalel.Study.DrawImageTest do
     def signed_in?(provider), do: provider in Process.get(:signed_in, [:openai, :google])
   end
 
+  # A website's hooks: each session's account has its own sign-ins.
+  defmodule Accounts do
+    @keys %{
+      "s-ann" => %{openai_codex: "ann-token"},
+      "s-bob" => %{google: "bob-key"}
+    }
+
+    def credential(provider, ctx) do
+      case get_in(@keys, [ctx[:session_id], provider]) do
+        nil -> {:error, :signed_out}
+        "ann-token" -> {:ok, %{type: :oauth, token: "ann-token", account_id: "ann"}}
+        key -> {:ok, %{type: :api_key, key: key}}
+      end
+    end
+
+    def signed_in?(provider, ctx), do: get_in(@keys, [ctx[:session_id], provider]) != nil
+  end
+
   @ctx %{session_id: "s1", call_id: "call_1"}
 
   setup do
@@ -406,5 +424,39 @@ defmodule Bezalel.Study.DrawImageTest do
 
     assert DrawImage.run(%{"prompt" => "x"}, @ctx) ==
              {:error, "The drawing failed: Your request was rejected by the safety system."}
+  end
+
+  test "a website's hooks get the tool's ctx: each account draws on its own sign-in" do
+    Application.put_env(:bezalel_core, :draw_image,
+      generate: {Fake, :generate},
+      images: {Fake, :images},
+      credential: {Accounts, :credential},
+      signed_in: {Accounts, :signed_in?}
+    )
+
+    ann = %{session_id: "s-ann", call_id: "c"}
+    bob = %{session_id: "s-bob", call_id: "c"}
+
+    assert DrawImage.automatic_model(ann).id == "openai_codex:gpt-image"
+    assert DrawImage.automatic_model(bob).id == "google:gemini-3.1-flash-image"
+    assert DrawImage.model(Preferences.new([]), nil, bob).id == "google:gemini-3.1-flash-image"
+
+    # Ann's ChatGPT sign-in, and the refresh-capable credential Rho.Images gets is hers too
+    assert {:ok, {:images, _, _}} = DrawImage.run(%{"prompt" => "Ark"}, ann)
+    assert_received {:images, "Ark", opts}
+
+    assert opts[:credential].(:openai_codex) ==
+             {:ok, %{type: :oauth, token: "ann-token", account_id: "ann"}}
+
+    # Bob's Gemini key
+    assert {:ok, {:images, _, _}} = DrawImage.run(%{"prompt" => "Ark"}, bob)
+    assert_received {:generate, "google:gemini-3.1-flash-image", "Ark", opts}
+    assert opts[:api_key] == "bob-key"
+
+    # Bob asking for ChatGPT has none: Ann's isn't his
+    assert {:error, why} =
+             DrawImage.run(%{"prompt" => "Ark", "model" => "openai_codex:gpt-image"}, bob)
+
+    assert why =~ "needs a ChatGPT sign-in"
   end
 end

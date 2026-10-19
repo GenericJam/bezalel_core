@@ -47,9 +47,14 @@ too unless this file says otherwise.
   :materials`: the app's `Bezalel.Materials.Store`) or arguments (the
   prompt's `surface` section). A new platform need gets a config key or a
   behaviour the app implements, never a dependency on the app's framework.
-- **rho** comes from Hex (`~> 0.4`: attachments by reference, consults and
-  attributed model messages, pictures on the ChatGPT sign-in); `BEZALEL_LOCAL_DEPS=rho` uses a sibling
+- **rho** comes from Hex (`~> 0.5`: attachments by reference, consults and
+  attributed model messages, pictures on the ChatGPT sign-in, a loop's own
+  sign-ins); `BEZALEL_LOCAL_DEPS=rho` uses a sibling
   `../rho` checkout instead, as in the phone app.
+- **The link** (`Bezalel.Link.*`): the phone ↔ website protocol both apps
+  speak (handshake and sealing, frames and chunks, the QR code, the claim,
+  the account id), pure functions; the sockets, storage and screens are
+  the apps'. Why: `decisions/2026-10-19-link-wire-protocol.md`.
 - Why the split: the phone app's
   `decisions/2026-10-17-study-code-in-bezalel-core.md`.
 

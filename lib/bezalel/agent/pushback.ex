@@ -299,8 +299,9 @@ defmodule Bezalel.Agent.Pushback do
   Pushes back on the last reply of `loop`'s conversation with `model` (a
   rho model spec; the user's "Pushback from"). Checks what can be checked
   at once and answers `{:error, text}` for the user: no critic chosen, the
-  critic's provider not signed in or not allowed (`Rho.Consult.allowed/1`:
-  "add a Gemini key"), a reply still running, nothing to push back on, a
+  critic's provider not signed in for the loop (its `:llm`'s
+  `Rho.LLM.status/1`, an account's own on a website) or not allowed
+  (`Rho.Consult.allowed/2`: "add a Gemini key"), a reply still running, nothing to push back on, a
   reply already pushed back. Then runs in a task (`{:ok, pid}`) under
   `opts[:task_supervisor]` (rho's `Rho.TaskSup` by default): the critique,
   then the lead's answer, both on the loop's event stream (fold them into
@@ -320,7 +321,7 @@ defmodule Bezalel.Agent.Pushback do
     do: {:error, "Choose a model to push back in Settings (Pushback from)."}
 
   def start(loop, model, opts) do
-    with :ok <- allowed(model),
+    with :ok <- allowed(loop, model),
          {:ok, target} <- idle_target(loop) do
       supervisor = opts[:task_supervisor] || Rho.TaskSup
       Task.Supervisor.start_child(supervisor, fn -> run(loop, model, target, opts) end)
@@ -352,8 +353,10 @@ defmodule Bezalel.Agent.Pushback do
 
   def auto(_loop, _reply, _model, _opts), do: :skip
 
-  defp allowed(model) do
-    case Rho.Consult.allowed(model) do
+  defp allowed(loop, model) do
+    status = Rho.LLM.status(Loop.config(loop).opts[:llm] || {Rho.LLM.ReqLLM, []})
+
+    case Rho.Consult.allowed(model, status) do
       :ok -> :ok
       {:error, why} -> {:error, "#{label(model)} can't push back: #{why}"}
     end
