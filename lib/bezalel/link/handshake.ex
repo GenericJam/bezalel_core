@@ -15,8 +15,9 @@ defmodule Bezalel.Link.Handshake do
       `t("bezalel-link-hello-v1", [server_eph, nonce])`
     * `auth.sig` = Ed25519 by the device key over
       `t("bezalel-link-auth-v1", [origin, nonce, server_eph, phone_eph,
-      server_key, device_key])`: the phone vouches for this server, this
-      origin and this connection's keys
+      server_key, device_key, app, platform])`: the phone vouches for this
+      server, this origin, this connection's keys and the labels it gives
+      itself (`app`, `platform`: strings of at most 255 bytes each)
     * `shared` = X25519(an ephemeral key, the other's); `okm` =
       HKDF-SHA256(`shared`, salt `nonce`, info
       `t("bezalel-link-v1", [server_eph, phone_eph])`, 64 bytes): the first
@@ -34,7 +35,10 @@ defmodule Bezalel.Link.Handshake do
 
   The phone pins the server key per origin (from the QR code,
   `Bezalel.Link.Pairing`); a different one is `{:error, :key_changed}`.
-  The account is the device key (`Bezalel.Link.Pairing.account_id/1`).
+  The account is the device key (`Bezalel.Link.Pairing.account_id/1`), so
+  the server refuses a device key no one holds the private key of: one of
+  Ed25519's 8 small-order points (a signature anyone can forge verifies
+  under them) or a non-canonical encoding.
   """
 
   import Bitwise, only: [<<<: 2]
@@ -49,6 +53,20 @@ defmodule Bezalel.Link.Handshake do
   @p2s 1
   @s2p 2
   @max_counter (1 <<< 64) - 1
+  @max_label 255
+
+  # Ed25519 point encodings with the sign bit cleared: y = 0, 1, p - 1 and
+  # the two order-8 points' y. A device key whose y is one of these (either
+  # sign), or not below p, is refused.
+  @p (1 <<< 255) - 19
+  @small_order [0, 1, @p - 1] ++
+                 for(
+                   hex <- [
+                     "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+                     "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"
+                   ],
+                   do: :binary.decode_unsigned(Base.decode16!(hex, case: :lower), :little)
+                 )
 
   @typedoc "An Ed25519 key pair, `{public, private}` (32 bytes each; the private one is the seed)."
   @type keypair :: {binary(), binary()}
@@ -112,17 +130,24 @@ defmodule Bezalel.Link.Handshake do
   @doc """
   The server checks the phone's `auth` frame for `origin` (its own, as
   the phone dialled it): the device's signature over this connection's
-  transcript. `{:ok, session, device_key}`, or `{:error, reason}`:
-  `:bad_frame`, `:unsupported_version`, `:bad_signature`.
+  transcript, which covers the frame's `app` and `platform` too (so they
+  can be shown as the phone gave them). `{:ok, session, device_key}`, or
+  `{:error, reason}`: `:bad_frame` (also a small-order or non-canonical
+  device key), `:unsupported_version`, `:bad_signature`.
   """
   @spec accept(Pending.t(), map(), String.t()) ::
           {:ok, Session.t(), binary()} | {:error, atom()}
   def accept(%Pending{} = p, frame, origin) when is_binary(origin) do
     {eph_pub, eph_priv} = p.eph
 
-    with {:ok, %{"device_key" => device, "phone_eph" => phone_eph, "sig" => sig}} <-
+    with {:ok, %{"device_key" => device, "phone_eph" => phone_eph, "sig" => sig} = f} <-
            fields(frame, "auth", device_key: 32, phone_eph: 32, sig: 64),
-         msg = t(@auth, [origin, p.nonce, eph_pub, phone_eph, p.server_key, device]),
+         app = f["app"],
+         platform = f["platform"],
+         true <- (label?(app) and label?(platform)) || {:error, :bad_frame},
+         true <- device_key?(device) || {:error, :bad_frame},
+         msg =
+           t(@auth, [origin, p.nonce, eph_pub, phone_eph, p.server_key, device, app, platform]),
          true <- verify(msg, sig, device) || {:error, :bad_signature},
          {:ok, shared} <- x25519_shared(phone_eph, eph_priv) do
       {p2s, s2p} = derive(shared, p.nonce, eph_pub, phone_eph)
@@ -137,7 +162,9 @@ defmodule Bezalel.Link.Handshake do
   account's `t:keypair/0`), `:origin` (what it dialled), `:pinned` (the
   server key it pinned for that origin, or nil to take this one: the QR
   code's fingerprint is checked by `Bezalel.Link.Pairing`), `:app`,
-  `:platform`; tests: `:eph`. `{:ok, auth_frame, session, server_key}`,
+  `:platform` (labels for the server's list of sessions, at most 255
+  bytes each; signed with the rest); tests: `:eph`.
+  `{:ok, auth_frame, session, server_key}`,
   or `{:error, reason}`: `:bad_frame`, `:unsupported_version`,
   `:key_changed`, `:bad_signature`.
   """
@@ -146,6 +173,8 @@ defmodule Bezalel.Link.Handshake do
     {device_pub, device_priv} = Keyword.fetch!(opts, :device_key)
     origin = Keyword.fetch!(opts, :origin)
     pinned = opts[:pinned]
+    app = label!(opts[:app])
+    platform = label!(opts[:platform])
 
     with {:ok, h} <- fields(hello, "hello", server_eph: 32, nonce: 32, server_key: 32, sig: 64),
          %{"server_eph" => server_eph, "nonce" => nonce, "server_key" => server_key} = h,
@@ -155,15 +184,16 @@ defmodule Bezalel.Link.Handshake do
              {:error, :bad_signature},
          {phone_eph, phone_priv} = x25519(opts[:eph]),
          {:ok, shared} <- x25519_shared(server_eph, phone_priv) do
-      msg = t(@auth, [origin, nonce, server_eph, phone_eph, server_key, device_pub])
+      msg =
+        t(@auth, [origin, nonce, server_eph, phone_eph, server_key, device_pub, app, platform])
 
       frame = %{
         "op" => "auth",
         "v" => @version,
         "device_key" => Wire.b64(device_pub),
         "phone_eph" => Wire.b64(phone_eph),
-        "app" => to_string(opts[:app] || ""),
-        "platform" => to_string(opts[:platform] || ""),
+        "app" => app,
+        "platform" => platform,
         "sig" => Wire.b64(sign(msg, device_priv))
       }
 
@@ -263,6 +293,23 @@ defmodule Bezalel.Link.Handshake do
 
   defp verify(msg, sig, public),
     do: :crypto.verify(:eddsa, :none, msg, sig, [public, :ed25519])
+
+  # A canonical encoding of a point that isn't of small order.
+  defp device_key?(key) do
+    y = key |> :binary.decode_unsigned(:little) |> Bitwise.band((1 <<< 255) - 1)
+    y < @p and y not in @small_order
+  end
+
+  # `app` and `platform`: strings short enough to show (and to length-prefix).
+  defp label?(text), do: is_binary(text) and byte_size(text) <= @max_label
+
+  defp label!(value) do
+    text = to_string(value || "")
+
+    if byte_size(text) <= @max_label,
+      do: text,
+      else: raise(ArgumentError, "an auth label is at most #{@max_label} bytes")
+  end
 
   defp x25519(nil), do: :crypto.generate_key(:ecdh, :x25519)
   defp x25519(private), do: :crypto.generate_key(:ecdh, :x25519, private)

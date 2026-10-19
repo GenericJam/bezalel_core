@@ -23,8 +23,8 @@ defmodule Bezalel.Link.HandshakeTest do
       "e8b0652eada6b33ed39d7f95dae27238d4ceaf9889f7a07757e298e4c93dc5f1" <>
         "a6f6c5de88c09258f061578608fba7c96ad257bc3cb8d0f830409f4ec8974201",
     auth_sig:
-      "9dd8c21e86aebc23e511a20c1cb1f63ada23d548560148ae0d214361664c4e96" <>
-        "df078708a8c78014aeb3e18c4f4bad6a674a19ca95c8fad13f2b1df22c8a0503",
+      "d2558160d88691d58a79faef1e6d8fc56c35e6d06f8ff33a821c8a9b0a7102a6" <>
+        "da260ff07be508c8244a6c41f2b1d35ad75c98ecd58de618e39b6caa5f86f305",
     p2s: "dce7db39640d4b4170b3bf09a1ac902c3556da2bebb1f12deeb0105d0bbfd7fe",
     s2p: "eb797d0f67a0685b93f1a0f461d8c58721c4e34dc5f68c0678c322abe4a716bd",
     frame_p0: "0000000000000000ed9be0fcf2af40e70a9047edfb0f7ad73eea97f61aac57800f8c51d0d5",
@@ -177,7 +177,7 @@ defmodule Bezalel.Link.HandshakeTest do
                {:error, :bad_frame}
     end
 
-    test "the auth: another origin, ephemeral key, device key or signature" do
+    test "the auth: another origin, ephemeral key, device key, label or signature" do
       %{auth: auth, pending: pending} = linked()
 
       assert Handshake.accept(pending, auth, "https://evil.example") == {:error, :bad_signature}
@@ -185,10 +185,71 @@ defmodule Bezalel.Link.HandshakeTest do
       for {key, value} <- [
             {"phone_eph", Wire.b64(elem(:crypto.generate_key(:ecdh, :x25519), 0))},
             {"device_key", Wire.b64(elem(Handshake.keypair(), 0))},
-            {"sig", Wire.b64(:crypto.strong_rand_bytes(64))}
+            {"sig", Wire.b64(:crypto.strong_rand_bytes(64))},
+            {"platform", "evil"},
+            {"app", "9.9"}
           ] do
         assert Handshake.accept(pending, Map.put(auth, key, value), @origin) ==
-                 {:error, :bad_signature}
+                 {:error, :bad_signature},
+               key
+      end
+
+      for bad <- [Map.delete(auth, "platform"), Map.put(auth, "app", 1)] do
+        assert Handshake.accept(pending, bad, @origin) == {:error, :bad_frame}
+      end
+    end
+
+    test "labels are signed as given, and too long ones are refused" do
+      {hello, pending} = Handshake.hello(Handshake.keypair())
+      device = Handshake.keypair()
+
+      {:ok, auth, _, _} =
+        Handshake.auth(hello, device_key: device, origin: @origin, app: "2.1", platform: :android)
+
+      assert {auth["app"], auth["platform"]} == {"2.1", "android"}
+      assert {:ok, _, _} = Handshake.accept(pending, auth, @origin)
+
+      long = String.duplicate("x", 256)
+      assert Handshake.accept(pending, %{auth | "app" => long}, @origin) == {:error, :bad_frame}
+
+      assert_raise ArgumentError, fn ->
+        Handshake.auth(hello, device_key: device, origin: @origin, platform: long)
+      end
+    end
+
+    test "a device key of small order or not canonical is refused, before any signature" do
+      %{auth: auth, pending: pending} = linked()
+
+      # The identity point: OpenSSL takes this "signature" over anything.
+      identity = <<1, 0::248>>
+      forged = identity <> <<0::256>>
+      assert :crypto.verify(:eddsa, :none, "any message", forged, [identity, :ed25519])
+
+      forge = fn key ->
+        Handshake.accept(
+          pending,
+          %{auth | "device_key" => Wire.b64(key), "sig" => Wire.b64(forged)},
+          @origin
+        )
+      end
+
+      assert forge.(identity) == {:error, :bad_frame}
+
+      p = Integer.pow(2, 255) - 19
+
+      order8 =
+        for hex <- [
+              "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+              "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"
+            ],
+            do: :binary.decode_unsigned(Base.decode16!(hex, case: :lower), :little)
+
+      # the 8 small-order points, the two x = 0 points with the sign bit
+      # set, and y not below p
+      small = for y <- [0, 1, p - 1 | order8], sign <- [0, 1], do: y + sign * Integer.pow(2, 255)
+
+      for y <- small ++ [p, p + 1, Integer.pow(2, 255) - 1] do
+        assert forge.(<<y::little-256>>) == {:error, :bad_frame}, Integer.to_string(y)
       end
     end
 

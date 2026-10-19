@@ -15,6 +15,8 @@ defmodule Bezalel.Link.Wire do
   @max_frame 1_048_576
   @chunk_size 262_144
   @window 4
+  @max_bytes 268_435_456
+  @max_chunks 4096
 
   @ops %{
     handshake: ~w(hello auth welcome),
@@ -39,6 +41,20 @@ defmodule Bezalel.Link.Wire do
   @doc "How many chunks may be in flight before the sender waits for an `ack`."
   @spec window() :: pos_integer()
   def window, do: @window
+
+  @doc """
+  The most bytes `assemble/3` puts together by default (256 MiB: the
+  phone keeps a material of up to 250 MB).
+  """
+  @spec max_bytes() :: pos_integer()
+  def max_bytes, do: @max_bytes
+
+  @doc """
+  The most chunks `assemble/3` takes for one assembly by default, empty
+  ones included (4096: `max_bytes/0` takes 1024 of `chunk_size/0`).
+  """
+  @spec max_chunks() :: pos_integer()
+  def max_chunks, do: @max_chunks
 
   @doc "Version 1's ops, by group."
   @spec ops() :: %{atom() => [String.t()]}
@@ -71,10 +87,12 @@ defmodule Bezalel.Link.Wire do
 
   @doc """
   A frame from JSON: `{:ok, frame}`, or `{:error, reason}`: `:too_large`,
-  `:not_json`, `:no_op` (not an object with a string `"op"`).
+  `:not_json` (also anything not a binary), `:no_op` (not an object with a
+  string `"op"`).
   """
-  @spec decode(binary()) :: {:ok, map()} | {:error, :too_large | :not_json | :no_op}
-  def decode(json) when byte_size(json) > @max_frame, do: {:error, :too_large}
+  @spec decode(term()) :: {:ok, map()} | {:error, :too_large | :not_json | :no_op}
+  def decode(json) when is_binary(json) and byte_size(json) > @max_frame,
+    do: {:error, :too_large}
 
   def decode(json) when is_binary(json) do
     case Jason.decode(json) do
@@ -83,6 +101,8 @@ defmodule Bezalel.Link.Wire do
       {:error, _} -> {:error, :not_json}
     end
   end
+
+  def decode(_other), do: {:error, :not_json}
 
   # ── chunks ──
 
@@ -108,10 +128,16 @@ defmodule Bezalel.Link.Wire do
   end
 
   defmodule Assembly do
-    @moduledoc "Chunks being put back together (`Bezalel.Link.Wire.assemble/2`)."
+    @moduledoc "Chunks being put back together (`Bezalel.Link.Wire.assemble/3`)."
     @enforce_keys [:offset]
-    defstruct [:offset, parts: [], size: 0]
-    @type t :: %__MODULE__{offset: non_neg_integer(), parts: [binary()], size: non_neg_integer()}
+    defstruct [:offset, parts: [], size: 0, chunks: 0]
+
+    @type t :: %__MODULE__{
+            offset: non_neg_integer(),
+            parts: [binary()],
+            size: non_neg_integer(),
+            chunks: non_neg_integer()
+          }
   end
 
   @doc "An empty assembly of bytes that start at `offset`."
@@ -122,7 +148,9 @@ defmodule Bezalel.Link.Wire do
   Adds the next chunk: `{:more, assembly}`, `{:done, bytes}` after the
   `"eof"` one, or `{:error, reason}`: `:out_of_order` (not the next
   offset; a resend of one already added is `{:more, assembly}` unchanged),
-  `:bad_chunk`, `:too_large` (over `opts[:max_bytes]`).
+  `:bad_chunk`, `:too_large` (more than `opts[:max_bytes]` bytes, by
+  default `max_bytes/0`, or more than `opts[:max_chunks]` chunks, empty
+  ones included, by default `max_chunks/0`; either may be `:infinity`).
   """
   @spec assemble(Assembly.t(), map(), keyword()) ::
           {:more, Assembly.t()} | {:done, binary()} | {:error, atom()}
@@ -130,21 +158,26 @@ defmodule Bezalel.Link.Wire do
     with %{"offset" => at, "bytes" => b64, "eof" => eof}
          when is_integer(at) and is_binary(b64) and is_boolean(eof) <- chunk,
          {:ok, bytes} <- unb64(b64) do
-      add(a, at, bytes, eof, Keyword.get(opts, :max_bytes, :infinity))
+      limits =
+        {Keyword.get(opts, :max_bytes, @max_bytes), Keyword.get(opts, :max_chunks, @max_chunks)}
+
+      add(a, at, bytes, eof, limits)
     else
       _ -> {:error, :bad_chunk}
     end
   end
 
-  defp add(a, at, bytes, eof, max) do
+  defp add(a, at, bytes, eof, {max_bytes, max_chunks}) do
     next = a.offset + a.size
+    size = a.size + byte_size(bytes)
 
+    # (a number is less than any atom, so `:infinity` is no limit)
     cond do
       at < next and at + byte_size(bytes) <= next -> {:more, a}
       at != next -> {:error, :out_of_order}
-      max != :infinity and a.size + byte_size(bytes) > max -> {:error, :too_large}
+      size > max_bytes or a.chunks + 1 > max_chunks -> {:error, :too_large}
       eof -> {:done, IO.iodata_to_binary(Enum.reverse([bytes | a.parts]))}
-      true -> {:more, %{a | parts: [bytes | a.parts], size: a.size + byte_size(bytes)}}
+      true -> {:more, %{a | parts: [bytes | a.parts], size: size, chunks: a.chunks + 1}}
     end
   end
 

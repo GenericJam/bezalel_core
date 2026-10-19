@@ -44,9 +44,10 @@ defmodule Bezalel.Link.Pairing do
   @doc """
   A scanned QR code's offer: `{:ok, %{origin, pair_id, secret,
   server_fingerprint}}`, or `{:error, :not_a_link}` for anything else
-  (another app's code, a link that isn't https).
+  (another app's code, a link that isn't https, a malformed one, not a
+  string).
   """
-  @spec parse_qr(String.t()) ::
+  @spec parse_qr(term()) ::
           {:ok,
            %{
              origin: String.t(),
@@ -67,30 +68,46 @@ defmodule Bezalel.Link.Pairing do
     else
       _ -> {:error, :not_a_link}
     end
+  rescue
+    # a malformed escape in the query
+    ArgumentError -> {:error, :not_a_link}
   end
+
+  def parse_qr(_other), do: {:error, :not_a_link}
 
   @doc "The server key's fingerprint in the QR code: its SHA-256, base64url."
   @spec server_fingerprint(binary()) :: String.t()
   def server_fingerprint(server_key), do: Wire.b64(:crypto.hash(:sha256, server_key))
 
-  @doc "Does the handshake's `server_key` match the QR code's fingerprint?"
-  @spec server_key?(binary(), String.t()) :: boolean()
-  def server_key?(server_key, fingerprint) when is_binary(fingerprint) do
+  @doc "Does the handshake's `server_key` match the QR code's fingerprint? (False for non-binaries.)"
+  @spec server_key?(term(), term()) :: boolean()
+  def server_key?(server_key, fingerprint)
+      when is_binary(server_key) and is_binary(fingerprint) do
     expected = server_fingerprint(server_key)
     byte_size(fingerprint) == byte_size(expected) and :crypto.hash_equals(expected, fingerprint)
   end
+
+  def server_key?(_server_key, _fingerprint), do: false
 
   @doc "The phone's proof that it scanned the offer: HMAC-SHA256 of the offer and its device key."
   @spec claim_proof(binary(), binary(), binary()) :: binary()
   def claim_proof(secret, pair_id, device_key),
     do: :crypto.mac(:hmac, :sha256, secret, Handshake.t(@claim, [pair_id, device_key]))
 
-  @doc "Is `proof` the claim of the device `device_key` on this offer? (Constant time.)"
-  @spec valid_claim?(binary(), binary(), binary(), binary()) :: boolean()
-  def valid_claim?(secret, pair_id, device_key, proof) when is_binary(proof) do
+  @doc """
+  Is `proof` the claim of the device `device_key` on this offer? (Constant
+  time; false when any of them isn't a binary, a proof missing from a
+  frame, say.)
+  """
+  @spec valid_claim?(term(), term(), term(), term()) :: boolean()
+  def valid_claim?(secret, pair_id, device_key, proof)
+      when is_binary(secret) and is_binary(pair_id) and is_binary(device_key) and
+             is_binary(proof) do
     expected = claim_proof(secret, pair_id, device_key)
     byte_size(proof) == byte_size(expected) and :crypto.hash_equals(expected, proof)
   end
+
+  def valid_claim?(_secret, _pair_id, _device_key, _proof), do: false
 
   @doc """
   The account a device key is: `"acct_"` and the first 26 characters of
