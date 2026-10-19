@@ -81,8 +81,11 @@ drawings): `Bezalel.Materials` names each by the SHA-256 of its bytes, says
 what goes to a model (pictures and PDFs by reference, audio and video as
 their transcript), and resolves rho's attachment references through the
 app's store; the `draw_image` tool (`Bezalel.Study.Tools.materials/0`)
-draws with the image model the user chose (OpenAI's gpt-image or a Gemini
-image model) on that provider's API key; `Bezalel.Speech` turns
+draws with ChatGPT on the user's ChatGPT sign-in (rho's `Rho.Images`), or
+OpenAI's gpt-image or a Gemini image model on that provider's API key: the
+model the lead names when the user asks for one, else the one the user
+chose ("Pictures by"), else the ChatGPT sign-in when there is one;
+`Bezalel.Speech` turns
 a reply into words for text-to-speech. Where the files live stays the
 app's.
 

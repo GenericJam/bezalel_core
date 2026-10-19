@@ -69,23 +69,23 @@ defmodule Bezalel.Study.PreferencesTest do
       assert Preferences.new(%Preferences{limit: 999}).limit == 8
     end
 
-    test "Pictures by and Pushback from: gpt-image and no pushback by default; only known models" do
-      assert %Preferences{}.image_model == "openai:gpt-image-2"
+    test "Pictures by and Pushback from: none chosen by default; only known models" do
+      assert %Preferences{}.image_model == nil
       assert %Preferences{}.pushback_model == nil
 
       prefs =
         Preferences.new(%{
-          "image_model" => "google:gemini-3-pro-image",
+          "image_model" => "openai_codex:gpt-image",
           "pushback_model" => "google:gemini-3-pro"
         })
 
       assert {prefs.image_model, prefs.pushback_model} ==
-               {"google:gemini-3-pro-image", "google:gemini-3-pro"}
+               {"openai_codex:gpt-image", "google:gemini-3-pro"}
 
       # An image model not offered (a chat model, an unknown one), a
-      # pushback model rho can't call: the defaults.
+      # pushback model rho can't call: none chosen.
       for image <- ["google:gemini-3-pro", "openai:dall-e-9", nil, 3],
-          do: assert(Preferences.new(image_model: image).image_model == "openai:gpt-image-2")
+          do: assert(Preferences.new(image_model: image).image_model == nil)
 
       for critic <- ["gemini-3-pro", "mistral:large", "", 3],
           do: assert(Preferences.new(pushback_model: critic).pushback_model == nil)

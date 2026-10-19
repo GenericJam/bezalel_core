@@ -13,8 +13,9 @@ defmodule Bezalel.Study.Preferences do
       say (each tool still caps it at its own maximum);
     * `translation`: the English the tools quote (`Bezalel.Study.Translations`);
     * `image_model`: the model `draw_image` draws with (Settings, "Pictures
-      by"): one of `Bezalel.Study.Tools.DrawImage.models/0`'s ids, OpenAI's
-      gpt-image by default;
+      by"): one of `Bezalel.Study.Tools.DrawImage.models/0`'s ids, or nil
+      (the default) for none chosen: then the ChatGPT sign-in when there
+      is one (`Bezalel.Study.Tools.DrawImage.model/2` says which draws);
     * `pushback_model`: the model that pushes back on a reply (Settings,
       "Pushback from"; `Bezalel.Agent.Pushback`): a rho model spec
       (`"google:gemini-3-pro"`), nil (the default) for none.
@@ -33,7 +34,7 @@ defmodule Bezalel.Study.Preferences do
             excluded_sources: MapSet.new(["editorial:verdicts", "method:genre_guidance"]),
             limit: 8,
             translation: "net",
-            image_model: DrawImage.default_model(),
+            image_model: nil,
             pushback_model: nil
 
   @type t :: %__MODULE__{
@@ -42,7 +43,7 @@ defmodule Bezalel.Study.Preferences do
           excluded_sources: MapSet.t(String.t()),
           limit: pos_integer(),
           translation: String.t(),
-          image_model: String.t(),
+          image_model: String.t() | nil,
           pushback_model: String.t() | nil
         }
 
@@ -53,9 +54,9 @@ defmodule Bezalel.Study.Preferences do
   re-check. Unknown keys are ignored; an invalid value is the default: an
   approach that isn't non-blank text, a limit outside 1–#{@max_limit}, a
   translation not in `Bezalel.Study.Translations.keys/0`, an image model not
-  in `Bezalel.Study.Tools.DrawImage.models/0`, a pushback model that isn't a
-  rho model spec (`Rho.Auth.provider_for_model/1`). Unknown source keys are
-  dropped from `excluded_sources`.
+  in `Bezalel.Study.Tools.DrawImage.models/0` (none chosen), a pushback
+  model that isn't a rho model spec (`Rho.Auth.provider_for_model/1`).
+  Unknown source keys are dropped from `excluded_sources`.
   """
   @spec new(t() | map() | keyword()) :: t()
   def new(%__MODULE__{} = prefs), do: prefs |> Map.from_struct() |> new()
@@ -73,8 +74,7 @@ defmodule Bezalel.Study.Preferences do
         valid(fetch(opts, :limit), &(is_integer(&1) and &1 in 1..@max_limit), defaults.limit),
       translation:
         valid(fetch(opts, :translation), &(&1 in Translations.keys()), defaults.translation),
-      image_model:
-        valid(fetch(opts, :image_model), &(&1 in DrawImage.model_ids()), defaults.image_model),
+      image_model: valid(fetch(opts, :image_model), &(&1 in DrawImage.model_ids()), nil),
       pushback_model: pushback_model(fetch(opts, :pushback_model))
     }
   end

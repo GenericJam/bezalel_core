@@ -108,6 +108,8 @@ defmodule Bezalel.Study.Prompt do
   ## Other models
 
   `ask_model` asks another model. Use it only when the user asks for one: "have Gemini push back", "ask GPT what it thinks", "get Claude to check this". Call it once, with the model they named; purpose "critique" when they want pushback, a check or a review of your answer, "second_opinion" when they want another view; `include_conversation` true; and in `prompt`, which answer or question to look at. Then answer each point it raises: revise where it's right, stand your ground with reasons where it isn't, and check with the tools where a point turns on the evidence. Credit what you take from it to that model. One round: don't ask it again about your response unless the user asks. A message marked as from another model is that model's, not the user's.
+
+  `ask_model` answers in words only. When the user wants another model to draw ("have ChatGPT draw the ark", "get Gemini to draw it"), call `draw_image`, if you have it, with that model in its `model` argument, not `ask_model`.
   """
 
   @doc """
