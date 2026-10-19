@@ -32,6 +32,13 @@ defmodule Bezalel.Library.Transcript do
   move with nothing to copy appends a `custom` entry (`"bezalel.branch"`)
   under the entry it moves to, since the last entry in the file is the
   leaf; `custom` entries never reach a model.
+
+  **Merging two copies.** When the phone and the website both added to a
+  conversation while apart, `merge/3` plans the phone's (canonical) file
+  taking the website's turns too: the branch that began later goes after
+  the other's tip as copies, so the active branch holds both in order,
+  then a notice says how many came from the computer. Same technique as
+  Delete: nothing is rewritten, the originals stay on an inactive branch.
   """
 
   alias Bezalel.Agent.Details
@@ -379,6 +386,83 @@ defmodule Bezalel.Library.Transcript do
       {_, []} -> :gone
     end
   end
+
+  @doc """
+  Plans taking the website's turns into the phone's copy of a conversation
+  after both went on while apart. `base_ids` are the ids of every entry
+  the two copies had in common (the file up to the last offset both had);
+  `phone_branch` and `server_branch` are each copy's active branch now
+  (`Rho.Session.open/2`'s). Each side's own turns are its branch's entries
+  outside `base_ids`; the website's (`server`) go in:
+
+    * after the phone's tip, as copies, when they began later than the
+      phone's own (by their first entry's timestamp; a tie keeps the
+      phone's first);
+    * else after the last common entry on the phone's branch: copies of
+      the website's, then copies of the phone's own (whose originals stay
+      on an inactive branch).
+
+  The move's copies end with a notice (`Rho.Session.custom/2`) saying how
+  many messages came from the computer. Copies get new ids when appended
+  (`Rho.Session.append/2`), so they never collide with the file's.
+  `{:ok, move, count}` (`count` the website's messages), or `:none` when
+  the website added nothing the phone lacks.
+  """
+  @spec merge(Enumerable.t(String.t()), [Session.entry()], [Session.entry()]) ::
+          {:ok, move(), pos_integer()} | :none
+  def merge(base_ids, phone_branch, server_branch) do
+    base = MapSet.new(base_ids)
+    {phone_base, phone_own} = Enum.split_with(phone_branch, &MapSet.member?(base, &1["id"]))
+    phone_ids = MapSet.new(phone_branch, & &1["id"])
+
+    theirs =
+      Enum.reject(
+        server_branch,
+        &(MapSet.member?(base, &1["id"]) or MapSet.member?(phone_ids, &1["id"]))
+      )
+
+    case length(messages(theirs, "")) do
+      0 ->
+        :none
+
+      count ->
+        notice = Session.custom(:notice, notice_text(count))
+
+        move =
+          if began_later?(theirs, phone_own),
+            do: {tip(phone_branch), copies(theirs) ++ [notice]},
+            else: {tip(phone_base), copies(theirs) ++ copies(phone_own) ++ [notice]}
+
+        {:ok, move, count}
+    end
+  end
+
+  defp tip(entries), do: entries |> List.last() |> then(&(&1 && &1["id"]))
+
+  defp notice_text(1),
+    do: "1 message from your computer was added while your phone was offline."
+
+  defp notice_text(n),
+    do: "#{n} messages from your computer were added while your phone was offline."
+
+  # Did `theirs` begin after `ours`? With none of ours, they simply follow.
+  defp began_later?(_theirs, []), do: true
+
+  defp began_later?([first | _], [own | _]) do
+    case {time(first), time(own)} do
+      {%DateTime{} = t, %DateTime{} = o} -> DateTime.compare(t, o) != :lt
+      _ -> true
+    end
+  end
+
+  defp time(%{"timestamp" => ts}) when is_binary(ts) do
+    case DateTime.from_iso8601(ts) do
+      {:ok, at, _offset} -> at
+      _ -> nil
+    end
+  end
+
+  defp time(_entry), do: nil
 
   @doc """
   The move that takes the last question off the branch, so it can be

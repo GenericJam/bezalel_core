@@ -4,7 +4,9 @@ defmodule Bezalel.Test.FakeLLM do
   it consults answer from their own: each call to `model` plays that
   model's next reply. Steps: `{:text, s}`, `{:tool_call, id, name, args}`,
   `{:sleep, ms}`, `{:error, error}` (returns it). Every call sends the test
-  `{:llm_request, request}`; `requests/1` has them all, in order.
+  `{:llm_request, request}`; `requests/1` has them all, in order. Its
+  opts are the agent, or `[fake: agent]` with the other options a loop
+  reads from its `:llm` (`:status`, `Rho.LLM.status/1`).
   """
   @behaviour Rho.LLM
 
@@ -17,6 +19,9 @@ defmodule Bezalel.Test.FakeLLM do
   def requests(agent), do: Agent.get(agent, &Enum.reverse(&1.requests))
 
   @impl true
+  def stream(request, opts, sink) when is_list(opts),
+    do: stream(request, Keyword.fetch!(opts, :fake), sink)
+
   def stream(request, agent, sink) do
     {reply, test} =
       Agent.get_and_update(agent, fn st ->

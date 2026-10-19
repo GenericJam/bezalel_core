@@ -36,11 +36,15 @@ defmodule Bezalel.Study.Tools.DrawImage do
   it is in `Bezalel.Study.Tools.materials/0`, not `all/0`; a host offers it
   once it has a materials store.
 
-  Config (`config :bezalel_core, :draw_image, ...`), for tests:
-  `:generate` (`{m, f}` called as `ReqLLM.generate_image/3` is),
-  `:images` (`{m, f}` called as `Rho.Images.generate/2` is),
-  `:credential` (`{m, f}` called as `Rho.Auth.credential/1` is) and
-  `:signed_in` (`{m, f}` called as `Rho.Auth.signed_in?/1` is).
+  Whose sign-ins: the host's `config :bezalel_core, :draw_image` hooks
+  `:credential` (`{m, f}` answering as `Rho.Auth.credential/1` does) and
+  `:signed_in` (as `Rho.Auth.signed_in?/1`), both called with `(provider,
+  ctx)` (the tool's ctx, or what the host passes to `model/3` and
+  `automatic_model/1`), so a host with several accounts answers from the
+  one `ctx.session_id` belongs to; a hook that takes one argument is
+  called with the provider alone. Default: the node's `Rho.Auth`. Tests
+  also set `:generate` (`{m, f}` called as `ReqLLM.generate_image/3` is)
+  and `:images` (as `Rho.Images.generate/2`).
   """
   @behaviour Rho.Tool
 
@@ -103,27 +107,27 @@ defmodule Bezalel.Study.Tools.DrawImage do
 
   @doc """
   The model a user who hasn't chosen one draws with: the first of
-  `models/0` whose provider is signed in (`Rho.Auth.signed_in?/1`), so the
-  ChatGPT sign-in when there is one; else OpenAI's gpt-image.
+  `models/0` whose provider is signed in (the `:signed_in` hook, with
+  `ctx`), so the ChatGPT sign-in when there is one; else OpenAI's
+  gpt-image.
   """
-  @spec automatic_model() :: map()
-  def automatic_model do
-    {m, f} = config(:signed_in, {Rho.Auth, :signed_in?})
-
-    Enum.find(@models, &apply(m, f, [&1.provider])) ||
+  @spec automatic_model(map()) :: map()
+  def automatic_model(ctx \\ %{}) do
+    Enum.find(@models, &hook(:signed_in, {Rho.Auth, :signed_in?}, &1.provider, ctx)) ||
       Enum.find(@models, &(&1.id == @fallback_model))
   end
 
   @doc """
   The model that draws for `prefs` (a `model` argument, `requested`, first;
   see the moduledoc): one of `models/0`. A host's Settings shows
-  `model(prefs)` as the Pictures by in effect.
+  `model(prefs)` as the Pictures by in effect; `ctx` is given to the
+  `:signed_in` hook.
   """
-  @spec model(Preferences.t(), String.t() | nil) :: map()
-  def model(prefs, requested \\ nil) do
+  @spec model(Preferences.t(), String.t() | nil, map()) :: map()
+  def model(prefs, requested \\ nil, ctx \\ %{}) do
     Enum.find(@models, &(&1.id == requested)) ||
       Enum.find(@models, &(&1.id == prefs.image_model)) ||
-      automatic_model()
+      automatic_model(ctx)
   end
 
   @impl true
@@ -185,10 +189,10 @@ defmodule Bezalel.Study.Tools.DrawImage do
     with {:ok, prompt} <- prompt(args),
          {:ok, size} <- size(args),
          {:ok, requested} <- requested(args),
-         model = model(prefs, requested),
+         model = model(prefs, requested, ctx),
          {:ok, _store} <- store(),
          {:ok, refs} <- references(args, ctx),
-         {:ok, auth} <- credential(model, why(model, requested, prefs)),
+         {:ok, auth} <- credential(model, why(model, requested, prefs), ctx),
          {:ok, {mime, bytes}} <- draw(model, prompt, size, refs, auth) do
       material =
         Materials.derive(:generated, Enum.map(refs, &elem(&1, 0)), bytes,
@@ -307,12 +311,12 @@ defmodule Bezalel.Study.Tools.DrawImage do
     end
   end
 
-  defp credential(%{provider: provider, label: label}, why) do
-    {m, f} = config(:credential, {Rho.Auth, :credential})
+  defp credential(%{provider: provider, label: label}, why, ctx) do
+    hook = &hook(:credential, {Rho.Auth, :credential}, &1, ctx)
 
-    case {provider, apply(m, f, [provider])} do
+    case {provider, hook.(provider)} do
       {:openai_codex, {:ok, %{type: :oauth}}} ->
-        {:ok, fn p -> apply(m, f, [p]) end}
+        {:ok, hook}
 
       {_api, {:ok, %{type: :api_key, key: key}}} when is_binary(key) and key != "" ->
         {:ok, key}
@@ -420,4 +424,15 @@ defmodule Bezalel.Study.Tools.DrawImage do
 
   defp config(key, default),
     do: :bezalel_core |> Application.get_env(:draw_image, []) |> Keyword.get(key, default)
+
+  # A `:credential` / `:signed_in` hook: `(provider, ctx)`, or `(provider)`
+  # when that's all it takes.
+  defp hook(key, default, provider, ctx) do
+    {m, f} = config(key, default)
+    Code.ensure_loaded(m)
+
+    if function_exported?(m, f, 2),
+      do: apply(m, f, [provider, ctx]),
+      else: apply(m, f, [provider])
+  end
 end
