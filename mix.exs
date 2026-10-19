@@ -30,8 +30,9 @@ defmodule BezalelCore.MixProject do
       # reference (Bezalel.Materials, rho 0.2), consults and attributed
       # model messages (Bezalel.Agent.Pushback, rho 0.3), pictures on the
       # ChatGPT sign-in (Rho.Images, rho 0.4), a loop's own sign-ins and
-      # session bytes (the phone ↔ website link, rho 0.5).
-      sibling(:rho, "~> 0.5"),
+      # session bytes (the phone ↔ website link, rho 0.5), the ChatGPT
+      # sign-in's own model list (Rho.Models.Codex, rho 0.5.1).
+      sibling(:rho, "~> 0.5.1"),
       # Bezalel.Materials: a file's media type from its name, and back.
       {:mime, "~> 2.0"},
       # Bezalel.Agent.Reply encodes tool arguments for the TOOL CALL block.
