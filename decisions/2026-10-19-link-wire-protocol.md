@@ -35,6 +35,19 @@ anything that isn't a binary with their error or false. An assembly is
 bounded by default (bytes, and chunks so empty ones count) because any
 phone can make an account and stream chunks that never end.
 
+An origin carried by a pairing QR is one canonical public HTTPS origin,
+not a general URL. Plain HTTP is accepted only for loopback development
+hosts (`localhost`, `127.0.0.1`, `[::1]`). `Pairing.canonical_origin/1`
+rejects credentials, paths, queries, fragments, malformed authorities
+and noncanonical ports; maps a DNS name to lowercase IDNA ASCII (with one
+terminal dot removed), omits the scheme's default port, and canonicalizes
+IPv4 and bracketed IPv6 (RFC 5952 hex, including mapped IPv4).
+`qr/4` emits that spelling, `parse_qr/1` rejects duplicate or extra QR
+fields and ambiguous outer URI components, and both `Handshake.auth/2`
+and `Handshake.accept/3` canonicalize before signing/verifying. Thus
+the origin pinned by the phone and bound into the handshake has one byte
+representation even if the server configured an equivalent spelling.
+
 Also here: `Transcript.merge/3` (conflict merge as branch copies) and
 draw_image's `:credential`/`:signed_in` hooks taking `(provider, ctx)`
 (one-argument hooks still work, so the apps needed no change). The merge

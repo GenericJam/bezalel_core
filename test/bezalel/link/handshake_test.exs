@@ -177,6 +177,22 @@ defmodule Bezalel.Link.HandshakeTest do
                {:error, :bad_frame}
     end
 
+    test "equivalent QR and server origin spellings sign one canonical transcript" do
+      server = Handshake.keypair()
+      device = Handshake.keypair()
+      {hello, pending} = Handshake.hello(server)
+      qr = Pairing.qr("HTTPS://STUDY.EXAMPLE.:443/", <<1::128>>, <<2::256>>, elem(server, 0))
+      {:ok, %{origin: origin}} = Pairing.parse_qr(qr)
+
+      assert {:ok, auth, _, _} = Handshake.auth(hello, device_key: device, origin: origin)
+      assert {:ok, _, _} = Handshake.accept(pending, auth, "HTTPS://STUDY.EXAMPLE.:443/")
+      assert {:error, :bad_signature} = Handshake.accept(pending, auth, "https://evil.example")
+      assert {:error, :invalid_origin} = Handshake.accept(pending, auth, "http://evil.example")
+
+      assert {:error, :invalid_origin} =
+               Handshake.auth(hello, device_key: device, origin: "http://evil.example")
+    end
+
     test "the auth: another origin, ephemeral key, device key, label or signature" do
       %{auth: auth, pending: pending} = linked()
 
