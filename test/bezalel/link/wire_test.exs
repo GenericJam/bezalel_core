@@ -119,10 +119,15 @@ defmodule Bezalel.Link.WireTest do
       {pair_id, secret} = Pairing.offer()
       {server_key, _} = Handshake.keypair()
 
+      http_qr =
+        "https://study.genericjam.com"
+        |> Pairing.qr(pair_id, secret, server_key)
+        |> String.replace("o=https%3A", "o=http%3A")
+
       for text <- [
             "https://example.com",
             "bezalel://other?o=x",
-            Pairing.qr("http://study.genericjam.com", pair_id, secret, server_key),
+            http_qr,
             Pairing.qr("https://study.genericjam.com", "short", secret, server_key),
             "bezalel://link?o=https%3A%2F%2Fa.b&p=x",
             "bezalel://link?o=%zz&p=x",

@@ -43,7 +43,7 @@ defmodule Bezalel.Link.Handshake do
 
   import Bitwise, only: [<<<: 2]
 
-  alias Bezalel.Link.Wire
+  alias Bezalel.Link.{Pairing, Wire}
 
   @version 1
   @hello "bezalel-link-hello-v1"
@@ -133,14 +133,15 @@ defmodule Bezalel.Link.Handshake do
   transcript, which covers the frame's `app` and `platform` too (so they
   can be shown as the phone gave them). `{:ok, session, device_key}`, or
   `{:error, reason}`: `:bad_frame` (also a small-order or non-canonical
-  device key), `:unsupported_version`, `:bad_signature`.
+  device key), `:unsupported_version`, `:bad_signature`, `:invalid_origin`.
   """
   @spec accept(Pending.t(), map(), String.t()) ::
           {:ok, Session.t(), binary()} | {:error, atom()}
   def accept(%Pending{} = p, frame, origin) when is_binary(origin) do
     {eph_pub, eph_priv} = p.eph
 
-    with {:ok, %{"device_key" => device, "phone_eph" => phone_eph, "sig" => sig} = f} <-
+    with {:ok, origin} <- Pairing.canonical_origin(origin),
+         {:ok, %{"device_key" => device, "phone_eph" => phone_eph, "sig" => sig} = f} <-
            fields(frame, "auth", device_key: 32, phone_eph: 32, sig: 64),
          app = f["app"],
          platform = f["platform"],
@@ -166,7 +167,7 @@ defmodule Bezalel.Link.Handshake do
   bytes each; signed with the rest); tests: `:eph`.
   `{:ok, auth_frame, session, server_key}`,
   or `{:error, reason}`: `:bad_frame`, `:unsupported_version`,
-  `:key_changed`, `:bad_signature`.
+  `:key_changed`, `:bad_signature`, `:invalid_origin`.
   """
   @spec auth(map(), keyword()) :: {:ok, map(), Session.t(), binary()} | {:error, atom()}
   def auth(hello, opts) do
@@ -176,7 +177,8 @@ defmodule Bezalel.Link.Handshake do
     app = label!(opts[:app])
     platform = label!(opts[:platform])
 
-    with {:ok, h} <- fields(hello, "hello", server_eph: 32, nonce: 32, server_key: 32, sig: 64),
+    with {:ok, origin} <- Pairing.canonical_origin(origin),
+         {:ok, h} <- fields(hello, "hello", server_eph: 32, nonce: 32, server_key: 32, sig: 64),
          %{"server_eph" => server_eph, "nonce" => nonce, "server_key" => server_key} = h,
          true <- pinned in [nil, server_key] || {:error, :key_changed},
          true <-

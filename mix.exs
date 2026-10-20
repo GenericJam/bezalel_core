@@ -35,6 +35,8 @@ defmodule BezalelCore.MixProject do
       sibling(:rho, "~> 0.5.1"),
       # Bezalel.Materials: a file's media type from its name, and back.
       {:mime, "~> 2.0"},
+      # Bezalel.Link.Pairing canonicalizes international DNS names in origins.
+      {:idna, "~> 7.1"},
       # Bezalel.Agent.Reply encodes tool arguments for the TOOL CALL block.
       {:jason, "~> 1.4"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
