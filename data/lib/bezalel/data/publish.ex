@@ -10,7 +10,7 @@ defmodule Bezalel.Data.Publish do
     the same `raw_sha256` and downloads nothing;
   - the published manifest, for the base packs' descriptions, licences,
     `required` and tables;
-  - the packs built here (`translations`, `scrolls`), uploaded under
+  - the packs built here (`translations`, `scrolls`, `fathers`), uploaded under
     `packs/v<N>/`.
 
   Everything here is pure; `mix bezalel.data.publish` does the network.
@@ -38,6 +38,14 @@ defmodule Bezalel.Data.Publish do
       "licence" =>
         "ETCBC/dss (Martin G. Abegg Jr., James E. Bowley, Edward M. Cook): CC BY-NC 4.0 " <>
           "(non-commercial; https://creativecommons.org/licenses/by-nc/4.0/)"
+    },
+    "fathers" => %{
+      "description" =>
+        "The Apostolic Fathers: Greek (and Latin) with a machine-translated English (CAFE)",
+      "licence" =>
+        "Open Apostolic Fathers (James Tauber, Seumas Macdonald; Lake's text corrected) and " <>
+          "CAFE (James Cuénod; machine translation): CC BY-SA 4.0 " <>
+          "(https://creativecommons.org/licenses/by-sa/4.0/)"
     }
   }
 
@@ -109,9 +117,32 @@ defmodule Bezalel.Data.Publish do
     end
   end
 
+  @doc """
+  `:ok` if a fathers pack's `meta` (its pack_meta) says it was built from
+  `expected`'s sources: `fathers_sha256` (the pinned Greek and English
+  files), `greek_source` and `english_source` (their commits) and
+  `build_sha256` (this checkout's code, `Bezalel.Data.Fathers.build_digest/0`);
+  else `{:error, reason}`.
+  """
+  @spec check_fathers(map(), map()) :: :ok | {:error, String.t()}
+  def check_fathers(meta, expected) do
+    cond do
+      meta["fathers_sha256"] != expected.fathers_sha256 or
+        meta["greek_source"] != expected.greek_source or
+          meta["english_source"] != expected.english_source ->
+        {:error, "wasn't built from pins.json's Apostolic Fathers files"}
+
+      meta["build_sha256"] != expected.build_sha256 ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
   @doc "The names of the packs built here, in manifest order."
   @spec built_here() :: [String.t()]
-  def built_here, do: ~w(translations scrolls)
+  def built_here, do: ~w(translations scrolls fathers)
 
   @doc """
   The manifest entry of pack `name` (one of `built_here/0`) for a pack

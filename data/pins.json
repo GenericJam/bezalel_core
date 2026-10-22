@@ -117,5 +117,61 @@
     "reviewed": "2026-10-18",
     "licence": "Public domain, the marked-up TEI included (the repo's README)",
     "note": "The commit the core pack's lexicon.abbott_smith_def was built from (studybible-mcp). Output: ../priv/study/abbott_smith_pages.json (mix bezalel.data.abbott_smith)."
+  },
+  "fathers": {
+    "name": "The Apostolic Fathers: Lake's Greek (and Latin) as corrected by James Tauber and Seumas Macdonald (Open Apostolic Fathers 1.0), with CAFE's machine-translated English",
+    "reviewed": "2026-10-22",
+    "note": "CAFE numbers its lines as the Greek files it translated (its README; checked: the same references in the same order, line for line). Not imported: jcuenod/tagged-apostolic-fathers (no licence).",
+    "greek": {
+      "repo": "https://github.com/jtauber/apostolic-fathers",
+      "commit": "a07f9207902d2a7a88aa3e7c8fb3671d7ef6f0ff",
+      "path": "texts",
+      "url": "https://raw.githubusercontent.com/jtauber/apostolic-fathers/a07f9207902d2a7a88aa3e7c8fb3671d7ef6f0ff/texts/",
+      "doi": "10.5281/zenodo.2555673",
+      "licence": "CC BY-SA 4.0 (README), https://creativecommons.org/licenses/by-sa/4.0/",
+      "note": "texts/ last changed 2019-01-31 (e155157), before the v1.0 tag (4b91432) the Zenodo record 2555673 archives: the text of Open Apostolic Fathers 1.0.",
+      "files": {
+        "001-i_clement.txt": "2e3a191d7b90a76a5bd916826d1152ec7aa36c1057fec7b914bbcda9753a5b22",
+        "002-ii_clement.txt": "8c053de290b7d1f65fd328cf95a8dd60645d8c49427b01ad82413052840dafaf",
+        "003-ignatius-ephesians.txt": "d2aaeaf80f25482605ce9be17ded2321dbbd9da2e32a74107062ee3ab46848f9",
+        "004-ignatius-magnesians.txt": "45b9a41645cd5915884d94ec64effbee7f2e2b09f15510f1848b67fa3702ffc9",
+        "005-ignatius-trallians.txt": "5061d64b52afd3f686aad803f6e5614af058d143ec3f88a1cc39517e1273335a",
+        "006-ignatius-romans.txt": "3a239c567d79a7ece104b0c5161a8e4fe81c39ef472a51c36ad22b2d0faad567",
+        "007-ignatius-philadelphians.txt": "da6fec6e67c5b4ee9905bf435753dacbf654ff75bbee973837e9d32cea06847d",
+        "008-ignatius-smyrnaeans.txt": "b7f902513a43aae27f9d87953ce38126c81e915fc3b5b857c38079382d28974b",
+        "009-ignatius-polycarp.txt": "20889fd56c3614385ec9dda28427a312df4e17dc230717ba32f7de4f84587cb8",
+        "010-polycarp-philippians.txt": "fc12a81d9fa541ecd79e447f30243c96023467c0fa9ab3a648ef0f72c1105a2e",
+        "011-didache.txt": "f44febe3572b110197e24b9598facbacf4e3422fd529da263a3c145c6d0a51fe",
+        "012-barnabas.txt": "cca51c5f5ed600e72bb7d750aad96091c31224df33c3b63ae0c0d06ddf27e2d8",
+        "013-shepherd.txt": "d4db4e12c35aeb62c77bd736f253898ebecf9f6bf7c6c1b7eb58c73501735424",
+        "014-martyrdom.txt": "704d0e064a16896d87a300bc22dbcbf87870e69addf51ed4e288f45499501d63",
+        "015-diognetus.txt": "553124dac888a6aaf8bc0aeb6ccb7843e2b6176686460f71f3133a74482f2db1"
+      }
+    },
+    "english": {
+      "repo": "https://github.com/jcuenod/CAFE",
+      "commit": "06b19aecf94f2342c6061502a2b481b03693eaa3",
+      "path": "",
+      "url": "https://raw.githubusercontent.com/jcuenod/CAFE/06b19aecf94f2342c6061502a2b481b03693eaa3/",
+      "licence": "CC BY-SA 4.0 (LICENSE, README), https://creativecommons.org/licenses/by-sa/4.0/",
+      "note": "A machine translation: README 'these first drafts were generated using GPT-4o'; scripts/translate.py calls gpt-4o-2024-05-13 line by line. Two later commits change two lines by hand (6b5627a 1 Clem 0.1, 74db712 Did. 4.3); no systematic human revision.",
+      "files": {
+        "001-i_clement.en.txt": "52d5ad223d7afe85bc190409283d64d9a72a87d2b90169cdb84a7eba6ca68c95",
+        "002-ii_clement.en.txt": "11ba7d467a955341354be5feec5ef9d037209bb83d69e4f00bbe97307222fe1f",
+        "003-ignatius-ephesians.en.txt": "b271337c6aba542104172b86e33b03cd7538a446b8fac3bc1c31c23363d30d74",
+        "004-ignatius-magnesians.en.txt": "ebffe690d549636d86cc6813e1f4eb292696530e157d24d1b0a0a04c17d67dae",
+        "005-ignatius-trallians.en.txt": "aee1867fdea39d25c9052e30d3b2eda3a3c0ef0720c3cbfedb34aeae89e4d5ce",
+        "006-ignatius-romans.en.txt": "f9539a242986e0d6332724c6e01cf98938c7fc362d95975b5d9ae05b5f0e1371",
+        "007-ignatius-philadelphians.en.txt": "ff1ae1500f1d035ad96660a3a2f5174ab6dc724a7ef8f6c555a3edde10c03360",
+        "008-ignatius-smyrnaeans.en.txt": "9c3980134425cd503c7591c7055a591a5389c2ad547777ca2687224cbffd8377",
+        "009-ignatius-polycarp.en.txt": "54b02ee2c01e43b1c47367cf45070a030e3503157466f95c2f67826e0db12d0a",
+        "010-polycarp-philippians.en.txt": "e9c6ef95e410d55db9956c4a7d8c9a2cf66da7bd72470440ebd1bf8d433010ec",
+        "011-didache.en.txt": "61e2e926e986b74f227d2e62a5832ec2fcf973c7a51ca0c34edf874173ee4045",
+        "012-barnabas.en.txt": "9f6c6956c1a4e1727f51f72de8ce45d22613e85b03941cfc2f79525d9d9b2da3",
+        "013-shepherd.en.txt": "2e3f848af550a16a75c3c9a8393b55023d636704ee6ee7c2086751022370b3b0",
+        "014-martyrdom.en.txt": "6efe2a728ec2f6f79c00a04281013ed84e376ecbdd25ab9d98539246aef01bfa",
+        "015-diognetus.en.txt": "7ffcc50a2a6e1af7da30264428780f54f9c3eef76be27b3b4318dd5c36be0c7c"
+      }
+    }
   }
 }

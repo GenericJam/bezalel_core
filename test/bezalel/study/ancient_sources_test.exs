@@ -96,7 +96,8 @@ defmodule Bezalel.Study.Tools.AncientSourcesTest do
 
       assert error(search(%{"query" => "John", "corpus" => "nonesuch"})) ==
                "Unsupported ancient-source corpus 'nonesuch'. Available corpora: " <>
-                 "josephus, targum, qumran, philo, pseudepigrapha, rabbinic, or 'all'."
+                 "josephus, targum, qumran, philo, pseudepigrapha, rabbinic, apostolic_fathers, " <>
+                 "or 'all'."
 
       assert error(search(%{"query" => "x", "period" => "amoraic"})) =~
                "Unsupported period: amoraic."

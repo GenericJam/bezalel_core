@@ -102,7 +102,7 @@ defmodule Bezalel.Data.PublishTest do
            } = entry
 
     assert entry["licence"] =~ "CC BY-NC 4.0"
-    assert Publish.built_here() == ["translations", "scrolls"]
+    assert Publish.built_here() == ["translations", "scrolls", "fathers"]
 
     assert_raise KeyError, fn ->
       Publish.entry("core", 2, %{size: 1, sha256: @sha}, %{size: 1, sha256: @sha}, [])
@@ -129,6 +129,32 @@ defmodule Bezalel.Data.PublishTest do
 
     assert {:error, "was built by other code than this checkout's"} =
              Publish.check_scrolls(Map.delete(meta, "build_sha256"), expected)
+  end
+
+  test "the fathers entry is optional and CC BY-SA; a fathers pack is refused unless built from the pins and this code" do
+    entry =
+      Publish.entry("fathers", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, ["t"])
+
+    assert %{"name" => "fathers", "required" => false} = entry
+    assert entry["licence"] =~ "CC BY-SA 4.0"
+    assert entry["description"] =~ "machine-translated"
+
+    meta = %{
+      "fathers_sha256" => "f",
+      "greek_source" => "g",
+      "english_source" => "e",
+      "build_sha256" => "b"
+    }
+
+    expected = %{fathers_sha256: "f", greek_source: "g", english_source: "e", build_sha256: "b"}
+
+    assert Publish.check_fathers(meta, expected) == :ok
+
+    assert {:error, "wasn't built from pins.json's Apostolic Fathers files"} =
+             Publish.check_fathers(meta, %{expected | english_source: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_fathers(meta, %{expected | build_sha256: "x"})
   end
 
   describe "manifest/4" do

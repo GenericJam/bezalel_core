@@ -83,7 +83,7 @@ defmodule Bezalel.Study.Prompt do
     {"get_torah_weave",
      "the verses paired with a Torah passage under Moshe Kline's Woven Torah hypothesis, one scholar's structural proposal."},
     {"search_ancient_sources",
-     "Jewish texts of the Second Temple world and after (Josephus, Philo, the Dead Sea Scrolls' major works, 1 Enoch, 4 Ezra, Targum Onkelos, the Mishnah), found by their wording. Give each passage's work, date and edition as the tool labels them."},
+     "Jewish texts of the Second Temple world and after (Josephus, Philo, the Dead Sea Scrolls' major works, 1 Enoch, 4 Ezra, Targum Onkelos, the Mishnah) and the Apostolic Fathers (1–2 Clement, Ignatius, Polycarp, the Didache, Barnabas, Hermas, Diognetus), found by their wording. Give each passage's work, date and edition as the tool labels them. The Apostolic Fathers' English is a machine translation: say so when you quote it."},
     {"lookup_ancient_source", "one of those ancient sources read by its citation."},
     {"list_research_sources",
      "free journals, libraries and text archives for following a question further, with search links: places to look, not endorsements."}

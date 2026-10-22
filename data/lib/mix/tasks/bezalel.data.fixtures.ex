@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.Bezalel.Data.Fixtures do
-  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls}.sqlite"
+  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,fathers}.sqlite"
 
   @moduledoc """
   Cuts the fixtures core's tests read from the packs built here.
 
-      mix bezalel.data.fixtures [--pack translations|scrolls]
+      mix bezalel.data.fixtures [--pack translations|scrolls|fathers]
                                 [--from DIR] [--core ../test/fixtures/packs/core.sqlite]
                                 [--out DIR]
 
@@ -19,11 +19,15 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       `@scroll_verses` (a reading of each kind the tools handle: preserved,
       partly and wholly reconstructed, Hebrew numbering, a verse the MT
       lacks), with their manuscripts. Run `mix bezalel.data.scrolls` first.
+    * `fathers.sqlite`: the passages of `@fathers_ranges`
+      (a chapter of each kind the tests cite: Ignatius, 1 Clement, Barnabas,
+      a chapter of each part of the Shepherd, Latin text, the Moscow
+      epilogue). Run `mix bezalel.data.fathers` first.
   """
 
   use Mix.Task
 
-  alias Bezalel.Data.{Pack, Report, ScrollsPack}
+  alias Bezalel.Data.{FathersPack, Pack, Report, ScrollsPack}
 
   @switches [pack: :string, from: :string, core: :string, out: :string]
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
@@ -38,6 +42,25 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
   # reconstructed in 1Q5), Josh 5:0 (4QJosha's verse before 5:1, no MT
   # verse), Mal 4:1 (Hebrew 3:19).
   @scroll_verses ~w(Deu.32.8 Isa.53.11 Psa.22.16 Deu.1.10 Jos.5.0 Mal.4.1)
+
+  # {work, first sort key, last}: Didache 0–1 (title, the two ways), 9 and
+  # 14 (the Lord's day); Ignatius, To the Ephesians 20 ('medicine of
+  # immortality'), 1 Clement 5, Barnabas 18 (the two ways), Hermas, Vision
+  # 1.1, Mandate 4.1 and Similitude 9.30 (Latin and Greek), Polycarp, To the
+  # Philippians 10 (Latin) and the Moscow epilogue.
+  @fathers_ranges [
+    {"didache", 0, 1_999},
+    {"didache", 9_000, 9_999},
+    {"didache", 14_000, 14_999},
+    {"ignatius_ephesians", 20_000, 20_999},
+    {"1_clement", 5_000, 5_999},
+    {"barnabas", 18_000, 18_999},
+    {"hermas_visions", 1_001_000, 1_001_999},
+    {"hermas_mandates", 4_001_000, 4_001_999},
+    {"hermas_similitudes", 9_030_000, 9_030_999},
+    {"polycarp_philippians", 10_000, 10_999},
+    {"martyrdom_of_polycarp_moscow_epilogue", 0, 999}
+  ]
 
   @passage_columns ~w(corpus author work_key work_title reference alternate_reference
                       book_number section_number section_end editorial_heading text original_text
@@ -57,6 +80,7 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       nil ->
         translations(from, out, opts)
         scrolls(from, out)
+        fathers(from, out)
 
       "translations" ->
         translations(from, out, opts)
@@ -64,8 +88,11 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       "scrolls" ->
         scrolls(from, out)
 
+      "fathers" ->
+        fathers(from, out)
+
       other ->
-        Mix.raise("--pack must be translations or scrolls, not #{inspect(other)}")
+        Mix.raise("--pack must be translations, scrolls or fathers, not #{inspect(other)}")
     end
   end
 
@@ -154,6 +181,29 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
         "(#{verses |> Enum.map(& &1.reference) |> Enum.uniq() |> length()} of " <>
         "#{length(@scroll_verses)} verses), #{length(manuscripts)} manuscripts"
     )
+  end
+
+  defp fathers(from_dir, out_dir) do
+    from = Path.join(from_dir, "fathers.sqlite")
+    out = Path.join(out_dir, "fathers.sqlite")
+    columns = @passage_columns
+
+    range_condition =
+      Enum.map_join(@fathers_ranges, " OR ", fn _ ->
+        "(work_key = ? AND sort_start BETWEEN ? AND ?)"
+      end)
+
+    passages =
+      from
+      |> Pack.read(
+        "SELECT #{Enum.join(columns, ", ")} FROM ancient_source_passages " <>
+          "WHERE #{range_condition} ORDER BY id",
+        Enum.flat_map(@fathers_ranges, &Tuple.to_list/1)
+      )
+      |> rows(columns)
+
+    FathersPack.write(out, passages, fixture_meta(from))
+    Mix.shell().info("#{out}: #{length(passages)} passages")
   end
 
   defp rows(rows, columns), do: Enum.map(rows, &(columns |> Enum.zip(&1) |> Map.new()))

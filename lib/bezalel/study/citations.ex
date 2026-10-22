@@ -91,6 +91,11 @@ defmodule Bezalel.Study.Citations do
     year: 2009
   }
 
+  # The Apostolic Fathers (the fathers pack): their work keys, and CAFE's
+  # English at the commit `data/pins.json` → `fathers` pins.
+  @fathers Map.new(Bezalel.Study.Ancient.Fathers.work_keys(), &{&1, true})
+  @cafe "https://github.com/jcuenod/CAFE/blob/06b19aecf94f2342c6061502a2b481b03693eaa3/"
+
   # The books studybible-mcp summarises, by its `source_work`: author,
   # title and year of first publication (no edition: the data records none).
   @books %{
@@ -195,7 +200,8 @@ defmodule Bezalel.Study.Citations do
     "hlt" => "Unpublished draft renderings",
     "fee_stuart" => "Fee & Stuart",
     "research" => "Research sources",
-    "studybible" => "studybible-mcp"
+    "studybible" => "studybible-mcp",
+    "apostolic_fathers" => "Apostolic Fathers"
   }
 
   # ── Scripture ────────────────────────────────────────────────────────────
@@ -633,7 +639,9 @@ defmodule Bezalel.Study.Citations do
   An ancient passage by its work key and reference as the packs store them
   ('antiquities', 'Antiquities 18.63–64'). Options: `:source_url` (the
   row's pinned dataset URL: Philo's work number and 1 Enoch's Wikisource
-  page come from it), `:english` (false when the tool gave the original
+  page come from it, and an Apostolic Fathers passage's line of Lake's
+  Greek, whose CAFE English line is the citation, a `:machine`
+  translation), `:english` (false when the tool gave the original
   only: the citation is then `:assistant`), `:alternate_reference` (the
   row's other numbering: 4 Ezra's KJV 2 Esdras verse, which the KJV page
   is anchored by; 4 Ezra 7:106 is 2 Esdras 7:36).
@@ -739,6 +747,24 @@ defmodule Bezalel.Study.Citations do
     %{dss_manuscript(siglum, reference) | label: reference, locator: reference}
   end
 
+  defp ancient_citation(work_key, reference, english?, source_url)
+       when is_map_key(@fathers, work_key) do
+    greek = %Citation{work: "apostolic_fathers", label: "#{reference} (Lake)", url: source_url}
+
+    if english? and is_binary(source_url) do
+      %Citation{
+        work: "apostolic_fathers",
+        label: "#{reference} (CAFE, machine translation)",
+        locator: reference,
+        url: cafe_url(source_url),
+        translation: :machine,
+        original: [%{label: greek.label, url: source_url}]
+      }
+    else
+      translated(%{greek | locator: reference}, false)
+    end
+  end
+
   defp ancient_citation(work_key, reference, english?, source_url) do
     # Philo (and any work keyed like it): Scaife by the TLG work number in
     # the dataset path, cited by section or book.section.
@@ -760,6 +786,13 @@ defmodule Bezalel.Study.Citations do
       %Citation{work: work_key, label: reference, locator: reference, url: source_url}
       |> translated(english?)
     end
+  end
+
+  # CAFE numbers its English lines as the Greek file it translated: the
+  # Greek line's anchor ('…/texts/011-didache.txt#L52') is the English one's.
+  defp cafe_url(source_url) do
+    [file, line] = source_url |> String.split("/texts/") |> List.last() |> String.split("#")
+    @cafe <> String.replace_suffix(file, ".txt", ".en.txt") <> "#" <> line
   end
 
   @doc """
