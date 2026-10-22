@@ -7,7 +7,9 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   Ported from studybible-mcp's `handle_lookup_verse` (MIT). Same text,
   hints included: Torah weave partners (core pack), catalogued textual
   variants or translation notes and NT↔OT quotations in the passage (notes
-  pack; left out silently when that pack isn't on the device). The
+  pack; left out silently when that pack isn't on the device), and, added
+  for Bezalel, the verses with HOTTP entries or SBLGNT apparatus units
+  (witnesses pack, likewise silent without it). The
   cross-reference hint names only the TSK, the one cross-reference set in
   the core pack. The user's preferences (`Bezalel.Study.Preferences`) pick
   the translation and can switch off the genre guidance and the Torah
@@ -31,7 +33,8 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     Sources,
     Syntax,
     Translations,
-    Verses
+    Verses,
+    Witnesses
   }
 
   alias Bezalel.Study.Tools.GetTextualVariant
@@ -68,7 +71,8 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     - Genre-specific interpretive background for the passage's literary type (when
       the user has turned it on)
     - Availability notes for related data (cross-references, Torah weave partners,
-      and NT/OT LXX-quotation variants) where the verses have such records
+      NT/OT LXX-quotation variants, and text-critical notes: the UBS HOTTP committee's
+      entries and the SBLGNT apparatus) where the verses have such records
 
     Accepts 'John 3:16', 'Luke 19:1-3', cross-chapter ranges such as
     'Luke 19:45-20:2', and whole chapters such as 'Psalm 23'. Single-chapter books
@@ -126,14 +130,17 @@ defmodule Bezalel.Study.Tools.LookupVerse do
 
   @typedoc """
   What the hints point to: whether Torah weave data covers the book, the
-  variant and interpretive cases in the passage, and the NT↔OT quotations
-  with a verse in it (`side`: which side of the quotation is in it).
+  variant and interpretive cases in the passage, the NT↔OT quotations
+  with a verse in it (`side`: which side of the quotation is in it), and
+  the verses with HOTTP entries or SBLGNT apparatus units in the
+  witnesses pack (`witnesses`, 'Gen.4.8'; none without the pack).
   """
   @type hints :: %{
           torah_weave: boolean(),
           variant_cases: [case_cue()],
           interpretive_cases: [case_cue()],
-          quotations: [map()]
+          quotations: [map()],
+          witnesses: %{hottp: [String.t()], apparatus: [String.t()]}
         }
 
   @typedoc """
@@ -223,6 +230,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
 
       {:ok,
        found
+       |> add_witness_hints()
        |> add_notes_hints()
        |> Map.merge(%{
          verses: verses,
@@ -335,7 +343,8 @@ defmodule Bezalel.Study.Tools.LookupVerse do
         torah_weave: torah_weave,
         variant_cases: [],
         interpretive_cases: [],
-        quotations: []
+        quotations: [],
+        witnesses: %{hottp: [], apparatus: []}
       },
       span: {shown_start, shown_end},
       verses: Enum.map(rows, &Format.verse_view/1)
@@ -344,6 +353,20 @@ defmodule Bezalel.Study.Tools.LookupVerse do
 
   defp torah_weave?(conn, book),
     do: book in @torah and DB.one(conn, "SELECT 1 AS x FROM torah_weave_units LIMIT 1") != nil
+
+  # The verses with HOTTP entries or SBLGNT apparatus units, from the
+  # witnesses pack when it's on the device and readable (else none).
+  defp add_witness_hints(%{span: {{sc, sv}, {ec, ev}}} = found) do
+    read = fn conn ->
+      with :ok <- Witnesses.check(conn, ["hottp_verses", "sblgnt_apparatus"]),
+           do: {:ok, Witnesses.hints(conn, found.book, sc * 1000 + sv, ec * 1000 + ev)}
+    end
+
+    case DB.with_pack(:witnesses, read) do
+      {:ok, {:ok, hints}} -> put_in(found, [:hints, :witnesses], hints)
+      _missing -> found
+    end
+  end
 
   # The textual-variant and quotation hints, from the notes pack when it's
   # on the device (else none).
@@ -483,6 +506,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
       genre(result.genre_guidance && result.genre) <>
       torah_weave_hint(result) <>
       variant_hints(result) <>
+      witness_hint(result) <>
       quotation_hint(result) <> cross_reference_hint(result.single, result.hint_reference)
   end
 
@@ -595,6 +619,44 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   end
 
   defp cued(cases), do: Enum.map_join(cases, ", ", &"#{&1.reference} (#{&1.case_key})")
+
+  # Where get_textual_variant has the HOTTP committee's entries or the
+  # SBLGNT apparatus: the verse, or up to ten verses of a passage.
+  defp witness_hint(%{hints: %{witnesses: %{hottp: [], apparatus: []}}}), do: ""
+
+  defp witness_hint(%{single: true, hint_reference: hint, hints: %{witnesses: w}}) do
+    "\n\n---\n*Text-critical notes for this verse in #{witness_kinds(w)}, via " <>
+      "`get_textual_variant` (reference='#{hint}').*"
+  end
+
+  defp witness_hint(%{book_name: name, hints: %{witnesses: w}}) do
+    references = Enum.uniq(w.hottp ++ w.apparatus) |> Enum.sort_by(&position/1)
+    {shown, rest} = Enum.split(references, 10)
+
+    listed =
+      Enum.map(shown, fn reference ->
+        position = position(reference)
+        Reference.label(name, position, position)
+      end) ++ if(rest == [], do: [], else: ["#{length(rest)} more"])
+
+    "\n\n---\n*Text-critical notes in #{witness_kinds(w)} in this passage: " <>
+      Enum.join(listed, ", ") <>
+      ". Via `get_textual_variant` with one of those verses as the reference.*"
+  end
+
+  defp witness_kinds(%{hottp: hottp, apparatus: apparatus}) do
+    [
+      hottp != [] && "the UBS Hebrew Old Testament Text Project (HOTTP)",
+      apparatus != [] && "the SBLGNT apparatus"
+    ]
+    |> Enum.filter(& &1)
+    |> Enum.join(" and ")
+  end
+
+  defp position(reference) do
+    [_book, chapter, verse] = String.split(reference, ".")
+    {String.to_integer(chapter), String.to_integer(verse)}
+  end
 
   # At most two quotations inline; a quotation that agrees with the MT is
   # not called an LXX form.

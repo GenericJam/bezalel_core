@@ -194,8 +194,8 @@ defmodule Bezalel.Study.TextToolsTest do
     end
 
     test "nothing catalogued is a result; a missing or non-verse reference is an error" do
-      assert ok(GetTextualVariant, %{"reference" => "Genesis 1:1"}) ==
-               "No textual-variant case or NT quotation alignment is catalogued for Genesis 1:1."
+      assert ok(GetTextualVariant, %{"reference" => "Genesis 1:2"}) ==
+               "No textual-variant case or NT quotation alignment is catalogued for Genesis 1:2."
 
       assert error(GetTextualVariant, %{"reference" => "Psalm 40"}) =~
                "'Psalm 40' is not a single-verse reference."
@@ -285,8 +285,17 @@ defmodule Bezalel.Study.TextToolsTest do
     end
 
     test "why nothing matched" do
-      assert error(CompareBiblicalVersions, %{"reference" => "Luke 4:9"}) =~
-               "Old Testament and Septuagint books only"
+      assert ok(CompareBiblicalVersions, %{"reference" => "Luke 4:9"}) ==
+               "No TAGNT or SBLGNT text found for Luke 4:9 (the core Greek text's numbering)."
+
+      assert error(CompareBiblicalVersions, %{"reference" => "Luke 4:9", "versions" => ["MT"]}) =~
+               "is a New Testament reference: compare TAGNT"
+
+      assert error(CompareBiblicalVersions, %{
+               "reference" => "Psalm 82:6",
+               "versions" => ["SBLGNT"]
+             }) =~
+               "is in the Old Testament: compare MT, LXX, DSS and/or SP"
 
       assert error(CompareBiblicalVersions, %{"reference" => "Psalm eighty-two"}) =~
                "Could not parse"
@@ -323,14 +332,16 @@ defmodule Bezalel.Study.TextToolsTest do
                  "reference" => "Psalm 82:6",
                  "versions" => versions
                }) ==
-                 "'versions' must be a non-empty list containing MT, LXX and/or DSS."
+                 "'versions' must be a non-empty list containing MT, LXX, DSS and/or SP " <>
+                   "(Old Testament), or TAGNT and/or SBLGNT (New Testament)."
       end
 
       assert error(CompareBiblicalVersions, %{
                "reference" => "Psalm 82:6",
                "versions" => ["mt", "Vulgate"]
              }) ==
-               "Unsupported biblical version(s): VULGATE. Use MT, LXX and/or DSS."
+               "Unsupported biblical version(s): VULGATE. Use MT, LXX, DSS and/or SP " <>
+                 "(Old Testament), or TAGNT and/or SBLGNT (New Testament)."
 
       assert error(CompareBiblicalVersions, %{"reference" => "Psalm 82:6", "numbering" => "Greek"}) =~
                "Unsupported numbering 'greek'."

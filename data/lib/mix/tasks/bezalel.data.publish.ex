@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   @moduledoc """
   Publishes the packs built here (`out/translations.sqlite`,
-  `out/scrolls.sqlite`, `out/fathers.sqlite`, `out/dictionaries.sqlite`, `out/syntax.sqlite`) as the next data version, on top of the frozen base,
+  `out/scrolls.sqlite`, `out/fathers.sqlite`, `out/dictionaries.sqlite`, `out/syntax.sqlite`, `out/witnesses.sqlite`) as the next data version, on top of the frozen base,
   without uploading the base.
 
       mix bezalel.data.publish [--dry-run] [--version N]
@@ -38,7 +38,8 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     Pack,
     Publish,
     Scrolls,
-    Syntax
+    Syntax,
+    Witnesses
   }
 
   @bucket "bezalel-packs"
@@ -257,6 +258,28 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     case Publish.check_syntax(meta, expected) do
       :ok -> :ok
       {:error, reason} -> Mix.raise("out/syntax.sqlite #{reason}; run mix bezalel.data.syntax")
+    end
+  end
+
+  defp check_source!("witnesses", meta) do
+    pins = Map.new(~w(sp sblgnt hottp), &{&1, Download.pin!(&1)})
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
+
+    expected = %{
+      sp_sha256: Witnesses.digest(pins["sp"]["files"]),
+      sblgnt_sha256:
+        Witnesses.digest(Map.merge(pins["sblgnt"]["text"], pins["sblgnt"]["apparatus"])),
+      hottp_sha256: Witnesses.digest(pins["hottp"]["files"]),
+      core_sha256: core,
+      build_sha256: Witnesses.build_digest()
+    }
+
+    case Publish.check_witnesses(meta, expected) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("out/witnesses.sqlite #{reason}; run mix bezalel.data.witnesses")
     end
   end
 

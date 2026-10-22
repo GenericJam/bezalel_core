@@ -207,7 +207,11 @@ defmodule Bezalel.Study.Citations do
     "apostolic_fathers" => "Apostolic Fathers",
     "ubs_hebrew" => "UBS Dictionary of Biblical Hebrew",
     "ubs_greek" => "UBS Dictionary of the Greek New Testament",
-    "macula" => "MACULA syntax trees"
+    "macula" => "MACULA syntax trees",
+    "sp" => "Samaritan Pentateuch",
+    "sblgnt" => "SBL Greek New Testament",
+    "sblgnt_apparatus" => "SBLGNT apparatus",
+    "hottp" => "UBS Hebrew Old Testament Text Project"
   }
 
   # The UBS dictionaries' files at the commit the dictionaries pack was built
@@ -959,6 +963,122 @@ defmodule Bezalel.Study.Citations do
     # A joined siglum ('4Q223–224') is filed under its first manuscript.
     [first | _] = String.split(Map.get(@leon_levy_sigla, siglum, siglum), ["–", "-"])
     @leon_levy <> URI.encode(first, &URI.char_unreserved?/1) <> "-1"
+  end
+
+  # ── Textual witnesses (the witnesses pack) ───────────────────────────────
+  # `source_url` is the pack's `witness_sources.source_url`: the source's
+  # directory on GitHub at the commit the pack was built from.
+
+  @doc """
+  A verse of the Samaritan Pentateuch (DT-UCPH/sp): the dataset at the
+  pinned commit (it has no page per verse). `source_reference` is the
+  dataset's own number, named when it differs from the English one. The
+  tools give its consonantal Hebrew only, so any English is the
+  assistant's.
+  """
+  @spec samaritan(verse(), String.t(), String.t()) :: Citation.t()
+  def samaritan(verse, source_reference, source_url) do
+    {book, chapter, v} = parse(verse)
+    {_, own_chapter, own_verse} = parse(source_reference)
+    name = Reference.book_name(book) || book
+
+    own =
+      if {own_chapter, own_verse} == {chapter, v},
+        do: "",
+        else: ", its #{own_chapter}:#{own_verse}"
+
+    %Citation{
+      work: "sp",
+      label: "#{place(name, chapter, v)} (Samaritan Pentateuch#{own})",
+      locator: source_reference,
+      url: source_url,
+      licence: @by_nc
+    }
+    |> translated(false)
+  end
+
+  @doc """
+  A verse of the SBL Greek New Testament: its line in the Faithlife/SBLGNT
+  text file (`file` 'John', `line`) at the pinned commit. Greek only: any
+  English is the assistant's.
+  """
+  @spec sblgnt(verse(), String.t(), pos_integer(), String.t()) :: Citation.t()
+  def sblgnt(verse, file, line, source_url) do
+    {book, chapter, v} = parse(verse)
+
+    %Citation{
+      work: "sblgnt",
+      label: "#{place(Reference.book_name(book) || book, chapter, v)} (SBLGNT)",
+      locator: "#{book}.#{chapter}.#{v}",
+      url: "#{github_blob(source_url)}/#{file}.txt#L#{line}"
+    }
+    |> translated(false)
+  end
+
+  @doc """
+  A note of the SBLGNT apparatus: its line in the apparatus XML (`file`
+  'John', `line`) at the pinned commit. Greek readings and sigla: any
+  English is the assistant's.
+  """
+  @spec sblgnt_apparatus(verse(), String.t(), pos_integer(), String.t()) :: Citation.t()
+  def sblgnt_apparatus(verse, file, line, source_url) do
+    {book, chapter, v} = parse(verse)
+    place = place(Reference.book_name(book) || book, chapter, v)
+
+    %Citation{
+      work: "sblgnt_apparatus",
+      label: "SBLGNT apparatus, #{place}",
+      locator: "#{book}.#{chapter}.#{v} line #{line}",
+      url: "#{github_blob(source_url)}/#{file}.xml#L#{line}"
+    }
+    |> translated(false)
+  end
+
+  @doc """
+  An entry of the UBS Hebrew Old Testament Text Project (`id` '00015') at
+  a verse: the report's XML at the pinned commit (GitHub doesn't display a
+  file that size, so the raw file; the entry is `<HOTTP_Entry Id=…>`). Its
+  English is the report's own.
+  """
+  @spec hottp(String.t(), verse(), String.t()) :: Citation.t()
+  def hottp(id, verse, source_url) do
+    {book, chapter, v} = parse(verse)
+
+    %Citation{
+      work: "hottp",
+      label: "HOTTP entry #{id} (#{place(Reference.book_name(book) || book, chapter, v)})",
+      locator: "entry #{id}",
+      url: "#{github_raw(source_url)}/HOTTP.XML"
+    }
+  end
+
+  @doc """
+  The HOTTP report's introduction that explains its ratings (`:ratings`,
+  `HOTTP-RATINGS-EN.HTML`) or its factors (`:factors`,
+  `HOTTP-FACTORS-EN.HTML`), at the pinned commit.
+  """
+  @spec hottp_glossary(:ratings | :factors, String.t()) :: Citation.t()
+  def hottp_glossary(kind, source_url) do
+    {label, file} =
+      case kind do
+        :ratings -> {"HOTTP: the committee's ratings", "HOTTP-RATINGS-EN.HTML"}
+        :factors -> {"HOTTP: factors involved in textual decisions", "HOTTP-FACTORS-EN.HTML"}
+      end
+
+    %Citation{
+      work: "hottp",
+      label: label,
+      locator: file,
+      url: "#{github_blob(source_url)}/#{file}"
+    }
+  end
+
+  defp github_blob(tree_url), do: String.replace(tree_url, "/tree/", "/blob/", global: false)
+
+  defp github_raw(tree_url) do
+    tree_url
+    |> String.replace("https://github.com/", "https://raw.githubusercontent.com/", global: false)
+    |> String.replace("/tree/", "/", global: false)
   end
 
   # ── Scholarship ──────────────────────────────────────────────────────────

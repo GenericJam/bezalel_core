@@ -112,8 +112,17 @@ defmodule Bezalel.Data.PublishTest do
              "scrolls",
              "fathers",
              "dictionaries",
-             "syntax"
+             "syntax",
+             "witnesses"
            ]
+
+    witnesses =
+      Publish.entry("witnesses", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, ["t"])
+
+    assert %{"required" => false} = witnesses
+
+    for licence <- ["CC BY-NC 4.0", "CC BY 4.0", "CC BY-SA 4.0"],
+        do: assert(witnesses["licence"] =~ licence)
 
     assert_raise KeyError, fn ->
       Publish.entry("core", 2, %{size: 1, sha256: @sha}, %{size: 1, sha256: @sha}, [])
@@ -258,6 +267,37 @@ defmodule Bezalel.Data.PublishTest do
 
     assert {:error, "was built by other code than this checkout's"} =
              Publish.check_syntax(Map.delete(meta, "build_sha256"), expected)
+  end
+
+  test "a witnesses pack is refused unless built from the pins, the base core and this code" do
+    meta = %{
+      "sp_sha256" => "p",
+      "sblgnt_sha256" => "g",
+      "hottp_sha256" => "h",
+      "core_sha256" => "c",
+      "build_sha256" => "b"
+    }
+
+    expected = %{
+      sp_sha256: "p",
+      sblgnt_sha256: "g",
+      hottp_sha256: "h",
+      core_sha256: "c",
+      build_sha256: "b"
+    }
+
+    assert Publish.check_witnesses(meta, expected) == :ok
+
+    for {key, pin} <- [sp_sha256: "sp", sblgnt_sha256: "sblgnt", hottp_sha256: "hottp"] do
+      assert {:error, "wasn't built from pins.json's " <> ^pin} =
+               Publish.check_witnesses(meta, Map.put(expected, key, "x"))
+    end
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_witnesses(meta, %{expected | core_sha256: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_witnesses(meta, %{expected | build_sha256: "x"})
   end
 
   describe "manifest/4" do

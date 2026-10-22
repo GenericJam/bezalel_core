@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.Bezalel.Data.Fixtures do
-  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,fathers,dictionaries,syntax}.sqlite"
+  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,fathers,dictionaries,syntax,witnesses}.sqlite"
 
   @moduledoc """
   Cuts the fixtures core's tests read from the packs built here.
 
-      mix bezalel.data.fixtures [--pack translations|scrolls|fathers|dictionaries|syntax]
+      mix bezalel.data.fixtures [--pack translations|scrolls|fathers|dictionaries|syntax|witnesses]
                                 [--from DIR] [--core ../test/fixtures/packs/core.sqlite]
                                 [--out DIR]
 
@@ -30,11 +30,22 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
     * `syntax.sqlite`: both editions and the verses of `@syntax_verses` (a
       verse of each edition, two Psalm superscriptions, a sentence running
       past its verse). Run `mix bezalel.data.syntax` first.
+    * `witnesses.sqlite`: the rows of the verses the tests cite
+      (`Bezalel.Data.WitnessesPack.cut/3`). Run `mix bezalel.data.witnesses`
+      first.
   """
 
   use Mix.Task
 
-  alias Bezalel.Data.{DictionariesPack, FathersPack, Pack, Report, ScrollsPack, SyntaxPack}
+  alias Bezalel.Data.{
+    DictionariesPack,
+    FathersPack,
+    Pack,
+    Report,
+    ScrollsPack,
+    SyntaxPack,
+    WitnessesPack
+  }
 
   @switches [pack: :string, from: :string, core: :string, out: :string]
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
@@ -98,6 +109,7 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
         fathers(from, out)
         dictionaries(from, out)
         syntax(from, out)
+        witnesses(from, out)
 
       "translations" ->
         translations(from, out, opts)
@@ -114,10 +126,13 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       "syntax" ->
         syntax(from, out)
 
+      "witnesses" ->
+        witnesses(from, out)
+
       other ->
         Mix.raise(
-          "--pack must be translations, scrolls, fathers, dictionaries or syntax, not " <>
-            inspect(other)
+          "--pack must be translations, scrolls, fathers, dictionaries, syntax or witnesses, " <>
+            "not #{inspect(other)}"
         )
     end
   end
@@ -253,6 +268,13 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
 
     SyntaxPack.write(out, editions, verses, fixture_meta(from))
     Mix.shell().info("#{out}: #{length(verses)} of #{length(@syntax_verses)} verses")
+  end
+
+  defp witnesses(from_dir, out_dir) do
+    from = Path.join(from_dir, "witnesses.sqlite")
+    out = Path.join(out_dir, "witnesses.sqlite")
+    counts = WitnessesPack.cut(from, out, fixture_meta(from))
+    Mix.shell().info("#{out}: " <> Enum.map_join(counts, ", ", fn {t, n} -> "#{n} #{t}" end))
   end
 
   defp rows(rows, columns), do: Enum.map(rows, &(columns |> Enum.zip(&1) |> Map.new()))

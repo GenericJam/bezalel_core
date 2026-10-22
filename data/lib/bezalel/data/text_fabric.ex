@@ -1,7 +1,8 @@
 defmodule Bezalel.Data.TextFabric do
   @moduledoc """
-  Reads Text-Fabric feature files (`.tf`), the format of ETCBC/dss: a
-  header of `@key=value` lines, a blank line, then one data line per node.
+  Reads Text-Fabric feature files (`.tf`), the format of ETCBC/dss and of
+  DT-UCPH/sp (the Samaritan Pentateuch): a header of `@key=value` lines, a
+  blank line, then one data line per node.
   A data line is `value` (the node after the previous one) or
   `spec<TAB>value`, where `spec` is a node, a range `3-5` or a list
   `1,4-6`; nodes only increase. `otype.tf` maps node ranges to types and
@@ -10,14 +11,19 @@ defmodule Bezalel.Data.TextFabric do
   A port of studybible-mcp's `_tf_data`, `_tf_ranges`, `_tf_feature` and
   `_tf_types` (`corpora/qumran.py`, MIT), which read the same files for the
   ancient pack's Qumran works. Every file must carry the CC BY-NC 4.0
-  declaration the release is published under.
+  declaration both releases are published under (ETCBC spells the key
+  `@license`, DT-UCPH `@licence`).
   """
 
   @licence "@license=Creative Commons Attribution-NonCommercial 4.0 International License"
+  @licences [
+    @licence,
+    "@licence=Creative Commons Attribution-NonCommercial 4.0 International License"
+  ]
 
   @type ranges :: [{pos_integer(), pos_integer()}]
 
-  @doc "The licence line every feature file must have in its header."
+  @doc "ETCBC's licence line; a feature file's header must have it or DT-UCPH's `@licence=` spelling."
   @spec licence() :: String.t()
   def licence, do: @licence
 
@@ -35,7 +41,7 @@ defmodule Bezalel.Data.TextFabric do
       end
     end)
 
-    unless @licence in header do
+    unless Enum.any?(@licences, &(&1 in header)) do
       raise ArgumentError, "#{name}: no CC BY-NC 4.0 declaration in the header"
     end
 
@@ -128,9 +134,13 @@ defmodule Bezalel.Data.TextFabric do
     {stop, values}
   end
 
-  @doc "The node range of each node type, from `otype.tf`."
-  @spec types(binary()) :: %{String.t() => {pos_integer(), pos_integer()}}
-  def types(bytes) do
+  @doc """
+  The node range of each node type, from `otype.tf`; raises unless every
+  type in `required` is there (ETCBC/dss: signs and lines; the Samaritan
+  Pentateuch has no lines).
+  """
+  @spec types(binary(), [String.t()]) :: %{String.t() => {pos_integer(), pos_integer()}}
+  def types(bytes, required \\ ["sign", "line"]) do
     types =
       for line <- data_lines("otype.tf", bytes), line != "", into: %{} do
         case :binary.split(line, "\t") do
@@ -143,7 +153,7 @@ defmodule Bezalel.Data.TextFabric do
         end
       end
 
-    for name <- ["sign", "line"], not Map.has_key?(types, name) do
+    for name <- required, not Map.has_key?(types, name) do
       raise ArgumentError, "otype.tf: no #{inspect(name)} nodes"
     end
 

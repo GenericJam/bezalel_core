@@ -14,7 +14,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Tools` | `all/0`, every study tool module; `materials/0`, the tools that make materials (`draw_image`); `withheld/1`, the tool names to withhold under a user's preferences |
 | `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by the image model the user chose ("Pictures by": OpenAI's gpt-image or a Gemini image model, `models/0`) on that provider's API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
 | `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. Every `run/2` hands rho the data with its `citations` as the result's details (`{:ok, {:details, markdown, data}}`, [Sources](#sources)): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card for `lookup_verse` and `word_study`. The Mermaid diagrams of the graph tools stay in the Markdown only |
-| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`, `fathers`, `dictionaries`, `syntax`) |
+| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`, `fathers`, `dictionaries`, `syntax`, `witnesses`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation, image model, pushback model; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
 | `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB, JPS 1917, ULT, UST) with their labels, links and acknowledgements, and the BSB for a book the chosen one lacks |
@@ -180,6 +180,27 @@ their verse, its other clauses counted). The whole section is at most 4,000 Unic
 verses after the cut are neither shown nor cited. Each verse cites its MACULA tree file
 at the pinned commit (`Citations.macula/4`). Without the pack, or with one that
 can't be read, `lookup_verse` answers exactly as before.
+
+### Textual witnesses (witnesses pack)
+
+Built by `data/`'s `mix bezalel.data.witnesses` (`data/README.md`; why:
+[decisions/2026-10-22-witnesses-pack.md](../decisions/2026-10-22-witnesses-pack.md)),
+read through `Bezalel.Study.Witnesses`, optional everywhere:
+
+- `compare_biblical_versions`: `SP`, the Samaritan Pentateuch's consonantal text, beside the
+  MT, LXX and DSS for Genesis–Deuteronomy (default on, source `manuscripts:sp`; a note when
+  the pack is missing, an error only for SP alone or outside the Torah). A New Testament
+  reference, refused before, now compares `TAGNT` (the core pack's Greek: STEPBible's
+  amalgamated text, every word of the major editions) with `SBLGNT`, grouped by the core
+  pack's verse numbering, which the SBLGNT shares; without the pack, TAGNT and a note.
+- `get_textual_variant`: after the notes pack's cases, HOTTP's entries (OT: the forms the
+  committee compared with the base translations, then its rating and factors as its
+  judgment, the factors explained from the report's introduction) and the SBLGNT
+  apparatus's units (NT: the SBLGNT reading and each variant with the editions that print
+  it, sigla explained). A verse with no notes-pack case now returns these. Silent without
+  the pack (the notes pack is still required).
+- `lookup_verse`: a hint naming the verses with HOTTP entries or apparatus units (silent
+  without the pack).
 
 ### Full-text search on the phone
 
@@ -667,4 +688,5 @@ phone app, `mix run --no-start scripts/study_tools_smoke.exs` runs every tool in
 `Tools.all/0` against the real packs and fails if one errors or is left out.
 `dictionaries.sqlite` (also cut by `data/`) keeps the UBS entries of H0430, H7307,
 H2452 (the Aramaic code A2452), G0026 and G0025 (`dictionaries_test.exs`, which also
-runs `word_study` without the pack and with a damaged one).
+runs `word_study` without the pack and with a damaged one). `witnesses.sqlite` (also cut
+by `data/`) keeps the verses `Bezalel.Data.WitnessesPack.cut/3` lists.

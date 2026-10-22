@@ -6,10 +6,12 @@ other than the BSB (which stays in the core pack's `bsb_verses`): the NET
 Bible, the JPS 1917 and the Literal and Simplified Texts adapted from
 unfoldingWord's ULT and UST; the **`scrolls` pack**, the Dead Sea Scrolls' major
 non-biblical works and the biblical manuscripts' readings, from ETCBC/dss;
-and the **`fathers` pack**, the Apostolic Fathers' Greek with CAFE's
-machine-translated English.
-The **`syntax` pack** is each verse's clause structure, from Clear-Bible
-MACULA's syntax trees.
+the **`fathers` pack**, the Apostolic Fathers' Greek with CAFE's
+machine-translated English; the **`dictionaries` pack**, the UBS dictionaries
+of Biblical Hebrew and the Greek New Testament; the **`syntax` pack**, each
+verse's clause structure, from Clear-Bible MACULA's syntax trees; and the
+**`witnesses` pack**, the Samaritan Pentateuch, the SBL Greek New Testament
+with its apparatus and the UBS Hebrew Old Testament Text Project.
 
 Bezalel's study tools are an Elixir port of
 [studybible-mcp](https://github.com/djayatillake/studybible-mcp) by
@@ -44,18 +46,21 @@ mix bezalel.data.scrolls       # → out/scrolls.sqlite, out/scrolls_report.txt
 mix bezalel.data.fathers       # → out/fathers.sqlite, out/fathers_report.txt
 mix bezalel.data.dictionaries  # → out/dictionaries.sqlite, out/dictionaries_report.txt
 mix bezalel.data.syntax        # → out/syntax.sqlite, out/syntax_report.txt
-mix bezalel.data.fixtures      # → ../test/fixtures/packs/{translations,scrolls,fathers,dictionaries,syntax}.sqlite
+mix bezalel.data.witnesses     # → out/witnesses.sqlite, out/witnesses_report.txt
+mix bezalel.data.fixtures      # → ../test/fixtures/packs/{translations,scrolls,fathers,dictionaries,syntax,witnesses}.sqlite
 mix bezalel.data.abbott_smith  # → ../priv/study/abbott_smith_pages.json
 ```
 
 Needs the network for the first run (NET: 66 requests, about 30 seconds;
 JPS: one 1 MB zip; ULT and UST: 122 files, about 170 MB; scrolls: 19
 ETCBC/dss files, 48 MB; syntax: 956 MACULA files, 533 MB, one request at a
-time; and the base core pack, 26 MB, for all three, unless `--core PATH`
-names a copy); later runs reuse the verified downloads in `work/`. Writes
-only `work/` and `out/` (both gitignored), and the fixtures with
+time; witnesses: the pinned Samaritan Pentateuch, SBLGNT and HOTTP files;
+and the base core pack, 26 MB, for every pack numbered by it, unless `--core
+PATH` names a copy); later runs reuse the verified downloads in `work/`.
+Writes only `work/` and `out/` (both gitignored), and the fixtures with
 `bezalel.data.fixtures` (`--pack translations`, `--pack scrolls`, `--pack
-fathers`, `--pack dictionaries` or `--pack syntax` for one).
+fathers`, `--pack dictionaries`, `--pack syntax` or `--pack witnesses` for
+one).
 
 `mix bezalel.data.translations` compares each translation's verse set with
 the BSB references (`bsb_verses.reference`) of the base core pack
@@ -484,12 +489,46 @@ the 15 verses modern critical texts omit (all but Romans 16:24), Acts 24:7,
 and Romans 16:25–27 (MACULA Greek's SBLGNT trees end Romans with a 16:24 and
 have no doxology). 44.2 MB raw, 3.96 MB with `zstd -19`.
 
+## The `witnesses` pack
+
+`witnesses.sqlite` (`mix bezalel.data.witnesses [--core PATH]`; `Bezalel.Data.Witnesses`,
+`Bezalel.Data.WitnessesPack`), built like the others. Four sources, each in tables of its
+own with its own licence (`witness_sources` names each one's tables, licence, attribution
+and pinned source; `pack_meta.licences` lists them). Pins: [pins.json](pins.json) → `sp`,
+`sblgnt`, `hottp`. Why: [../decisions/2026-10-22-witnesses-pack.md](../decisions/2026-10-22-witnesses-pack.md).
+
+| Table | Columns | Licence |
+|---|---|---|
+| `sp_verses` | `reference` (English STEP), `book`, `chapter`, `verse`, `source_reference` (the dataset's own number, PK), `mt_verse`, `text` (`g_cons_utf8` + `trailer` per word), `words`, `note` (verse division) | DT-UCPH/sp: CC BY-NC 4.0 |
+| `sblgnt_verses` | `reference`, `book`, `chapter`, `verse` (the SBLGNT's numbering = the core pack's `verses` numbering), `text` (as the file gives it, ⸀ ⸂ ⸃ kept), `file`, `line` | SBLGNT: CC BY 4.0 |
+| `sblgnt_apparatus` | `reference`, `book`, `chapter`, `verse`, `unit`, `verses` (a span, '43–44'), `note` (raw), `parsed`, `lemma`, `lemma_sigla`, `variants` (JSON `[{text, sigla}]`), `file`, `line` | SBLGNT: CC BY 4.0 |
+| `hottp_entries`, `hottp_alternatives`, `hottp_verses`, `hottp_ratings`, `hottp_factors` | entry `id`, `remark`, `suggestion`; each alternative's `hebrew`, `rating` (as given) and `grade` (A–D), `factors`, `literal`, `renderings` (base translations); entry × verse (`reference` English, `source_reference` Hebrew, `segments`); the rating and factor glossaries | UBS HOTTP: CC BY-SA 4.0 |
+
+- **Samaritan Pentateuch**: DT-UCPH/sp Text-Fabric 7.2.4 (tag v7.2.4, commit `6da31aa`), 7
+  feature files; `Bezalel.Data.TextFabric` reads it (DT-UCPH spells `@licence=`, there is no
+  `line` type, slots are signs). Hebrew numbering mapped with the base core pack's
+  `verses.reference`. The dataset groups the additions after Gen 30:36 under verse 36 (its
+  README), places the incense altar (MT Exod 30:1–10) in 26:35, and has no Deut 34:2–3; those
+  rows say so, and the report lists the 12 core Torah verses it lacks.
+- **SBLGNT** (Faithlife/SBLGNT `c4d241a`, v1.2 with John 7:53–8:11): 7,939 verses, every one a
+  core verse; the core pack's 19 extra NT verses (Matt 17:21…) are reported.
+- **Apparatus**: 6,934 notes; each parsed by the grammar of the SBLGNT introduction (the
+  verse number or `•`, the SBLGNT reading and its sigla, `]`, variants separated by `;`
+  after a siglum); 1 note that doesn't fit (John 7:52's pericope note) is kept raw,
+  unparsed.
+- **HOTTP** (ubsicap/ubs-open-license `a15a96c`): 4,515 entries, 10,310 alternatives, 4,577
+  entry-verse rows of 3,848 verses (475 renumbered to English). English only: the French
+  remark, suggestion and literal (16,381 fields) are dropped. `<span class="hebrew">`,
+  `\heb`, `\grk` markup removed; any other tag or backslash marker stops the build.
+
+Size (build of 2026-10-22): 8,421,376 bytes, 2,007,416 with `zstd -19`.
+
 ## Publish
 
 The apps read one URL, **https://bezalel.genericjam.com/packs/manifest.json**
 (schema 1, parsed by the phone app's `Bezalel.Packs.Manifest`), served from
 the Cloudflare R2 bucket `bezalel-packs`. `mix bezalel.data.publish` publishes
-the packs built here (`translations`, `scrolls`, `fathers`, `dictionaries`, `syntax`) as the next data version
+the packs built here (`translations`, `scrolls`, `fathers`, `dictionaries`, `syntax`, `witnesses`) as the next data version
 **without uploading the base again**: the five base entries keep their v1 URLs and checksums exactly as
 `base.json` pins them, so an app that has them sees the same `raw_sha256`,
 records the new version and downloads nothing.
@@ -501,6 +540,7 @@ mix bezalel.data.scrolls                # if out/scrolls.sqlite isn't built
 mix bezalel.data.fathers                # if out/fathers.sqlite isn't built
 mix bezalel.data.dictionaries           # if out/dictionaries.sqlite isn't built
 mix bezalel.data.syntax                 # if out/syntax.sqlite isn't built
+mix bezalel.data.witnesses              # if out/witnesses.sqlite isn't built
 mix bezalel.data.publish --dry-run      # what would be uploaded; writes out/manifest.json
 mix bezalel.data.publish
 ```
@@ -518,12 +558,14 @@ What it does, in order:
    entries' descriptions, licences, `required` and tables are copied from
    the published manifest.
 2. Checks `out/translations.sqlite`, `out/scrolls.sqlite`,
-   `out/fathers.sqlite`, `out/dictionaries.sqlite` and `out/syntax.sqlite`
-   were built from `pins.json`'s NET responses, JPS zip, ULT and UST files,
-   ETCBC/dss files, Apostolic Fathers files, UBS files and MACULA files (the
-   translations, scrolls, dictionaries and syntax packs also with
-   `base.json`'s core pack; the scrolls, fathers, dictionaries and syntax
-   packs by this checkout's code, their `build_sha256`), compresses each
+   `out/fathers.sqlite`, `out/dictionaries.sqlite`, `out/syntax.sqlite` and
+   `out/witnesses.sqlite` were built from `pins.json`'s NET responses, JPS
+   zip, ULT and UST files, ETCBC/dss files, Apostolic Fathers files, UBS
+   dictionary files, MACULA files and Samaritan Pentateuch, SBLGNT and HOTTP
+   files (the translations, scrolls, dictionaries, syntax and witnesses packs
+   also with `base.json`'s core pack; the scrolls, fathers, dictionaries,
+   syntax and witnesses packs by this checkout's code, their
+   `build_sha256`), compresses each
    with `zstd -19` (as the phone app's `make_packs.py` compresses the base)
    and uploads it to `packs/v<N>/<pack>.sqlite.zst` with
    `Cache-Control: public, max-age=31536000, immutable`. An object already
@@ -539,7 +581,7 @@ Uploads use `npx -y wrangler@4 r2 object put bezalel-packs/<key> --file …
 --remote`. The manifest keeps the published fields (`schema`,
 `data_version`, `built`, `bezalel_commit` — the bezalel_mob commit that built
 the base —, `studybible_mcp`, `sources`, `packs`) and adds `bezalel_core`
-(`repo`, `commit`). Its `translations`, `scrolls`, `fathers`, `dictionaries` and `syntax` entries are
+(`repo`, `commit`). Its `translations`, `scrolls`, `fathers`, `dictionaries`, `syntax` and `witnesses` entries are
 `required: false`. Apps
 that don't know a pack ignore its entry.
 
@@ -565,11 +607,13 @@ that don't know a pack ignore its entry.
 | `lib/bezalel/data/syntax.ex` | MACULA's lowfat syntax trees → the syntax pack's rows |
 | `lib/bezalel/data/syntax_pack.ex` | The syntax pack's schema and writer |
 | `macula_files.json` | The MACULA files read, by sha256 |
+| `lib/bezalel/data/witnesses.ex`, `witnesses_pack.ex` | The witnesses pack's rows; its schema, writer and fixture cut |
+| `lib/bezalel/data/xml.ex` | Reads XML (OTP's SAX parser) into a plain tree |
 | `lib/bezalel/data/report.ex` | The import reports and the verse-set comparison |
 | `lib/bezalel/data/books.ex` | The 66 books: STEP code, name, chapters |
 | `lib/bezalel/data/download.ex` | Cached, checked downloads |
 | `lib/bezalel/data/publish.ex` | Assembles the manifest (pure) |
-| `lib/mix/tasks/` | `bezalel.data.translations`, `bezalel.data.scrolls`, `bezalel.data.fathers`, `bezalel.data.dictionaries`, `bezalel.data.syntax`, `bezalel.data.fixtures`, `bezalel.data.publish` |
+| `lib/mix/tasks/` | `bezalel.data.translations`, `bezalel.data.scrolls`, `bezalel.data.fathers`, `bezalel.data.dictionaries`, `bezalel.data.syntax`, `bezalel.data.witnesses`, `bezalel.data.fixtures`, `bezalel.data.publish` |
 
 ## Checks
 
