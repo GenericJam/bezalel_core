@@ -1,7 +1,7 @@
 defmodule Bezalel.Study.Tools.LookupVerse do
   @moduledoc """
   `lookup_verse`: a verse, range or chapter in English (the user's
-  translation: the NET or the BSB) and in Hebrew or Greek, word by word with
+  translation, `Bezalel.Study.Translations`) and in Hebrew or Greek, word by word with
   Strong's numbers (STEPBible's).
 
   Ported from studybible-mcp's `handle_lookup_verse` (MIT). Same text,
@@ -52,8 +52,9 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     Look up the text of a Bible verse, verse range, or whole chapter, in English and in the original language.
 
     Returns, for each verse in canonical order:
-    - The English text in the user's chosen translation (NET or BSB), labelled with
-      its abbreviation, or STEPBible's word gloss marked [gloss] where it lacks the verse
+    - The English text in the user's chosen translation, labelled with the abbreviation
+      the tool gives; the BSB, labelled (BSB) with a note, for a book that translation
+      doesn't include; or STEPBible's word gloss marked [gloss] where it lacks the verse
     - The original Greek/Hebrew text (optional, on by default)
     - A word-by-word breakdown with Strong's numbers and glosses (single verses;
       for a passage only when include_morphology is set)
@@ -200,11 +201,14 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   defp passage(reference, parsed, prefs, translation, note) do
     with {:ok, found} <- DB.with_pack(:core, &fetch(&1, reference, parsed, translation)),
          {:ok, found} <- found do
+      {quoted, note, verses} = Translations.settle(translation, note, found.verses)
+
       {:ok,
        found
        |> add_notes_hints()
        |> Map.merge(%{
-         translation: Translations.ref(translation),
+         verses: verses,
+         translation: quoted,
          translation_note: note,
          genre_guidance: Sources.enabled?(prefs, "method:genre_guidance")
        })
@@ -489,7 +493,9 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   # STEPBible's gloss, standing in for the English) is shown.
   defp verse_citations(view, result) do
     english =
-      if view.translated, do: [Citations.scripture(view.reference, result.translation)], else: []
+      if view.translated,
+        do: [Citations.scripture(view.reference, Format.quoted(view, result.translation))],
+        else: []
 
     original =
       if result.include_original or not view.translated,

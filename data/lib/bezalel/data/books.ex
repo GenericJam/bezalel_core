@@ -93,4 +93,18 @@ defmodule Bezalel.Data.Books do
   """
   @spec index(String.t()) :: non_neg_integer()
   def index(code), do: Map.fetch!(@order, code)
+
+  @usfm Map.new(@books, fn {code, _name, _chapters} -> {String.upcase(code), code} end)
+
+  @doc """
+  The STEP code of a USFM book code (the codes are the same in capitals),
+  or nil for a book outside the 66.
+
+      iex> Bezalel.Data.Books.from_usfm("EZK")
+      "Ezk"
+      iex> Bezalel.Data.Books.from_usfm("FRT")
+      nil
+  """
+  @spec from_usfm(String.t()) :: String.t() | nil
+  def from_usfm(usfm), do: Map.get(@usfm, usfm)
 end

@@ -26,10 +26,15 @@ defmodule Bezalel.Data.Publish do
 
   @built_here %{
     "translations" => %{
-      "description" => "NET Bible English text",
+      "description" =>
+        "English Bible translations: the NET Bible, the JPS 1917 (Old Testament), and the " <>
+          "Literal and Simplified Texts adapted from unfoldingWord's ULT and UST",
       "licence" =>
         "NET Bible® copyright ©1996, 2019 Biblical Studies Press, L.L.C.: " <>
-          "free non-commercial use by permission (netbible.com/copyright)"
+          "free non-commercial use by permission (netbible.com/copyright); JPS 1917: public " <>
+          "domain; Literal and Simplified Texts (ULT, UST adapted): CC BY-SA 4.0 " <>
+          "(https://creativecommons.org/licenses/by-sa/4.0/), the original work by " <>
+          "unfoldingWord is available from unfoldingword.org/ult and unfoldingword.org/ust"
     },
     "scrolls" => %{
       "description" =>
@@ -103,6 +108,30 @@ defmodule Bezalel.Data.Publish do
 
       meta["build_sha256"] != expected.build_sha256 ->
         {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc """
+  `:ok` if a translations pack's `meta` (its pack_meta) says it was built
+  from `expected`'s sources (string keys, as pack_meta has them):
+  `net_sha256`, `jps_sha256`, `ult_sha256`, `ust_sha256` (the pinned
+  downloads' digests) and `core_sha256` (base.json's core pack, which
+  numbers the JPS); else `{:error, reason}` naming what differs.
+  """
+  @spec check_translations(map(), map()) :: :ok | {:error, String.t()}
+  def check_translations(meta, expected) do
+    sources =
+      for key <- ~w(net jps ult ust), meta["#{key}_sha256"] != expected["#{key}_sha256"], do: key
+
+    cond do
+      sources != [] ->
+        {:error, "wasn't built from pins.json's #{Enum.join(sources, ", ")}"}
+
+      meta["core_sha256"] != expected["core_sha256"] ->
+        {:error, "wasn't numbered with base.json's core pack"}
 
       true ->
         :ok

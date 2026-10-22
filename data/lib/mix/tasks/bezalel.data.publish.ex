@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   use Mix.Task
 
-  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls}
+  alias Bezalel.Data.{Books, Door43, Download, Net, Pack, Publish, Scrolls}
 
   @bucket "bezalel-packs"
   @manifest_key "packs/manifest.json"
@@ -157,14 +157,23 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
   # The pack must have been built from the pinned sources.
   defp check_source!("translations", meta) do
     books = Download.pin!("net")["books"]
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
 
-    digest =
-      Net.digest(Enum.map(Books.all(), fn {code, _, _} -> {code, books[code]} end))
+    expected = %{
+      "net_sha256" =>
+        Net.digest(Enum.map(Books.all(), fn {code, _, _} -> {code, books[code]} end)),
+      "jps_sha256" => Download.pin!("jps")["sha256"],
+      "ult_sha256" => Door43.digest(Download.pin!("ult")["files"]),
+      "ust_sha256" => Door43.digest(Download.pin!("ust")["files"]),
+      "core_sha256" => core
+    }
 
-    if meta["net_sha256"] != digest do
-      Mix.raise(
-        "out/translations.sqlite wasn't built from pins.json's NET; run mix bezalel.data.net"
-      )
+    case Publish.check_translations(meta, expected) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("out/translations.sqlite #{reason}; run mix bezalel.data.translations")
     end
   end
 

@@ -93,14 +93,33 @@ defmodule Bezalel.Study.Format do
   @doc """
   The " (BSB)" style label for the heading of a response showing any of
   `translation`'s text (verse views), else "". The NET's is linked
-  (" ([NET](http://netbible.org))"), as its terms ask.
+  (" ([NET](http://netbible.org))"), as its terms ask. A verse the BSB
+  stands in for (`fallback`) carries its own label (`fallback_label/1`).
   """
   @spec translation_label([verse_view()], Translations.t() | Translations.ref()) :: String.t()
   def translation_label(views, translation) do
-    if Enum.any?(views, & &1.translated),
+    if Enum.any?(views, &(&1.translated and Map.get(&1, :fallback) != true)),
       do: " (#{Translations.label(translation)})",
       else: ""
   end
+
+  @doc """
+  " (BSB)" after a verse whose English is the BSB standing in for a
+  translation that lacks its book (`fallback`), else "".
+  """
+  @spec fallback_label(verse_view()) :: String.t()
+  def fallback_label(%{fallback: true}), do: " (BSB)"
+  def fallback_label(_view), do: ""
+
+  @doc """
+  The translation a verse view's English is quoted in, for its citation
+  (`Bezalel.Study.Citations.scripture/2`): `translation`, the BSB for a
+  `fallback` verse, nil for STEPBible's gloss.
+  """
+  @spec quoted(verse_view(), Translations.ref()) :: Translations.ref() | nil
+  def quoted(%{translated: false}, _translation), do: nil
+  def quoted(%{fallback: true}, _translation), do: Translations.ref(Translations.get("bsb"))
+  def quoted(_view, translation), do: translation
 
   @doc "A translation fallback note as a Markdown line, or \"\" when there is none."
   @spec translation_note(String.t() | nil) :: String.t()
@@ -136,7 +155,9 @@ defmodule Bezalel.Study.Format do
   A verse as the tools return it: `heading` is the reference as shown
   (a superscription labelled), `english` the chosen translation's text (or
   the marked gloss), `translated` whether it is the translation's text
-  (the response's `translation` names which), `words` the word-by-word data.
+  (the response's `translation` names which), `fallback` whether that text
+  is the BSB standing in for a translation that lacks the verse's book
+  (`Bezalel.Study.Verses.attach_english/3`), `words` the word-by-word data.
   """
   @type verse_view :: %{
           reference: String.t(),
@@ -146,6 +167,7 @@ defmodule Bezalel.Study.Format do
           verse: integer(),
           english: String.t(),
           translated: boolean(),
+          fallback: boolean(),
           original: String.t(),
           words: [word()]
         }
@@ -180,6 +202,7 @@ defmodule Bezalel.Study.Format do
       verse: row["verse"],
       english: verse_english(row),
       translated: present?(row["text_translation"]),
+      fallback: row["text_fallback"] == true,
       original: s(row["text_original"]),
       words: words
     }

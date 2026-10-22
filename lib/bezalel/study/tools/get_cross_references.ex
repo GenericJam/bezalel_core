@@ -140,7 +140,8 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
   A theme's chain (`theme` set, `rows` with `reference` and `note`) or a
   verse's cross references (`reference` set, `rows` with `target`
   ('Rom.5.8'), `relevance` (TSK votes) and `tier`). `translation` is the
-  user's, which the verses (shown by reference, without text) link to.
+  user's, which the verses (shown by reference, without text) link to;
+  `bsb_books` the books it doesn't have, whose verses link to the BSB.
   """
   @type t :: %{
           theme: String.t() | nil,
@@ -148,7 +149,8 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
           source: String.t() | nil,
           limit: pos_integer(),
           translation: Translations.ref(),
-          rows: [DB.row()]
+          rows: [DB.row()],
+          bsb_books: [String.t()]
         }
 
   @doc "The cross references (or theme chain) `args` ask for, under the host's current preferences."
@@ -170,14 +172,15 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
       source: source,
       limit: limit,
       translation: Translations.ref(translation),
-      rows: []
+      rows: [],
+      bsb_books: []
     }
 
     cond do
       theme ->
         with :ok <- Sources.check(prefs, "crossrefs:themes"),
              {:ok, rows} <- DB.with_pack(:core, &themed(&1, theme)),
-             do: {:ok, %{base | rows: rows}}
+             do: with_bsb_books({:ok, %{base | rows: rows}})
 
       reference == "" ->
         {:error, "Please provide either 'reference' or 'theme'."}
@@ -197,7 +200,7 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
       {:ok, min_strength} ->
         with {:ok, rows} <-
                DB.with_pack(:core, &verse(&1, reference, source, limit, min_strength)),
-             do: {:ok, %{base | reference: reference, rows: rows}}
+             do: with_bsb_books({:ok, %{base | reference: reference, rows: rows}})
 
       :error ->
         {:error, "min_strength must be an integer."}
@@ -256,7 +259,7 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
       "\n\n" <>
       Enum.map_join(rows, fn row ->
         "- **#{row["reference"]}**: #{row["note"]}\n" <>
-          sub_source(theme_citations(row, result.translation))
+          sub_source(theme_citations(row, result))
       end)
   end
 
@@ -278,7 +281,7 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
         tag = if votes in [nil, 0], do: "", else: "  *(votes: #{votes})*"
 
         "- #{Reference.display(row["target"])}#{tag}\n" <>
-          sub_source([Citations.scripture(row["target"], result.translation)])
+          sub_source([target_citation(row["target"], result)])
       end) <> "\n"
   end
 
@@ -291,30 +294,60 @@ defmodule Bezalel.Study.Tools.GetCrossReferences do
   @spec citations(t()) :: [Citation.t()]
   def citations(%{rows: []}), do: []
 
-  def citations(%{theme: theme, rows: rows, translation: translation}) when is_binary(theme),
-    do: [chains() | Enum.flat_map(rows, &theme_citations(&1, translation))]
+  def citations(%{theme: theme, rows: rows} = result) when is_binary(theme),
+    do: [chains() | Enum.flat_map(rows, &theme_citations(&1, result))]
 
-  def citations(%{rows: [first | _] = rows, translation: translation}) do
+  def citations(%{rows: [first | _] = rows} = result) do
     [
       Citations.tsk(first["source"])
-      | Enum.map(rows, &Citations.scripture(&1["target"], translation))
+      | Enum.map(rows, &target_citation(&1["target"], result))
     ]
   end
 
   defp chains, do: Citations.studybible("Thematic chains")
 
+  # A target verse in the user's translation, or the BSB's page for a book
+  # that translation doesn't have.
+  defp target_citation(target, result),
+    do: Citations.scripture(target, link(result, target |> String.split(".") |> hd()))
+
+  defp link(result, book) do
+    if book in Map.get(result, :bsb_books, []),
+      do: Translations.ref(Translations.get("bsb")),
+      else: result.translation
+  end
+
   # A chain's passage ('Romans 3:21-26') at its first verse, labelled as
   # the chain gives it; none for text that isn't a known book's passage.
-  defp theme_citations(row, translation) do
+  defp theme_citations(row, result) do
     with %{book: book, start_chapter: chapter, start_verse: verse} <-
            Reference.parse_passage(row["reference"]),
          name when is_binary(name) <- Reference.book_name(book) do
-      citation = Citations.scripture({book, chapter, verse || 1}, translation)
+      citation = Citations.scripture({book, chapter, verse || 1}, link(result, book))
       [%{citation | label: row["reference"]}]
     else
       _ -> []
     end
   end
+
+  # The books of the rows' verses the user's translation doesn't have
+  # (`Translations.lacking/2`), whose verses link to the BSB.
+  defp with_bsb_books({:ok, %{rows: rows, translation: %{key: key}} = result}) do
+    books =
+      rows
+      |> Enum.map(fn row ->
+        case row do
+          %{"target" => target} -> target |> String.split(".") |> hd()
+          %{"reference" => reference} -> Map.get(Reference.parse_passage(reference) || %{}, :book)
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    {:ok, %{result | bsb_books: Translations.lacking(Translations.get(key), books)}}
+  end
+
+  defp with_bsb_books(error), do: error
 
   # A list item's Source line, under it.
   defp sub_source([]), do: ""

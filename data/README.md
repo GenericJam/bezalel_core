@@ -2,8 +2,9 @@
 
 A separate Mix project (`:bezalel_data`) inside bezalel_core that builds
 study data the tools read: the **`translations` pack**, English verse texts
-other than the BSB (which stays in the core pack's `bsb_verses`), today the
-NET Bible; and the **`scrolls` pack**, the Dead Sea Scrolls' major
+other than the BSB (which stays in the core pack's `bsb_verses`): the NET
+Bible, the JPS 1917 and the Literal and Simplified Texts adapted from
+unfoldingWord's ULT and UST; and the **`scrolls` pack**, the Dead Sea Scrolls' major
 non-biblical works and the biblical manuscripts' readings, from ETCBC/dss.
 
 Bezalel's study tools are an Elixir port of
@@ -34,27 +35,30 @@ another CPU). `base.json` records the details.
 ```sh
 cd data
 mix deps.get
-mix bezalel.data.net        # → out/translations.sqlite, out/net_report.txt
+mix bezalel.data.translations  # → out/translations.sqlite, out/{net,translations}_report.txt
 mix bezalel.data.scrolls    # → out/scrolls.sqlite, out/scrolls_report.txt
 mix bezalel.data.fixtures   # → ../test/fixtures/packs/{translations,scrolls}.sqlite
 mix bezalel.data.abbott_smith  # → ../priv/study/abbott_smith_pages.json
 ```
 
 Needs the network for the first run (NET: 66 requests, about 30 seconds;
-scrolls: 19 ETCBC/dss files, 48 MB, and the base core pack, 26 MB, unless
+JPS: one 1 MB zip; ULT and UST: 122 files, about 170 MB; scrolls: 19
+ETCBC/dss files, 48 MB; and the base core pack, 26 MB, for both, unless
 `--core PATH` names a copy); later runs reuse the verified downloads in
 `work/`. Writes only `work/` and `out/` (both gitignored), and the fixtures
 with `bezalel.data.fixtures` (`--pack translations` or `--pack scrolls` for
 one).
 
-`mix bezalel.data.net --core PATH` compares NET's verse set with the BSB
-references (`bsb_verses.reference`) of a core pack; without `--core` it uses
-the phone app's `../../bezalel/data/out/core.sqlite` when that is there.
+`mix bezalel.data.translations` compares each translation's verse set with
+the BSB references (`bsb_verses.reference`) of the base core pack
+(`out/net_report.txt`, and `out/translations_report.txt` per book the
+translation has); `--core PATH` names a copy of it (checked against
+`base.json`), e.g. `~/code/bezalel_ca/var/packs/core.sqlite`.
 
 `mix bezalel.data.fixtures` cuts the fixture core's tests read: the
 `translations` rows and the verses for exactly the references in
 `test/fixtures/packs/core.sqlite`'s `bsb_verses`, with the same `pack_meta`
-plus a `fixture` row. Run it after `bezalel.data.net`.
+plus a `fixture` row. Run it after `bezalel.data.translations`.
 
 `mix bezalel.data.abbott_smith` writes core's `priv/study/abbott_smith_pages.json`
 (committed; not a pack): the printed page each Abbott-Smith entry starts on, by
@@ -71,9 +75,9 @@ checked, like the packs `make_packs.py` writes:
 
 | Table | Columns | Licence |
 |---|---|---|
-| `translations` | `key` (PK, `net`), `name`, `abbreviation`, `url`, `copyright` (the acknowledgement to show), `licence`, `source_url`, `source_sha256` (digest of the source responses) | as the translation |
-| `translation_verses` | `translation`, `reference` (STEP form: `Gen.1.1`; a Psalm superscription is verse 0, `Psa.3.0`), `book`, `chapter`, `verse`, `text`; PK `(translation, reference)` | NET Bible: free non-commercial use by permission |
-| `pack_meta` | `key`, `value`: `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `net_source`, `net_sha256` | — |
+| `translations` | `key` (PK: `net`, `jps1917`, `ult`, `ust`), `name`, `abbreviation`, `url`, `copyright` (the acknowledgement or attribution to show), `licence`, `source_url`, `source_sha256` (digest of the source files) | as the translation |
+| `translation_verses` | `translation`, `reference` (STEP form: `Gen.1.1`; a Psalm superscription is verse 0, `Psa.3.0`), `book`, `chapter`, `verse`, `text`; PK `(translation, reference)` | each translation's own: NET Bible free non-commercial use by permission; JPS 1917 public domain; ULT, UST CC BY-SA 4.0 |
+| `pack_meta` | `key`, `value`: `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `net_source`, `net_sha256`, `jps_source`, `jps_sha256`, `ult_source`, `ult_sha256`, `ust_source`, `ust_sha256` (each the digest of the pinned files), `versification`, `core_sha256` | — |
 
 ### NET Bible
 
@@ -141,6 +145,89 @@ BSB omits the same 15 and Acts 24:7. So against the real core pack's 31,202
 the NET numbers the end of 2 Corinthians 13 differently (its 13:12 is the
 BSB's 13:12–13, and its 13:13, "The grace of the Lord Jesus Christ…", is
 the BSB's 13:14).
+
+### JPS 1917
+
+*The Holy Scriptures according to the Masoretic Text: A New Translation*
+(Jewish Publication Society of America, 1917): public domain, the Old
+Testament only. Key `jps1917`, labelled "(JPS)".
+
+**Source.** eBible.org's USFM, `engjps_usfm.zip` (its `copr.htm`: "Public
+Domain"; the build checks), pinned by sha256 in [pins.json](pins.json) →
+`jps`: the URL isn't versioned, so a new upload stops the build.
+
+**What the import does** (`Bezalel.Data.Usfm`, `Bezalel.Data.Jps`):
+
+- eBible numbers the verses in the English way and writes the Hebrew
+  numbers inline where they differ (`\v 1 (3-1) A Psalm of David… (3-2)
+  LORD, how many…`). The numbers are removed (2,056); a Psalm title, the
+  Hebrew verses that the base core pack's `verses.reference` numbers as
+  English verse 0 (`Psa.3.0(3.1)`), becomes verse 0 (62 Psalms); every other
+  verse keeps eBible's English number, also where the core places the Hebrew
+  number in another verse (the Decalogue's Hebrew accentuation, Exodus
+  20:14–26 and Deuteronomy 5:18–33, and Psalm 13:6: listed in the report);
+- the USFM has only `\c`, `\v`, `\p` and the header lines; any other
+  marker stops the build;
+- kept as eBible gives it (no markup to drop it by, rule 3): a book's first
+  words in capitals ("IN THE beginning") and the Psalter's book headings at
+  the start of Psalms 1, 42, 73, 90 and 107 ("BOOK I HAPPY IS the man…",
+  "BOOK II For the Leader…").
+
+**Coverage** (build of 2026-10-22; `out/translations_report.txt`): 23,207
+rows in the 39 books, every one a BSB reference. Of the BSB's 23,261 Old
+Testament references, 54 Psalm superscriptions have no row of their own:
+where the superscription and the first verse are one Hebrew verse, eBible
+prints them as verse 1 with no number between them (Psalm 23:1 "A Psalm of
+David. The LORD is my shepherd…"), and they stay there. The study tools quote
+the BSB, with a note, for the New Testament.
+
+### Literal and Simplified Texts (ULT, UST, adapted)
+
+unfoldingWord's literal (ULT) and simplified (UST) English translations,
+CC BY-SA 4.0. Keys `ult`, `ust`, labelled "(ULT)", "(UST)".
+
+**Source.** The Door43 repositories
+[unfoldingWord/en_ult](https://git.door43.org/unfoldingWord/en_ult) and
+[en_ust](https://git.door43.org/unfoldingWord/en_ust) at tag `v91` (commits
+`35d21595`, `85f274a7`): every book file, `LICENSE.md` and `manifest.yaml`,
+each pinned by sha256 in [pins.json](pins.json) → `ult`, `ust`. The build
+checks LICENSE.md still states the terms below.
+
+**Licence terms followed.** Removing the word alignment makes the pack's
+text a derivative work, which LICENSE.md says must drop the unfoldingWord®
+trademark, say what changed, credit "The original work by unfoldingWord is
+available from unfoldingword.org/ult" (`/ust`) and stay CC BY-SA. So the
+names shown are "Literal Text (ULT, adapted)" and "Simplified Text (UST,
+adapted)", and `translations.copyright` (core's
+`Bezalel.Study.Translations`, which the importer reads) carries the
+original's copyright, that attribution, the changes and the licence. The
+CC BY-SA text has its own rows (`translation`), apart from the NET's
+non-commercial ones.
+
+**What the import does** (`Bezalel.Data.Usfm`, `Bezalel.Data.Door43`):
+
+- keeps the words (`\w word|attributes\w*`) and drops the alignment and
+  section milestones (`\zaln-s |…\*`, `\zaln-e\*`, `\ts\*`); keeps the
+  ULT's braces for implied words ("{There are} many");
+- a Psalm title (`\d`, before or at the start of verse 1) becomes verse 0;
+- drops footnotes (`\f … \f*`; ULT 296, UST 19), as the NET import drops its
+  notes, the header lines, and headings by their markers: section headings
+  and references (`\s1`, `\sr`, `\r`), the Psalter's book headings (`\ms1`),
+  the acrostics' letters (`\qa`) and speaker labels (`\sp`);
+- a verse bridge (`\v 4-5`, 70 in the UST) is kept whole on its first
+  verse; the later verse has no row (the report lists them);
+- any other marker, text outside a verse or a title outside a Psalm's first
+  verse stops the build.
+
+**Coverage** (v91, build of 2026-10-22): 59 books each; no Numbers, 1–2
+Chronicles, Ecclesiastes, Isaiah, Jeremiah or Ezekiel (not yet released).
+The study tools quote the BSB, with a note, for a book that isn't there.
+ULT 24,014 rows: every BSB reference of its books except Psalm 133:0, 134:0
+and 2 Corinthians 13:14, plus 18 the BSB has no text for: the 15 verses modern
+critical texts omit (Matthew 17:21 …), Acts 24:7, 3 John 1:15 and Revelation
+12:18. UST 23,940 rows: every BSB reference of its books except 2 Corinthians
+13:14 and the 77 later verses of its 70 bridges, plus the same 18 and Psalm
+115:0.
 
 ## The `scrolls` pack
 
@@ -232,7 +319,7 @@ records the new version and downloads nothing.
 
 ```sh
 cd data
-mix bezalel.data.net                    # if out/translations.sqlite isn't built
+mix bezalel.data.translations           # if out/translations.sqlite isn't built
 mix bezalel.data.scrolls                # if out/scrolls.sqlite isn't built
 mix bezalel.data.publish --dry-run      # what would be uploaded; writes out/manifest.json
 mix bezalel.data.publish
@@ -251,9 +338,9 @@ What it does, in order:
    entries' descriptions, licences, `required` and tables are copied from
    the published manifest.
 2. Checks `out/translations.sqlite` and `out/scrolls.sqlite` were built
-   from `pins.json`'s NET responses and ETCBC/dss files (the scrolls pack
-   also with `base.json`'s core pack and by this checkout's code, its
-   `build_sha256`), compresses each
+   from `pins.json`'s NET responses, JPS zip, ULT and UST files and ETCBC/dss
+   files (both packs also with `base.json`'s core pack, the scrolls pack by
+   this checkout's code, its `build_sha256`), compresses each
    with `zstd -19` (as the phone app's `make_packs.py` compresses the base)
    and uploads it to `packs/v<N>/<pack>.sqlite.zst` with
    `Cache-Control: public, max-age=31536000, immutable`. An object already
@@ -281,6 +368,9 @@ that don't know a pack ignore its entry.
 | `dss_names.json` | Conventional names of the biblical manuscripts, with their source |
 | `base.json` | The frozen base packs (data version 1) |
 | `lib/bezalel/data/net.ex` | NET API markup → rows |
+| `lib/bezalel/data/usfm.ex` | A USFM book → rows (the JPS, ULT and UST) |
+| `lib/bezalel/data/jps.ex` | eBible's JPS 1917: the zip's books, the Hebrew verse numbers mapped |
+| `lib/bezalel/data/door43.ex` | Door43's ULT and UST: the releases' books, the licence check, the adaptation's rows |
 | `lib/bezalel/data/pack.ex` | Writes and reads pack files |
 | `lib/bezalel/data/text_fabric.ex` | Reads Text-Fabric feature files |
 | `lib/bezalel/data/scrolls.ex` | ETCBC/dss → the scrolls pack's rows |
@@ -289,7 +379,7 @@ that don't know a pack ignore its entry.
 | `lib/bezalel/data/books.ex` | The 66 books: STEP code, name, chapters |
 | `lib/bezalel/data/download.ex` | Cached, checked downloads |
 | `lib/bezalel/data/publish.ex` | Assembles the manifest (pure) |
-| `lib/mix/tasks/` | `bezalel.data.net`, `bezalel.data.scrolls`, `bezalel.data.fixtures`, `bezalel.data.publish` |
+| `lib/mix/tasks/` | `bezalel.data.translations`, `bezalel.data.scrolls`, `bezalel.data.fixtures`, `bezalel.data.publish` |
 
 ## Checks
 

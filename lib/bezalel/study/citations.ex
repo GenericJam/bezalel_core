@@ -195,7 +195,10 @@ defmodule Bezalel.Study.Citations do
     "hlt" => "Unpublished draft renderings",
     "fee_stuart" => "Fee & Stuart",
     "research" => "Research sources",
-    "studybible" => "studybible-mcp"
+    "studybible" => "studybible-mcp",
+    "jps" => "JPS 1917",
+    "ult" => "Literal Text (ULT, adapted)",
+    "ust" => "Simplified Text (UST, adapted)"
   }
 
   # ── Scripture ────────────────────────────────────────────────────────────
@@ -236,14 +239,67 @@ defmodule Bezalel.Study.Citations do
   end
 
   @doc """
+  A verse of the JPS 1917 at eBible.org, its chapter page anchored at the
+  verse (`#V5`). eBible numbers the verses in the English way and prints a
+  Psalm's title in verse 1, so a superscription (verse 0) links verse 1.
+  """
+  @spec jps(verse()) :: Citation.t()
+  def jps(verse) do
+    {book, chapter, v} = parse(verse)
+    name = Reference.book_name(book)
+    digits = if book == "Psa", do: 3, else: 2
+    number = chapter |> Integer.to_string() |> String.pad_leading(digits, "0")
+
+    %Citation{
+      work: "jps",
+      label: place(name, chapter, v),
+      locator: place(name, chapter, v),
+      url: "https://ebible.org/engjps/#{String.upcase(book)}#{number}.htm#V#{max(v, 1)}"
+    }
+  end
+
+  @doc """
+  A verse of the ULT (`ult/1`) or UST (`ust/1`) in Door43's reader of the
+  release the translations pack was built from (v91), anchored at the
+  verse (`#tit-1-5`; a Psalm's title, verse 0, at verse 1). The reader is
+  drawn by script in the browser. The pack's text is adapted from it (the
+  alignment removed), so the label is the adaptation's
+  (`Bezalel.Study.Translations`).
+  """
+  @spec ult(verse()) :: Citation.t()
+  def ult(verse), do: door43("ult", verse)
+
+  @doc "A verse of the UST in Door43's reader; see `ult/1`."
+  @spec ust(verse()) :: Citation.t()
+  def ust(verse), do: door43("ust", verse)
+
+  defp door43(work, verse) do
+    {book, chapter, v} = parse(verse)
+    name = Reference.book_name(book)
+    code = String.downcase(book)
+
+    %Citation{
+      work: work,
+      label: place(name, chapter, v),
+      locator: place(name, chapter, v),
+      url:
+        "https://preview.door43.org/u/unfoldingWord/en_#{work}/v91/?book=#{code}" <>
+          "##{code}-#{chapter}-#{max(v, 1)}"
+    }
+  end
+
+  @doc """
   A verse quoted in `translation` (a `Bezalel.Study.Translations` key or
-  map): `net/1` or `bsb/1`; a verse with only STEPBible's gloss (`nil`) is
-  its original on STEP (`step/1`).
+  map): `net/1`, `bsb/1`, `jps/1`, `ult/1` or `ust/1`; a verse with only
+  STEPBible's gloss (`nil`) is its original on STEP (`step/1`).
   """
   @spec scripture(verse(), String.t() | map() | nil) :: Citation.t()
   def scripture(verse, %{key: key}), do: scripture(verse, key)
   def scripture(verse, "net"), do: net(verse)
   def scripture(verse, "bsb"), do: bsb(verse)
+  def scripture(verse, "jps1917"), do: jps(verse)
+  def scripture(verse, "ult"), do: ult(verse)
+  def scripture(verse, "ust"), do: ust(verse)
   def scripture(verse, _none), do: step(verse)
 
   @doc """

@@ -17,7 +17,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation, image model, pushback model; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
-| `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB) with their labels, links and acknowledgements |
+| `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB, JPS 1917, ULT, UST) with their labels, links and acknowledgements, and the BSB for a book the chosen one lacks |
 | `Bezalel.Study.Reference` | Book names and reference forms ("Ex 31:2-3", "Exodus 31", "Jn 3:16", "Jude 3"); `book_name/1`, a code's English name |
 | `Bezalel.Materials`, `Bezalel.Materials.Material`, `Bezalel.Materials.Store` | Materials: the record, content addressing and file layout, derivatives, what goes to the model, rho's attachment resolver, the host's store ([Materials](#materials-drawings-and-read-aloud)) |
 | `Bezalel.Speech` | A reply's summary as words for text-to-speech |
@@ -62,11 +62,11 @@ missing-pack handling separate. `lookup_verse` without the notes pack leaves tho
 hints out and answers as before; `compare_biblical_versions` without lxx still gives an
 MT-only comparison in canonical numbering, as theirs did without the LXX table.
 
-The tools that quote English verses read the NET from the translations pack, opened
-once per tool call: `Translations.with_translation/2` opens it (which also checks it is
-readable) and hands the call's queries its connection (`translation.conn`, used by
-`Verses.attach_english/3`); without it the tools quote the BSB from core and say so
-(see Translation below).
+The tools that quote English verses read the NET (or the JPS, ULT or UST) from the
+translations pack, opened once per tool call: `Translations.with_translation/2` opens it
+(which also checks it is readable) and hands the call's queries its connection
+(`translation.conn`, used by `Verses.attach_english/3`); without it the tools quote the
+BSB from core and say so (see Translation below).
 
 `list_research_sources` reads studybible-mcp's own catalogue
 (`src/study_bible_mcp/research_sources.json` at the pin, MIT), copied to
@@ -325,6 +325,23 @@ Changed result data: a verse view's `bsb` (was it the BSB) is now `translated` (
 the chosen translation's text), and `lookup_verse`'s result adds `translation`,
 `translation_note` and `genre_guidance`.
 
+The JPS 1917 (`jps1917`), and the Literal and Simplified Texts adapted from
+unfoldingWord's ULT and UST (`ult`, `ust`), are in the translations pack too
+(decisions/2026-10-22-translations-jps-ult-ust.md), labelled "(JPS)", "(ULT)", "(UST)".
+They don't have every book: the JPS has the Old Testament only, a ULT or UST release
+the books unfoldingWord has finished (v91: no Numbers, 1–2 Chronicles, Ecclesiastes,
+Isaiah, Jeremiah or Ezekiel; `Translations.covers?/2` asks the pack). A verse in a book
+the chosen translation doesn't have is the BSB's (`Verses.attach_english/3` marks the
+row `text_fallback`, the view `fallback`), and `Translations.settle/3` adds one note
+naming the translation and why ("The JPS 1917 covers the Old Testament only; New
+Testament verses are quoted from the BSB."). When every verse quoted is such a verse
+(John 3:16 with the JPS) the result's `translation` is the BSB; in a list that mixes
+(a ULT `word_study` with an Ezekiel example) each BSB verse is labelled "(BSB)" and
+cites Bible Hub; `get_cross_references` links such a book's verses to the BSB
+(`bsb_books`). A verse missing inside a book the translation has stays STEPBible's
+gloss, as with the NET. A translations pack published before these translations (no rows
+for the key) gives the BSB with a note that the pack needs updating.
+
 ## Sources
 
 Why and what Kevin decided: [decisions/2026-10-18-sources.md](../decisions/2026-10-18-sources.md).
@@ -355,6 +372,8 @@ the verse's Hebrew and Greek on STEP and any Dead Sea Scroll witness as `origina
 |---|---|
 | NET | `https://netbible.org/bible/{Book+Name}+{c}:{v}` (a superscription: verse 1) |
 | BSB | Bible Hub `https://biblehub.com/{slug}/{c}-{v}.htm` |
+| JPS 1917 | eBible.org `https://ebible.org/engjps/{BOOK}{cc}.htm#V{v}` (Psalms three digits; a superscription: verse 1) |
+| ULT, UST | Door43's reader of the imported release `https://preview.door43.org/u/unfoldingWord/en_{ult,ust}/v91/?book={book}#{book}-{c}-{v}` (drawn by script; a superscription: verse 1) |
 | Hebrew, Greek, Septuagint, Tyndale notes | STEP `https://www.stepbible.org/?q=version={THOT, THGNT, LXX, TNotes}@reference={ref}` |
 | Brenton | `https://ebible.org/eng-Brenton/{BOOK}{cc}.htm#V{v}` (Psalms three digits, Daniel `DAG`, Rahlfs's 2 Esdras as Ezra and Nehemiah) |
 | BDB, Strong's | `https://biblehub.com/bdb/{n}.htm`, `https://biblehub.com/{hebrew,greek}/{n}.htm` |
@@ -546,8 +565,10 @@ and ancient passages the tests name; about 6 MB in all; its docstring lists what
 table keeps; `--pack <name>` cuts one). Tests in `test/bezalel/study/` run against
 those, never the real packs; they port studybible-mcp's handler tests (and its
 theology, research-sources, broad-entry, textual-variant, biblical-versions and
-ancient-corpus tests) and add the Exodus 31 cases. `translations.sqlite` holds the NET
-of exactly the verses the core fixture's `bsb_verses` has. `translations.sqlite` and
+ancient-corpus tests) and add the Exodus 31 cases. `translations.sqlite` holds every
+translation's text (NET, JPS 1917, ULT, UST) of exactly the verses the core fixture's
+`bsb_verses` has (the JPS none of its New Testament, the ULT and UST none of its Isaiah
+or Ezekiel). `translations.sqlite` and
 `scrolls.sqlite` are cut by this repository's `data/` (`mix bezalel.data.fixtures`):
 the scrolls fixture keeps 11Q13, 4Q174 and 4Q246 whole, 1QM column 1 and fragment 3,
 4Q405 frg. 23 i, and the biblical readings of Deut 32:8, Isa 53:11, Ps 22:16, Deut

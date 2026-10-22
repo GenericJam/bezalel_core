@@ -10,7 +10,8 @@ defmodule Bezalel.Data.Pack do
   alias Exqlite.Sqlite3
 
   @name "translations"
-  @description "Bible translations (English verse texts other than the BSB): the NET Bible"
+  @description "Bible translations (English verse texts other than the BSB): the NET Bible, " <>
+                 "the JPS 1917, and the Literal and Simplified Texts adapted from the ULT and UST"
   @tables ~w(translations translation_verses)
 
   @schema [

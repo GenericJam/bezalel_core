@@ -129,8 +129,10 @@ defmodule Bezalel.Study.Tools.WordStudy do
         {:error, not_found()}
 
       {:ok, study} ->
+        {quoted, note, examples} = Translations.settle(translation, note, study.examples)
+
         {:ok,
-         Map.merge(study, %{translation: Translations.ref(translation), translation_note: note})}
+         Map.merge(study, %{examples: examples, translation: quoted, translation_note: note})}
 
       error ->
         error
@@ -170,7 +172,7 @@ defmodule Bezalel.Study.Tools.WordStudy do
       "\n\n## Example Passages#{label}\n" <>
       Format.translation_note(result.translation_note) <>
       Enum.map_join(examples, fn view ->
-        "\n**#{view.reference}**: #{view.english}\n" <>
+        "\n**#{view.reference}**#{Format.fallback_label(view)}: #{view.english}\n" <>
           Citation.source_line(example_citation(view, result.translation)) <> "\n"
       end)
   end
@@ -191,7 +193,7 @@ defmodule Bezalel.Study.Tools.WordStudy do
   end
 
   defp example_citation(view, translation),
-    do: Citations.scripture(view.reference, if(view.translated, do: translation))
+    do: Citations.scripture(view.reference, Format.quoted(view, translation))
 
   @doc """
   A lexicon entry's sources, for the definitions shown: `:full` as
