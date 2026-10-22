@@ -97,9 +97,18 @@ defmodule Bezalel.Data.Door43 do
     end
   end
 
+  # Where unfoldingWord's versification (`ufw`) numbers a verse other than
+  # the packs' English numbering, the source verse and the packs' verse.
+  # 2 Corinthians 13: ufw's 13:12 holds the greetings (the packs' 13:12–13,
+  # kept whole there, as a bridge is) and its 13:13 the grace, the packs'
+  # 13:14 (the core pack's row '2Co.13.13[13.14]').
+  @renumbered %{"2Co.13.13" => {"2Co", 13, 14}}
+
   @doc """
   Every book's rows in canonical order (`files`: `%{"01-GEN.usfm" =>
-  text}`), with what `Bezalel.Data.Usfm` dropped, and the books present.
+  text}`), with what `Bezalel.Data.Usfm` dropped, the books present, and
+  the verses moved to the packs' numbering (`renumbered`, `{from, to}`; a
+  source that already has the target verse stops the build).
   """
   @spec rows(%{String.t() => String.t()}) :: map()
   def rows(files) do
@@ -116,13 +125,36 @@ defmodule Bezalel.Data.Door43 do
         Usfm.book(text, usfm, code)
       end
 
+    {rows, renumbered} = renumber(Enum.flat_map(books, & &1.rows))
+
     %{
       books: Enum.map(books, &hd(&1.rows).book),
-      rows: Enum.flat_map(books, & &1.rows),
+      rows: rows,
       empty: Enum.flat_map(books, & &1.empty),
       headings: Enum.flat_map(books, & &1.headings),
       footnotes: Enum.flat_map(books, & &1.footnotes),
-      bridges: Enum.flat_map(books, & &1.bridges)
+      bridges: Enum.flat_map(books, & &1.bridges),
+      renumbered: renumbered
     }
+  end
+
+  defp renumber(rows) do
+    present = MapSet.new(rows, & &1.reference)
+
+    Enum.map_reduce(rows, [], fn row, moved ->
+      case @renumbered[row.reference] do
+        nil -> {row, moved}
+        target -> move(row, target, present, moved)
+      end
+    end)
+  end
+
+  defp move(row, {book, chapter, verse}, present, moved) do
+    to = "#{book}.#{chapter}.#{verse}"
+
+    if MapSet.member?(present, to),
+      do: raise(ArgumentError, "#{row.reference}: #{to} is already in the source")
+
+    {%{row | reference: to, chapter: chapter, verse: verse}, moved ++ [{row.reference, to}]}
   end
 end

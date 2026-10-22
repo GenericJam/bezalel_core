@@ -264,6 +264,7 @@ defmodule Bezalel.Data.Report do
         ]
       end),
       hebrew_numbers(parsed),
+      renumbered(parsed),
       "",
       "Compared with #{label}, in the books the source has: #{length(in_books)} BSB references " <>
         "(#{count_verse0(in_books)} superscriptions)",
@@ -290,6 +291,13 @@ defmodule Bezalel.Data.Report do
   end
 
   defp hebrew_numbers(_parsed), do: []
+
+  defp renumbered(%{renumbered: moved}) do
+    "Verses moved to the packs' English numbering (unfoldingWord's versification differs): " <>
+      Enum.map_join(moved, " ", fn {from, to} -> "#{from}→#{to}" end)
+  end
+
+  defp renumbered(_parsed), do: []
 
   defp all([]), do: []
 

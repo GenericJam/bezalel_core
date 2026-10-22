@@ -217,17 +217,23 @@ non-commercial ones.
 - a verse bridge (`\v 4-5`, 70 in the UST) is kept whole on its first
   verse; the later verse has no row (the report lists them);
 - any other marker, text outside a verse or a title outside a Psalm's first
-  verse stops the build.
+  verse stops the build;
+- a verse unfoldingWord's versification numbers differently from the
+  packs' is moved to the packs' number (`@renumbered` in
+  `Bezalel.Data.Door43`, listed in the report): 2 Corinthians 13:13 → 13:14.
 
 **Coverage** (v91, build of 2026-10-22): 59 books each; no Numbers, 1–2
 Chronicles, Ecclesiastes, Isaiah, Jeremiah or Ezekiel (not yet released).
 The study tools quote the BSB, with a note, for a book that isn't there.
 ULT 24,014 rows: every BSB reference of its books except Psalm 133:0, 134:0
-and 2 Corinthians 13:14, plus 18 the BSB has no text for: the 15 verses modern
+and 2 Corinthians 13:13, plus 18 the BSB has no text for: the 15 verses modern
 critical texts omit (Matthew 17:21 …), Acts 24:7, 3 John 1:15 and Revelation
 12:18. UST 23,940 rows: every BSB reference of its books except 2 Corinthians
-13:14 and the 77 later verses of its 70 bridges, plus the same 18 and Psalm
-115:0.
+13:13 and the 77 later verses of its 70 bridges, plus the same 18 and Psalm
+115:0. 2 Corinthians 13 is numbered as the NET numbers it (13:12 the greetings
+of the BSB's 13:12–13, 13:13 the grace): the import moves the grace to 13:14,
+the packs' number for it (the core pack's `2Co.13.13[13.14]`), so it is found;
+the BSB's 13:13 stays within 13:12, as a bridge does.
 
 ## The `scrolls` pack
 

@@ -57,6 +57,11 @@ the build (`Bezalel.Data.Usfm`). Following data rule 3 (never by matching
 words), the JPS keeps the words eBible's USFM has as plain text: book
 openings in capitals and the Psalter's book headings ("BOOK II For the
 Leader…"). A UST verse bridge (`\v 4-5`) is kept whole on its first verse.
+One verse is renumbered: the ULT and UST number the end of 2 Corinthians 13
+as the NET does (13:12 holds the BSB's 13:12–13, 13:13 the grace), so their
+13:13 is stored as 13:14, the number the core pack gives the grace
+(`2Co.13.13[13.14]`), and is found; a source that already has 13:14 stops
+the build. The BSB's 13:13 stays inside 13:12 (not split by words).
 
 ### Licences and naming
 
@@ -83,7 +88,8 @@ adds one note naming the translation and why ("The JPS 1917 covers the Old
 Testament only; New Testament verses are quoted from the BSB."). If every
 quoted verse is such a verse, the result's translation is the BSB (label,
 card and links); in a mixed list (a ULT word study with an Ezekiel example)
-each BSB verse is labelled "(BSB)" and links Bible Hub. Cross-references
+each BSB verse is labelled "(BSB)" and links Bible Hub, in the Markdown
+and on its passage-card row (`"version" => "BSB"`). Cross-references
 link such books' verses to the BSB. A verse missing inside a book the
 translation has stays the marked gloss, as for the NET (a translation's own
 omission is not filled from another). A translations pack published before
