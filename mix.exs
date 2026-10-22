@@ -32,7 +32,7 @@ defmodule BezalelCore.MixProject do
       # ChatGPT sign-in (Rho.Images, rho 0.4), a loop's own sign-ins and
       # session bytes (the phone ↔ website link, rho 0.5), the ChatGPT
       # sign-in's own model list (Rho.Models.Codex, rho 0.5.1).
-      sibling(:rho, "~> 0.5.1"),
+      sibling(:rho, "~> 0.5.3"),
       # Bezalel.Materials: a file's media type from its name, and back.
       {:mime, "~> 2.0"},
       # Bezalel.Link.Pairing canonicalizes international DNS names in origins.
