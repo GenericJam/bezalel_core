@@ -225,24 +225,23 @@ defmodule Bezalel.Study.WitnessesTest do
       assert matt =~ "reference='Mat.17.20'"
     end
 
+    test "a verse the SBLGNT numbers differently is a division, not an addition" do
+      acts = %{row("TAGNT", "Act.19.41") | edition_reference: "Act.19.41(19.40)"}
+      text = CompareBiblicalVersions.render(comparison([acts], %{sblgnt: :on}))
+
+      assert text =~
+               "The SBLGNT numbers these verses differently and prints their words within " <>
+                 "another verse: Act.19.41 (within its 19:40)."
+
+      refute text =~ "get_textual_variant with"
+    end
+
     test "the SP note names only the placement of the verses it lacks" do
       exodus = CompareBiblicalVersions.render(comparison([row("MT", "Exo.30.1")], %{sp: :on}))
       assert exodus =~ "(its Exodus 26:35 holds the MT's 30:1–10)."
       refute exodus =~ "Deuteronomy 34:1"
 
       deut = CompareBiblicalVersions.render(comparison([row("MT", "Deu.34.2")], %{sp: :on}))
-
-      test "a verse the SBLGNT numbers differently is a division, not an addition" do
-        acts = %{row("TAGNT", "Act.19.41") | edition_reference: "Act.19.41(19.40)"}
-        text = CompareBiblicalVersions.render(comparison([acts], %{sblgnt: :on}))
-
-        assert text =~
-                 "The SBLGNT numbers these verses differently and prints their words within " <>
-                   "another verse: Act.19.41 (within its 19:40)."
-
-        refute text =~ "get_textual_variant with"
-      end
-
       assert deut =~ "(its Deuteronomy 34:1 describes the land in its own words"
       refute deut =~ "Exodus 26:35"
 
