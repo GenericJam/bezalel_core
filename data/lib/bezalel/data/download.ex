@@ -68,7 +68,7 @@ defmodule Bezalel.Data.Download do
     path = path || download_base_core!(pin)
 
     if sha256(File.read!(path)) != pin["raw_sha256"] do
-      raise "#{path} is not the base core pack (sha256 differs from base.json)"
+      Mix.raise("#{path} is not the base core pack (sha256 differs from base.json)")
     end
 
     path
@@ -80,7 +80,7 @@ defmodule Bezalel.Data.Download do
 
     case fetch(pin["url"], zst, check) do
       {:ok, _bytes} -> :ok
-      {:error, message} -> raise "base core pack: #{message}"
+      {:error, message} -> Mix.raise("base core pack: #{message}")
     end
 
     raw = Path.join(["work", "base", "core.sqlite"])
