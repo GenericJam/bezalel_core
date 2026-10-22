@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   @moduledoc """
   Publishes the packs built here (`out/translations.sqlite`,
-  `out/scrolls.sqlite`) as the next data version, on top of the frozen base,
+  `out/scrolls.sqlite`, `out/fathers.sqlite`, `out/dictionaries.sqlite`, `out/syntax.sqlite`, `out/witnesses.sqlite`) as the next data version, on top of the frozen base,
   without uploading the base.
 
       mix bezalel.data.publish [--dry-run] [--version N]
@@ -28,7 +28,19 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   use Mix.Task
 
-  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls}
+  alias Bezalel.Data.{
+    Books,
+    Dictionaries,
+    Door43,
+    Download,
+    Fathers,
+    Net,
+    Pack,
+    Publish,
+    Scrolls,
+    Syntax,
+    Witnesses
+  }
 
   @bucket "bezalel-packs"
   @manifest_key "packs/manifest.json"
@@ -157,14 +169,24 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
   # The pack must have been built from the pinned sources.
   defp check_source!("translations", meta) do
     books = Download.pin!("net")["books"]
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
 
-    digest =
-      Net.digest(Enum.map(Books.all(), fn {code, _, _} -> {code, books[code]} end))
+    expected = %{
+      "net_sha256" =>
+        Net.digest(Enum.map(Books.all(), fn {code, _, _} -> {code, books[code]} end)),
+      "jps_sha256" => Download.pin!("jps")["sha256"],
+      "ult_sha256" => Door43.digest(Download.pin!("ult")["files"]),
+      "ust_sha256" => Door43.digest(Download.pin!("ust")["files"]),
+      "core_sha256" => core,
+      "build_sha256" => Pack.build_digest()
+    }
 
-    if meta["net_sha256"] != digest do
-      Mix.raise(
-        "out/translations.sqlite wasn't built from pins.json's NET; run mix bezalel.data.net"
-      )
+    case Publish.check_translations(meta, expected) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("out/translations.sqlite #{reason}; run mix bezalel.data.translations")
     end
   end
 
@@ -183,6 +205,82 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     case Publish.check_scrolls(meta, expected) do
       :ok -> :ok
       {:error, reason} -> Mix.raise("out/scrolls.sqlite #{reason}; run mix bezalel.data.scrolls")
+    end
+  end
+
+  defp check_source!("fathers", meta) do
+    pin = Download.pin!("fathers")
+    provenance = Fathers.provenance(pin)
+
+    expected = %{
+      fathers_sha256: Fathers.digest(pin),
+      greek_source: provenance.greek_source,
+      english_source: provenance.english_source,
+      build_sha256: Fathers.build_digest()
+    }
+
+    case Publish.check_fathers(meta, expected) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise("out/fathers.sqlite #{reason}; run mix bezalel.data.fathers")
+    end
+  end
+
+  defp check_source!("dictionaries", meta) do
+    pin = Download.pin!("ubs_dictionaries")
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
+
+    expected = %{
+      ubs_sha256: pin["files"] |> Enum.sort() |> Net.digest(),
+      ubs_source: "#{pin["repo"]}/tree/#{pin["commit"]}/dictionaries",
+      core_sha256: core,
+      build_sha256: Dictionaries.build_digest()
+    }
+
+    case Publish.check_dictionaries(meta, expected) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("out/dictionaries.sqlite #{reason}; run mix bezalel.data.dictionaries")
+    end
+  end
+
+  defp check_source!("syntax", meta) do
+    pin = Download.pin!("macula")
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
+
+    expected = %{
+      macula_sha256: pin |> Syntax.pinned_files() |> Syntax.source_digest(),
+      macula_source: Syntax.source(pin),
+      core_sha256: core,
+      build_sha256: Syntax.build_digest()
+    }
+
+    case Publish.check_syntax(meta, expected) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise("out/syntax.sqlite #{reason}; run mix bezalel.data.syntax")
+    end
+  end
+
+  defp check_source!("witnesses", meta) do
+    pins = Map.new(~w(sp sblgnt hottp), &{&1, Download.pin!(&1)})
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
+
+    expected = %{
+      sp_sha256: Witnesses.digest(pins["sp"]["files"]),
+      sblgnt_sha256:
+        Witnesses.digest(Map.merge(pins["sblgnt"]["text"], pins["sblgnt"]["apparatus"])),
+      hottp_sha256: Witnesses.digest(pins["hottp"]["files"]),
+      core_sha256: core,
+      build_sha256: Witnesses.build_digest()
+    }
+
+    case Publish.check_witnesses(meta, expected) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("out/witnesses.sqlite #{reason}; run mix bezalel.data.witnesses")
     end
   end
 

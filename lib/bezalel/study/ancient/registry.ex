@@ -8,7 +8,9 @@ defmodule Bezalel.Study.Ancient.Registry do
 
   Added for Bezalel: the `qumran` corpus also lists the Dead Sea Scrolls
   manuscripts of `Bezalel.Study.Ancient.Scrolls`, whose passages are in the
-  scrolls pack (`Bezalel.Study.Ancient.pack/1`), and its caveat covers them.
+  scrolls pack (`Bezalel.Study.Ancient.pack/1`), and its caveat covers them;
+  and the `apostolic_fathers` corpus (`Bezalel.Study.Ancient.Fathers`), whose
+  passages are in the fathers pack.
 
   Changed for Bezalel: each Python caveat is split into `caveat`, the
   neutral provenance (always shown), and `verdict`, the maintainer's
@@ -2341,6 +2343,9 @@ defmodule Bezalel.Study.Ancient.Registry do
              corpus ->
                corpus
            end)
+
+  # The fathers pack's corpus follows the ancient pack's.
+  @corpora @corpora ++ [Bezalel.Study.Ancient.Fathers.corpus()]
 
   @doc "Every corpus, in registry order."
   def corpora, do: @corpora

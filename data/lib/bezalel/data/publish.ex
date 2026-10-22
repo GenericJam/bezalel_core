@@ -10,7 +10,8 @@ defmodule Bezalel.Data.Publish do
     the same `raw_sha256` and downloads nothing;
   - the published manifest, for the base packs' descriptions, licences,
     `required` and tables;
-  - the packs built here (`translations`, `scrolls`), uploaded under
+  - the packs built here (`translations`, `scrolls`, `fathers`, `dictionaries`, `syntax`,
+    `witnesses`), uploaded under
     `packs/v<N>/`.
 
   Everything here is pure; `mix bezalel.data.publish` does the network.
@@ -26,10 +27,15 @@ defmodule Bezalel.Data.Publish do
 
   @built_here %{
     "translations" => %{
-      "description" => "NET Bible English text",
+      "description" =>
+        "English Bible translations: the NET Bible, the JPS 1917 (Old Testament), and the " <>
+          "Literal and Simplified Texts (ULT, UST, adapted)",
       "licence" =>
         "NET Bible® copyright ©1996, 2019 Biblical Studies Press, L.L.C.: " <>
-          "free non-commercial use by permission (netbible.com/copyright)"
+          "free non-commercial use by permission (netbible.com/copyright); JPS 1917: public " <>
+          "domain; Literal and Simplified Texts (ULT, UST, adapted): CC BY-SA 4.0 " <>
+          "(https://creativecommons.org/licenses/by-sa/4.0/), the original work by " <>
+          "unfoldingWord is available from unfoldingword.org/ult and unfoldingword.org/ust"
     },
     "scrolls" => %{
       "description" =>
@@ -38,6 +44,39 @@ defmodule Bezalel.Data.Publish do
       "licence" =>
         "ETCBC/dss (Martin G. Abegg Jr., James E. Bowley, Edward M. Cook): CC BY-NC 4.0 " <>
           "(non-commercial; https://creativecommons.org/licenses/by-nc/4.0/)"
+    },
+    "fathers" => %{
+      "description" =>
+        "The Apostolic Fathers: Greek (and Latin) with a machine-translated English (CAFE)",
+      "licence" =>
+        "Open Apostolic Fathers (James Tauber, Seumas Macdonald; Lake's text corrected) and " <>
+          "CAFE (James Cuénod; machine translation): CC BY-SA 4.0 " <>
+          "(https://creativecommons.org/licenses/by-sa/4.0/)"
+    },
+    "dictionaries" => %{
+      "description" =>
+        "UBS dictionaries: Biblical Hebrew (from SDBH) and Greek New Testament (from " <>
+          "Louw & Nida) meanings with semantic domains",
+      "licence" =>
+        "UBS Dictionary of Biblical Hebrew and UBS Dictionary of the Greek New Testament " <>
+          "© United Bible Societies: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)"
+    },
+    "syntax" => %{
+      "description" =>
+        "Clause structure: each verse's clauses, roles and words (MACULA syntax trees of the " <>
+          "WLC and the SBLGNT)",
+      "licence" =>
+        "MACULA Hebrew and Greek Linguistic Datasets © 2022-2024 Biblica, Inc: CC BY 4.0 " <>
+          "(https://creativecommons.org/licenses/by/4.0/); WLC text public domain, SBLGNT CC BY 4.0"
+    },
+    "witnesses" => %{
+      "description" =>
+        "Textual witnesses: the Samaritan Pentateuch, the SBL Greek New Testament with its " <>
+          "apparatus, the UBS Hebrew Old Testament Text Project",
+      "licence" =>
+        "Samaritan Pentateuch (DT-UCPH/sp, Højgaard, Naaijer & Schorch): CC BY-NC 4.0 " <>
+          "(non-commercial); SBLGNT and its apparatus (SBL and Logos Bible Software): CC BY 4.0; " <>
+          "HOTTP (United Bible Societies): CC BY-SA 4.0. Each in its own tables"
     }
   }
 
@@ -109,9 +148,139 @@ defmodule Bezalel.Data.Publish do
     end
   end
 
+  @doc """
+  `:ok` if a translations pack's `meta` (its pack_meta) says it was built
+  from `expected`'s sources (string keys, as pack_meta has them):
+  `net_sha256`, `jps_sha256`, `ult_sha256`, `ust_sha256` (the pinned
+  downloads' digests), `core_sha256` (base.json's core pack, which
+  numbers the JPS) and `build_sha256` (this checkout's code,
+  `Bezalel.Data.Pack.build_digest/0`); else `{:error, reason}` naming what
+  differs.
+  """
+  @spec check_translations(map(), map()) :: :ok | {:error, String.t()}
+  def check_translations(meta, expected) do
+    sources =
+      for key <- ~w(net jps ult ust), meta["#{key}_sha256"] != expected["#{key}_sha256"], do: key
+
+    cond do
+      sources != [] ->
+        {:error, "wasn't built from pins.json's #{Enum.join(sources, ", ")}"}
+
+      meta["core_sha256"] != expected["core_sha256"] ->
+        {:error, "wasn't numbered with base.json's core pack"}
+
+      meta["build_sha256"] != expected["build_sha256"] ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc """
+  `:ok` if a fathers pack's `meta` (its pack_meta) says it was built from
+  `expected`'s sources: `fathers_sha256` (the pinned Greek and English
+  files), `greek_source` and `english_source` (their commits) and
+  `build_sha256` (this checkout's code, `Bezalel.Data.Fathers.build_digest/0`);
+  else `{:error, reason}`.
+  """
+  @spec check_fathers(map(), map()) :: :ok | {:error, String.t()}
+  def check_fathers(meta, expected) do
+    cond do
+      meta["fathers_sha256"] != expected.fathers_sha256 or
+        meta["greek_source"] != expected.greek_source or
+          meta["english_source"] != expected.english_source ->
+        {:error, "wasn't built from pins.json's Apostolic Fathers files"}
+
+      meta["build_sha256"] != expected.build_sha256 ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc """
+  `:ok` if a dictionaries pack's `meta` says it was built from `expected`'s
+  sources: `ubs_sha256` and `ubs_source` (the pinned UBS files),
+  `core_sha256` (base.json's core pack, which numbers its references) and
+  `build_sha256` (`Bezalel.Data.Dictionaries.build_digest/0`); else
+  `{:error, reason}`.
+  """
+  @spec check_dictionaries(map(), map()) :: :ok | {:error, String.t()}
+  def check_dictionaries(meta, expected) do
+    cond do
+      meta["ubs_sha256"] != expected.ubs_sha256 or meta["ubs_source"] != expected.ubs_source ->
+        {:error, "wasn't built from pins.json's UBS dictionaries"}
+
+      meta["core_sha256"] != expected.core_sha256 ->
+        {:error, "wasn't numbered with base.json's core pack"}
+
+      meta["build_sha256"] != expected.build_sha256 ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc """
+  `:ok` if a syntax pack's `meta` (its pack_meta) says it was built from
+  `expected`'s sources: `macula_sha256` and `macula_source` (the pinned
+  MACULA files), `core_sha256` (base.json's core pack) and `build_sha256`
+  (this checkout's code, `Bezalel.Data.Syntax.build_digest/0`); else
+  `{:error, reason}`.
+  """
+  @spec check_syntax(map(), map()) :: :ok | {:error, String.t()}
+  def check_syntax(meta, expected) do
+    cond do
+      meta["macula_sha256"] != expected.macula_sha256 or
+          meta["macula_source"] != expected.macula_source ->
+        {:error, "wasn't built from pins.json's MACULA files"}
+
+      meta["core_sha256"] != expected.core_sha256 ->
+        {:error, "wasn't numbered with base.json's core pack"}
+
+      meta["build_sha256"] != expected.build_sha256 ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
+  @doc """
+  `:ok` if a witnesses pack's `meta` says it was built from `expected`'s
+  sources: `sp_sha256`, `sblgnt_sha256` and `hottp_sha256` (the digests of
+  `pins.json`'s files, `Bezalel.Data.Witnesses.digest/1`), `core_sha256`
+  (base.json's core pack) and `build_sha256` (this checkout's code,
+  `Bezalel.Data.Witnesses.build_digest/0`); else `{:error, reason}`.
+  """
+  @spec check_witnesses(map(), map()) :: :ok | {:error, String.t()}
+  def check_witnesses(meta, expected) do
+    sources = [sp_sha256: "sp", sblgnt_sha256: "sblgnt", hottp_sha256: "hottp"]
+
+    case Enum.find(sources, fn {key, _pin} -> meta[Atom.to_string(key)] != expected[key] end) do
+      {_key, pin} ->
+        {:error, "wasn't built from pins.json's #{pin}"}
+
+      nil ->
+        cond do
+          meta["core_sha256"] != expected.core_sha256 ->
+            {:error, "wasn't numbered with base.json's core pack"}
+
+          meta["build_sha256"] != expected.build_sha256 ->
+            {:error, "was built by other code than this checkout's"}
+
+          true ->
+            :ok
+        end
+    end
+  end
+
   @doc "The names of the packs built here, in manifest order."
   @spec built_here() :: [String.t()]
-  def built_here, do: ~w(translations scrolls)
+  def built_here, do: ~w(translations scrolls fathers dictionaries syntax witnesses)
 
   @doc """
   The manifest entry of pack `name` (one of `built_here/0`) for a pack

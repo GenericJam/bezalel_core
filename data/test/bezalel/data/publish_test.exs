@@ -78,7 +78,9 @@ defmodule Bezalel.Data.PublishTest do
     assert %{
              "name" => "translations",
              "required" => false,
-             "description" => "NET Bible English text",
+             "description" =>
+               "English Bible translations: the NET Bible, the JPS 1917 (Old Testament), and " <>
+                 "the Literal and Simplified Texts (ULT, UST, adapted)",
              "url" => "https://bezalel.genericjam.com/packs/v2/translations.sqlite.zst",
              "compression" => "zstd",
              "size" => 3,
@@ -89,6 +91,8 @@ defmodule Bezalel.Data.PublishTest do
            } = entry
 
     assert entry["licence"] =~ "non-commercial"
+    assert entry["licence"] =~ "CC BY-SA 4.0"
+    assert entry["licence"] =~ "original work by unfoldingWord is available from"
   end
 
   test "the scrolls entry is optional and carries the CC BY-NC licence; packs built here are both" do
@@ -102,7 +106,23 @@ defmodule Bezalel.Data.PublishTest do
            } = entry
 
     assert entry["licence"] =~ "CC BY-NC 4.0"
-    assert Publish.built_here() == ["translations", "scrolls"]
+
+    assert Publish.built_here() == [
+             "translations",
+             "scrolls",
+             "fathers",
+             "dictionaries",
+             "syntax",
+             "witnesses"
+           ]
+
+    witnesses =
+      Publish.entry("witnesses", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, ["t"])
+
+    assert %{"required" => false} = witnesses
+
+    for licence <- ["CC BY-NC 4.0", "CC BY 4.0", "CC BY-SA 4.0"],
+        do: assert(witnesses["licence"] =~ licence)
 
     assert_raise KeyError, fn ->
       Publish.entry("core", 2, %{size: 1, sha256: @sha}, %{size: 1, sha256: @sha}, [])
@@ -129,6 +149,163 @@ defmodule Bezalel.Data.PublishTest do
 
     assert {:error, "was built by other code than this checkout's"} =
              Publish.check_scrolls(Map.delete(meta, "build_sha256"), expected)
+  end
+
+  test "a translations pack is refused unless built from every pinned source, the base core and this code" do
+    meta = %{
+      "net_sha256" => "n",
+      "jps_sha256" => "j",
+      "ult_sha256" => "l",
+      "ust_sha256" => "s",
+      "core_sha256" => "c",
+      "build_sha256" => "b"
+    }
+
+    assert Publish.check_translations(meta, meta) == :ok
+
+    assert {:error, "wasn't built from pins.json's jps, ust"} =
+             Publish.check_translations(meta, %{meta | "jps_sha256" => "x", "ust_sha256" => "x"})
+
+    # A pack from before the JPS, ULT and UST (the NET alone) is refused.
+    assert {:error, "wasn't built from pins.json's jps, ult, ust"} =
+             Publish.check_translations(Map.take(meta, ~w(net_sha256 core_sha256)), meta)
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_translations(meta, %{meta | "core_sha256" => "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_translations(meta, %{meta | "build_sha256" => "x"})
+
+    # A pack built before the build digest was recorded is refused.
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_translations(Map.delete(meta, "build_sha256"), meta)
+  end
+
+  test "the fathers entry is optional and CC BY-SA; a fathers pack is refused unless built from the pins and this code" do
+    entry =
+      Publish.entry("fathers", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, ["t"])
+
+    assert %{"name" => "fathers", "required" => false} = entry
+    assert entry["licence"] =~ "CC BY-SA 4.0"
+    assert entry["description"] =~ "machine-translated"
+
+    meta = %{
+      "fathers_sha256" => "f",
+      "greek_source" => "g",
+      "english_source" => "e",
+      "build_sha256" => "b"
+    }
+
+    expected = %{fathers_sha256: "f", greek_source: "g", english_source: "e", build_sha256: "b"}
+
+    assert Publish.check_fathers(meta, expected) == :ok
+
+    assert {:error, "wasn't built from pins.json's Apostolic Fathers files"} =
+             Publish.check_fathers(meta, %{expected | english_source: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_fathers(meta, %{expected | build_sha256: "x"})
+  end
+
+  test "the dictionaries entry is optional and carries CC BY-SA, never an NC licence" do
+    entry =
+      Publish.entry("dictionaries", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, [])
+
+    assert %{"name" => "dictionaries", "required" => false} = entry
+    assert entry["licence"] =~ "CC BY-SA 4.0"
+    refute entry["licence"] =~ "NC"
+  end
+
+  test "a dictionaries pack is refused unless built from the pins, the base core and this code" do
+    meta = %{
+      "ubs_sha256" => "u",
+      "ubs_source" => "s",
+      "core_sha256" => "c",
+      "build_sha256" => "b"
+    }
+
+    expected = %{ubs_sha256: "u", ubs_source: "s", core_sha256: "c", build_sha256: "b"}
+
+    assert Publish.check_dictionaries(meta, expected) == :ok
+
+    assert {:error, "wasn't built from pins.json's UBS dictionaries"} =
+             Publish.check_dictionaries(meta, %{expected | ubs_source: "x"})
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_dictionaries(meta, %{expected | core_sha256: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_dictionaries(Map.delete(meta, "build_sha256"), expected)
+  end
+
+  test "the syntax entry is optional and carries the CC BY licence" do
+    entry =
+      Publish.entry("syntax", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, ["t"])
+
+    assert %{
+             "name" => "syntax",
+             "required" => false,
+             "url" => "https://bezalel.genericjam.com/packs/v2/syntax.sqlite.zst"
+           } = entry
+
+    assert entry["licence"] =~ "CC BY 4.0"
+    refute entry["licence"] =~ "NC"
+  end
+
+  test "a syntax pack is refused unless built from the pins, the base core and this code" do
+    meta = %{
+      "macula_sha256" => "m",
+      "macula_source" => "s",
+      "core_sha256" => "c",
+      "build_sha256" => "b"
+    }
+
+    expected = %{macula_sha256: "m", macula_source: "s", core_sha256: "c", build_sha256: "b"}
+
+    assert Publish.check_syntax(meta, expected) == :ok
+
+    assert {:error, "wasn't built from pins.json's MACULA files"} =
+             Publish.check_syntax(meta, %{expected | macula_sha256: "x"})
+
+    assert {:error, "wasn't built from pins.json's MACULA files"} =
+             Publish.check_syntax(meta, %{expected | macula_source: "x"})
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_syntax(meta, %{expected | core_sha256: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_syntax(Map.delete(meta, "build_sha256"), expected)
+  end
+
+  test "a witnesses pack is refused unless built from the pins, the base core and this code" do
+    meta = %{
+      "sp_sha256" => "p",
+      "sblgnt_sha256" => "g",
+      "hottp_sha256" => "h",
+      "core_sha256" => "c",
+      "build_sha256" => "b"
+    }
+
+    expected = %{
+      sp_sha256: "p",
+      sblgnt_sha256: "g",
+      hottp_sha256: "h",
+      core_sha256: "c",
+      build_sha256: "b"
+    }
+
+    assert Publish.check_witnesses(meta, expected) == :ok
+
+    for {key, pin} <- [sp_sha256: "sp", sblgnt_sha256: "sblgnt", hottp_sha256: "hottp"] do
+      assert {:error, "wasn't built from pins.json's " <> ^pin} =
+               Publish.check_witnesses(meta, Map.put(expected, key, "x"))
+    end
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_witnesses(meta, %{expected | core_sha256: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_witnesses(meta, %{expected | build_sha256: "x"})
   end
 
   describe "manifest/4" do

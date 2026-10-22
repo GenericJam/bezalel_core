@@ -160,8 +160,8 @@ defmodule Bezalel.Study.PreferencesTest do
   end
 
   describe "Translations" do
-    test "the NET (default) and the BSB, with the NET's required acknowledgement and link" do
-      assert Translations.keys() == ["net", "bsb"]
+    test "the NET (default), the BSB, the JPS 1917, ULT and UST, with the NET's required acknowledgement and link" do
+      assert Translations.keys() == ["net", "bsb", "jps1917", "ult", "ust"]
       net = Translations.get("net")
       assert net.url == "http://netbible.org"
 
@@ -174,6 +174,31 @@ defmodule Bezalel.Study.PreferencesTest do
       assert Translations.label(Translations.get("bsb")) == "BSB"
       assert Translations.get("bsb").licence == "Public domain"
       assert Translations.get("kjv") == nil
+    end
+
+    test "the ULT and UST are shown as adaptations: no trademark, the changes, the required attribution" do
+      for {key, path} <- [{"ult", "ult"}, {"ust", "ust"}] do
+        translation = Translations.get(key)
+        refute translation.name =~ "unfoldingWord"
+        refute translation.abbreviation =~ "unfoldingWord"
+        refute translation.copyright =~ "®"
+
+        assert translation.copyright =~
+                 "The original work by unfoldingWord is available from unfoldingword.org/#{path}."
+
+        assert translation.copyright =~ "Changes: the word alignment"
+        assert translation.licence =~ "CC BY-SA 4.0"
+      end
+
+      assert Translations.get("jps1917").licence == "Public domain"
+    end
+
+    test "Preferences accept the new translation keys" do
+      for key <- ~w(jps1917 ult ust) do
+        assert Preferences.new(translation: key).translation == key
+      end
+
+      assert Preferences.new(translation: "jps").translation == "net"
     end
   end
 

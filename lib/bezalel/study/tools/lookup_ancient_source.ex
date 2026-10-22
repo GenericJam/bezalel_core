@@ -2,8 +2,9 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
   @moduledoc """
   `lookup_ancient_source`: an ancient source by citation ('Antiquities
   18.116', 'CD 6:11', 'm. Sukkah 4:9', '4Q174 1–2 i 10'), the passages of
-  the work's pack (ancient, or scrolls for the Qumran manuscripts of
-  `Bezalel.Study.Ancient.Scrolls`) overlapping it, in citation order. No
+  the work's pack (ancient; scrolls for the Qumran manuscripts of
+  `Bezalel.Study.Ancient.Scrolls`; fathers for the Apostolic Fathers of
+  `Bezalel.Study.Ancient.Fathers`) overlapping it, in citation order. No
   full-text search, so it works on a device whose SQLite lacks FTS5.
 
   A scrolls-pack manuscript is cited by fragment or column label and line
@@ -51,7 +52,10 @@ defmodule Bezalel.Study.Tools.LookupAncientSource do
     Sea Scroll is cited by siglum or name, then fragment or column and line, as
     the ETCBC transcription labels them: '1QM 5:3', '11QMelch ii 18', '4Q174
     frg. 1–2 i 10', '4Q246 frg. 1 ii 1', 'War Scroll 4Q491 frg. 11 i 12'; Hebrew
-    and Aramaic only, [ ] is modern reconstruction. Each
+    and Aramaic only, [ ] is modern reconstruction. An Apostolic Father is cited
+    as Lake numbers it: 'Didache 9.1', '1 Clement 5.4', 'Ignatius, To the
+    Ephesians 20.2', 'Hermas, Vision 1.1.1', 'Mandate 4.1.1', 'Similitude 9.1.1';
+    its English is CAFE's machine translation. Each
     passage carries a date and edition tag (with a canon-status label unless the
     user turned labels off) and any editorial ⚠ notes; caveats and sources are
     printed once. An unknown or ambiguous citation gets a short list of works or

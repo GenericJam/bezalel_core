@@ -24,14 +24,20 @@ defmodule Bezalel.Agent.Card do
 
   `version` is the translation the tool quoted (the result's
   `translation`, the user's choice in Settings or the BSB standing in for
-  a NET that isn't installed) when any verse shown is its text (as
-  `Bezalel.Study.Format.translation_label/2` labels it), empty when every
-  verse shown has only STEPBible's gloss. A verse quoted in a translation
-  has its page there as `url` (`Bezalel.Study.Citations`: netbible.org's
-  verse page, Bible Hub's for the BSB). `version_url` is set for the NET,
+  a translation that isn't installed or lacks the book) when any verse
+  shown is its text (as `Bezalel.Study.Format.translation_label/2` labels
+  it), empty when every verse shown has only STEPBible's gloss. A verse
+  quoted in a translation has its page there as `url`
+  (`Bezalel.Study.Citations.scripture/2`: netbible.org's verse page, Bible
+  Hub's for the BSB and for a verse the BSB stands in for, eBible.org's
+  for the JPS, Door43's reader for the ULT and UST). A verse the BSB stands
+  in for, in a card that also quotes the chosen translation (a ULT word
+  study with an Ezekiel example), carries its own `"version" => "BSB"`;
+  when every quoted verse shown is such a verse, the card's `version` is
+  "BSB". `version_url` is set for the NET,
   whose terms ask for "(NET)" after the quotation, linked to netbible.org:
-  the first quoted verse's page (a page on netbible.org, which the terms
-  allow), for the host app to draw after the last verse.
+  the first verse quoted in the NET's page (a page on netbible.org, which
+  the terms allow), for the host app to draw after the last verse.
 
   English and original aren't aligned word for word in the packs: an
   English word is highlighted when it is a content word of an original
@@ -40,7 +46,7 @@ defmodule Bezalel.Agent.Card do
   """
 
   alias Bezalel.Agent.Patterns
-  alias Bezalel.Study.{Citations, Reference}
+  alias Bezalel.Study.{Citations, Reference, Translations}
 
   # Verses a card shows; a longer passage says how many more there are.
   @max_verses 6
@@ -82,13 +88,15 @@ defmodule Bezalel.Agent.Card do
   @doc "The card's English, verse by verse, for copying: `2 See, I have called…`."
   @spec text(t()) :: String.t()
   def text(%{"title" => title, "verses" => verses} = card) do
+    version = if card["version"] in [nil, ""], do: nil, else: card["version"]
+
     body =
       Enum.map_join(verses, " ", fn v ->
-        v["ref"] <> " " <> Enum.map_join(v["tokens"], " ", &hd/1)
+        own = if v["version"] && v["version"] != version, do: " (#{v["version"]})", else: ""
+        v["ref"] <> " " <> Enum.map_join(v["tokens"], " ", &hd/1) <> own
       end)
 
-    version = if card["version"] in [nil, ""], do: "", else: ", " <> card["version"]
-    "#{body} (#{title}#{version})"
+    "#{body} (#{title}#{if version, do: ", " <> version, else: ""})"
   end
 
   defp card(result, from, title, verses, ref, highlight?) do
@@ -104,29 +112,58 @@ defmodule Bezalel.Agent.Card do
               do: [token, Map.get(index, bare(token))]
 
         found = for [_, s] <- tokens, s, into: %{}, do: {s, word(v.words, s)}
-        row = %{"ref" => ref.(v), "tokens" => tokens, "url" => verse_url(v, translation)}
-        {Map.reject(row, fn {_k, url} -> url == nil end), Map.merge(found, words)}
-      end)
 
-    translated? = translation != nil and Enum.any?(shown, & &1.translated)
-    net? = translated? and translation.key == "net"
+        row = %{
+          "ref" => ref.(v),
+          "tokens" => tokens,
+          "url" => verse_url(v, translation),
+          "version" => if(fallback?(v), do: "BSB")
+        }
+
+        {Map.reject(row, fn {_k, value} -> value == nil end), Map.merge(found, words)}
+      end)
 
     %{
       "from" => from,
       "title" => title,
-      "version" => if(translated?, do: translation.abbreviation, else: ""),
-      "version_url" => if(net?, do: Enum.find_value(rows, translation.url, & &1["url"])),
+      "version" => version(shown, translation),
+      "version_url" => version_url(shown, rows, translation),
       "verses" => rows,
       "words" => words,
       "more" => length(rest)
     }
   end
 
-  # The verse's page in the translation it's quoted in (`Bezalel.Study.Citations`);
-  # nil for a verse shown only as STEPBible's gloss.
-  defp verse_url(%{translated: true, reference: "" <> reference}, %{key: key})
-       when key in ["net", "bsb"],
-       do: Citations.scripture(reference, key).url
+  # The card's translation: the result's when any verse shown is its text,
+  # the BSB when every quoted verse is the BSB standing in, else "".
+  defp version(_shown, nil), do: ""
+
+  defp version(shown, translation) do
+    case Enum.filter(shown, & &1.translated) do
+      [] -> ""
+      quoted -> if Enum.all?(quoted, &fallback?/1), do: "BSB", else: translation.abbreviation
+    end
+  end
+
+  # The NET's link: the first verse quoted in the NET's page.
+  defp version_url(shown, rows, %{key: "net", url: url}) do
+    if Enum.any?(shown, &(&1.translated and not fallback?(&1))),
+      do: Enum.find_value(rows, url, &(&1["version"] == nil && &1["url"]))
+  end
+
+  defp version_url(_shown, _rows, _translation), do: nil
+
+  # A verse whose English is the BSB standing in for a translation that
+  # lacks its book (`Bezalel.Study.Format.verse_view/1`'s `fallback`).
+  defp fallback?(verse), do: Map.get(verse, :fallback) == true
+
+  # The verse's page in the translation it's quoted in (`Bezalel.Study.Citations`;
+  # the BSB's for a verse the BSB stands in for); nil for a verse shown only
+  # as STEPBible's gloss.
+  defp verse_url(%{translated: true, reference: "" <> reference} = verse, %{key: key}) do
+    key = if Map.get(verse, :fallback) == true, do: "bsb", else: key
+    if key in Translations.keys(), do: Citations.scripture(reference, key).url
+  end
 
   defp verse_url(_verse, _translation), do: nil
 

@@ -89,13 +89,14 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
                "Please provide either 'strongs' number or 'word' to study."
     end
 
-    test "the entry cites its lexicons and Strong's page, each example its verse" do
+    test "the entry cites its lexicons and Strong's page, the UBS entry, each example its verse" do
       assert {:ok, ruach} = WordStudy.result(%{"strongs" => "H7307"}, @prefs)
 
       assert [
                %Citation{work: "step", url: "https://www.stepbible.org/?q=strong=H7307"},
                %Citation{work: "bdb", url: "https://biblehub.com/bdb/7307.htm"},
                %Citation{work: "strongs", url: "https://biblehub.com/hebrew/7307.htm"},
+               %Citation{work: "ubs_hebrew"} = ubs,
                %Citation{work: "bsb", url: "https://biblehub.com/genesis/1-2.htm"}
                | examples
              ] = citations = WordStudy.citations(ruach)
@@ -103,10 +104,14 @@ defmodule Bezalel.Study.Tools.LexiconToolsTest do
       assert Enum.count(examples) == 4
       text = WordStudy.render(ruach)
 
-      # The entry's Source line closes the entry; an example's sits under it.
+      # The entry's Source line closes the entry, then the UBS entry closes
+      # with its own; an example's sits under it.
       assert text =~
                "\n" <>
-                 Citation.source_line(Enum.take(citations, 3)) <> "\n\n## Example Passages (BSB)"
+                 Citation.source_line(Enum.take(citations, 3)) <>
+                 "\n\n## UBS Dictionary of Biblical Hebrew: "
+
+      assert text =~ "\n" <> Citation.source_line(ubs) <> "\n\n## Example Passages (BSB)"
 
       assert text =~
                ~r/\n\*\*Gen\.1\.2\*\*: [^\n]+\nSource: \[Genesis 1:2\]\(https:\/\/biblehub\.com\/genesis\/1-2\.htm\)\n/

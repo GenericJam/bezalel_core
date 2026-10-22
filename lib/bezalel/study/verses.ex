@@ -148,7 +148,10 @@ defmodule Bezalel.Study.Verses do
   text: '1Sa.20.42(21.1)' beside '1Sa.20.42'), and an NT row whose
   bracketed verse has no row of its own is that verse ('2Co.13.13[13.14]'
   is '2Co.13.14'). nil also marks the verses the translation omits (and,
-  in the BSB, the Psalm superscriptions).
+  in the BSB, the Psalm superscriptions). A verse in a book the translation
+  doesn't have (`Translations.covers?/2`: the JPS's New Testament, a book
+  not yet in a ULT or UST release) gets the BSB's text, with
+  `text_fallback` true (false on every other row).
   """
   @spec attach_english(DB.conn(), [DB.row()], Translations.t()) :: [DB.row()]
   def attach_english(_conn, [], _translation), do: []
@@ -172,12 +175,38 @@ defmodule Bezalel.Study.Verses do
         end
       end)
 
-    texts = texts(conn, translation, wanted |> Map.values() |> Enum.reject(&is_nil/1))
+    references = wanted |> Map.values() |> Enum.reject(&is_nil/1)
+    texts = texts(conn, translation, references)
+    borrowed = borrowed(conn, translation, Enum.reject(references, &Map.has_key?(texts, &1)))
 
     rows
     |> Enum.with_index()
-    |> Enum.map(fn {row, index} -> Map.put(row, "text_translation", texts[wanted[index]]) end)
+    |> Enum.map(fn {row, index} ->
+      reference = wanted[index]
+
+      row
+      |> Map.put("text_translation", texts[reference] || borrowed[reference])
+      |> Map.put(
+        "text_fallback",
+        not Map.has_key?(texts, reference) and Map.has_key?(borrowed, reference)
+      )
+    end)
   end
+
+  # The BSB's text of the references in books `translation` doesn't have.
+  defp borrowed(_conn, %{books: :all}, _references), do: %{}
+  defp borrowed(_conn, _translation, []), do: %{}
+
+  defp borrowed(conn, translation, references) do
+    lacking = Translations.lacking(translation, references |> Enum.map(&book/1) |> Enum.uniq())
+
+    case Enum.filter(references, &(book(&1) in lacking)) do
+      [] -> %{}
+      references -> texts(conn, Translations.get("bsb"), references)
+    end
+  end
+
+  defp book(reference), do: reference |> String.split(".", parts: 2) |> hd()
 
   defp plain_references(_conn, split) when map_size(split) == 0, do: MapSet.new()
 

@@ -91,6 +91,11 @@ defmodule Bezalel.Study.Citations do
     year: 2009
   }
 
+  # The Apostolic Fathers (the fathers pack): their work keys, and CAFE's
+  # English at the commit `data/pins.json` → `fathers` pins.
+  @fathers Map.new(Bezalel.Study.Ancient.Fathers.work_keys(), &{&1, true})
+  @cafe "https://github.com/jcuenod/CAFE/blob/06b19aecf94f2342c6061502a2b481b03693eaa3/"
+
   # The books studybible-mcp summarises, by its `source_work`: author,
   # title and year of first publication (no edition: the data records none).
   @books %{
@@ -195,7 +200,26 @@ defmodule Bezalel.Study.Citations do
     "hlt" => "Unpublished draft renderings",
     "fee_stuart" => "Fee & Stuart",
     "research" => "Research sources",
-    "studybible" => "studybible-mcp"
+    "studybible" => "studybible-mcp",
+    "jps" => "JPS 1917",
+    "ult" => "Literal Text (ULT, adapted)",
+    "ust" => "Simplified Text (UST, adapted)",
+    "apostolic_fathers" => "Apostolic Fathers",
+    "ubs_hebrew" => "UBS Dictionary of Biblical Hebrew",
+    "ubs_greek" => "UBS Dictionary of the Greek New Testament",
+    "macula" => "MACULA syntax trees",
+    "sp" => "Samaritan Pentateuch",
+    "sblgnt" => "SBL Greek New Testament",
+    "sblgnt_apparatus" => "SBLGNT apparatus",
+    "hottp" => "UBS Hebrew Old Testament Text Project"
+  }
+
+  # The UBS dictionaries' files at the commit the dictionaries pack was built
+  # from (data/pins.json → ubs_dictionaries).
+  @ubs_dictionaries "https://github.com/ubsicap/ubs-open-license/blob/a15a96cfaa4ca18a6c0339016645ba1e534db3c8/dictionaries/"
+  @ubs_files %{
+    "ubs_hebrew" => "hebrew/JSON/UBSHebrewDic-v0.9.4-en.JSON",
+    "ubs_greek" => "greek/JSON/UBSGreekNTDic-v1.1-en.JSON"
   }
 
   # ── Scripture ────────────────────────────────────────────────────────────
@@ -236,14 +260,67 @@ defmodule Bezalel.Study.Citations do
   end
 
   @doc """
+  A verse of the JPS 1917 at eBible.org, its chapter page anchored at the
+  verse (`#V5`). eBible numbers the verses in the English way and prints a
+  Psalm's title in verse 1, so a superscription (verse 0) links verse 1.
+  """
+  @spec jps(verse()) :: Citation.t()
+  def jps(verse) do
+    {book, chapter, v} = parse(verse)
+    name = Reference.book_name(book)
+    digits = if book == "Psa", do: 3, else: 2
+    number = chapter |> Integer.to_string() |> String.pad_leading(digits, "0")
+
+    %Citation{
+      work: "jps",
+      label: place(name, chapter, v),
+      locator: place(name, chapter, v),
+      url: "https://ebible.org/engjps/#{String.upcase(book)}#{number}.htm#V#{max(v, 1)}"
+    }
+  end
+
+  @doc """
+  A verse of the ULT (`ult/1`) or UST (`ust/1`) in Door43's reader of the
+  release the translations pack was built from (v91), anchored at the
+  verse (`#tit-1-5`; a Psalm's title, verse 0, at verse 1). The reader is
+  drawn by script in the browser. The pack's text is adapted from it (the
+  alignment removed), so the label is the adaptation's
+  (`Bezalel.Study.Translations`).
+  """
+  @spec ult(verse()) :: Citation.t()
+  def ult(verse), do: door43("ult", verse)
+
+  @doc "A verse of the UST in Door43's reader; see `ult/1`."
+  @spec ust(verse()) :: Citation.t()
+  def ust(verse), do: door43("ust", verse)
+
+  defp door43(work, verse) do
+    {book, chapter, v} = parse(verse)
+    name = Reference.book_name(book)
+    code = String.downcase(book)
+
+    %Citation{
+      work: work,
+      label: place(name, chapter, v),
+      locator: place(name, chapter, v),
+      url:
+        "https://preview.door43.org/u/unfoldingWord/en_#{work}/v91/?book=#{code}" <>
+          "##{code}-#{chapter}-#{max(v, 1)}"
+    }
+  end
+
+  @doc """
   A verse quoted in `translation` (a `Bezalel.Study.Translations` key or
-  map): `net/1` or `bsb/1`; a verse with only STEPBible's gloss (`nil`) is
-  its original on STEP (`step/1`).
+  map): `net/1`, `bsb/1`, `jps/1`, `ult/1` or `ust/1`; a verse with only
+  STEPBible's gloss (`nil`) is its original on STEP (`step/1`).
   """
   @spec scripture(verse(), String.t() | map() | nil) :: Citation.t()
   def scripture(verse, %{key: key}), do: scripture(verse, key)
   def scripture(verse, "net"), do: net(verse)
   def scripture(verse, "bsb"), do: bsb(verse)
+  def scripture(verse, "jps1917"), do: jps(verse)
+  def scripture(verse, "ult"), do: ult(verse)
+  def scripture(verse, "ust"), do: ust(verse)
   def scripture(verse, _none), do: step(verse)
 
   @doc """
@@ -305,6 +382,32 @@ defmodule Bezalel.Study.Citations do
       label: "#{place(Reference.book_name(book) || book, chapter, v)} (Brenton)",
       locator: "#{book}.#{chapter}.#{v}",
       url: "https://ebible.org/eng-Brenton/#{file}#{number}.htm#V#{v}"
+    }
+  end
+
+  @doc """
+  A verse's clause structure in Clear-Bible MACULA's syntax trees (the
+  syntax pack; CC BY 4.0): the tree file `file` ('WLC/lowfat/01-Gen-001-lowfat.xml',
+  one per chapter in MACULA Hebrew, per book in MACULA Greek) in `repo`
+  ('https://github.com/Clear-Bible/macula-hebrew') at `commit`, the one the
+  pack was built from, as the pack records them. The glosses are MACULA's.
+  """
+  @spec macula(verse(), String.t(), String.t(), String.t()) :: Citation.t()
+  def macula(verse, repo, commit, file) do
+    {book, chapter, v} = parse(verse)
+
+    edition =
+      if MapSet.member?(@nt, book), do: "MACULA Greek, SBLGNT", else: "MACULA Hebrew, WLC"
+
+    raw = String.replace_prefix(repo, "https://github.com/", "https://raw.githubusercontent.com/")
+
+    %Citation{
+      work: "macula",
+      label: "#{place(Reference.book_name(book) || book, chapter, v)} (#{edition})",
+      locator: "#{book}.#{chapter}.#{v}",
+      url: "#{repo}/blob/#{commit}/#{file}",
+      licence: "CC BY 4.0",
+      dataset_url: "#{raw}/#{commit}/#{file}"
     }
   end
 
@@ -440,6 +543,27 @@ defmodule Bezalel.Study.Citations do
       label: Enum.join(Enum.reject(["STEP lexicon #{padded}", word], &blank?/1), " "),
       locator: padded,
       url: "https://www.stepbible.org/?q=strong=#{padded}"
+    }
+  end
+
+  @doc """
+  An entry of a UBS dictionary (`"ubs_hebrew"`, `"ubs_greek"`; CC BY-SA
+  4.0) by its lemma and its Strong's codes as the dictionary gives them.
+  The dictionaries have no page per entry online (SDBH's old site now
+  redirects to marble.bible, an app with no entry links), so the
+  dictionary's file at the commit the dictionaries pack was built from.
+  """
+  @spec ubs_dictionary(String.t(), String.t(), String.t() | nil) :: Citation.t()
+  def ubs_dictionary(dictionary, lemma, codes \\ nil) do
+    url = @ubs_dictionaries <> Map.fetch!(@ubs_files, dictionary)
+    entry = if blank?(codes), do: lemma, else: "#{lemma} (#{codes})"
+
+    %Citation{
+      work: dictionary,
+      label: "#{Map.fetch!(@titles, dictionary)}, #{entry}",
+      locator: entry,
+      url: url,
+      dataset_url: url
     }
   end
 
@@ -633,7 +757,9 @@ defmodule Bezalel.Study.Citations do
   An ancient passage by its work key and reference as the packs store them
   ('antiquities', 'Antiquities 18.63–64'). Options: `:source_url` (the
   row's pinned dataset URL: Philo's work number and 1 Enoch's Wikisource
-  page come from it), `:english` (false when the tool gave the original
+  page come from it, and an Apostolic Fathers passage's line of Lake's
+  Greek, whose CAFE English line is the citation, a `:machine`
+  translation), `:english` (false when the tool gave the original
   only: the citation is then `:assistant`), `:alternate_reference` (the
   row's other numbering: 4 Ezra's KJV 2 Esdras verse, which the KJV page
   is anchored by; 4 Ezra 7:106 is 2 Esdras 7:36).
@@ -739,6 +865,24 @@ defmodule Bezalel.Study.Citations do
     %{dss_manuscript(siglum, reference) | label: reference, locator: reference}
   end
 
+  defp ancient_citation(work_key, reference, english?, source_url)
+       when is_map_key(@fathers, work_key) do
+    greek = %Citation{work: "apostolic_fathers", label: "#{reference} (Lake)", url: source_url}
+
+    if english? and is_binary(source_url) do
+      %Citation{
+        work: "apostolic_fathers",
+        label: "#{reference} (CAFE, machine translation)",
+        locator: reference,
+        url: cafe_url(source_url),
+        translation: :machine,
+        original: [%{label: greek.label, url: source_url}]
+      }
+    else
+      translated(%{greek | locator: reference}, false)
+    end
+  end
+
   defp ancient_citation(work_key, reference, english?, source_url) do
     # Philo (and any work keyed like it): Scaife by the TLG work number in
     # the dataset path, cited by section or book.section.
@@ -760,6 +904,13 @@ defmodule Bezalel.Study.Citations do
       %Citation{work: work_key, label: reference, locator: reference, url: source_url}
       |> translated(english?)
     end
+  end
+
+  # CAFE numbers its English lines as the Greek file it translated: the
+  # Greek line's anchor ('…/texts/011-didache.txt#L52') is the English one's.
+  defp cafe_url(source_url) do
+    [file, line] = source_url |> String.split("/texts/") |> List.last() |> String.split("#")
+    @cafe <> String.replace_suffix(file, ".txt", ".en.txt") <> "#" <> line
   end
 
   @doc """
@@ -812,6 +963,122 @@ defmodule Bezalel.Study.Citations do
     # A joined siglum ('4Q223–224') is filed under its first manuscript.
     [first | _] = String.split(Map.get(@leon_levy_sigla, siglum, siglum), ["–", "-"])
     @leon_levy <> URI.encode(first, &URI.char_unreserved?/1) <> "-1"
+  end
+
+  # ── Textual witnesses (the witnesses pack) ───────────────────────────────
+  # `source_url` is the pack's `witness_sources.source_url`: the source's
+  # directory on GitHub at the commit the pack was built from.
+
+  @doc """
+  A verse of the Samaritan Pentateuch (DT-UCPH/sp): the dataset at the
+  pinned commit (it has no page per verse). `source_reference` is the
+  dataset's own number, named when it differs from the English one. The
+  tools give its consonantal Hebrew only, so any English is the
+  assistant's.
+  """
+  @spec samaritan(verse(), String.t(), String.t()) :: Citation.t()
+  def samaritan(verse, source_reference, source_url) do
+    {book, chapter, v} = parse(verse)
+    {_, own_chapter, own_verse} = parse(source_reference)
+    name = Reference.book_name(book) || book
+
+    own =
+      if {own_chapter, own_verse} == {chapter, v},
+        do: "",
+        else: ", its #{own_chapter}:#{own_verse}"
+
+    %Citation{
+      work: "sp",
+      label: "#{place(name, chapter, v)} (Samaritan Pentateuch#{own})",
+      locator: source_reference,
+      url: source_url,
+      licence: @by_nc
+    }
+    |> translated(false)
+  end
+
+  @doc """
+  A verse of the SBL Greek New Testament: its line in the Faithlife/SBLGNT
+  text file (`file` 'John', `line`) at the pinned commit. Greek only: any
+  English is the assistant's.
+  """
+  @spec sblgnt(verse(), String.t(), pos_integer(), String.t()) :: Citation.t()
+  def sblgnt(verse, file, line, source_url) do
+    {book, chapter, v} = parse(verse)
+
+    %Citation{
+      work: "sblgnt",
+      label: "#{place(Reference.book_name(book) || book, chapter, v)} (SBLGNT)",
+      locator: "#{book}.#{chapter}.#{v}",
+      url: "#{github_blob(source_url)}/#{file}.txt#L#{line}"
+    }
+    |> translated(false)
+  end
+
+  @doc """
+  A note of the SBLGNT apparatus: its line in the apparatus XML (`file`
+  'John', `line`) at the pinned commit. Greek readings and sigla: any
+  English is the assistant's.
+  """
+  @spec sblgnt_apparatus(verse(), String.t(), pos_integer(), String.t()) :: Citation.t()
+  def sblgnt_apparatus(verse, file, line, source_url) do
+    {book, chapter, v} = parse(verse)
+    place = place(Reference.book_name(book) || book, chapter, v)
+
+    %Citation{
+      work: "sblgnt_apparatus",
+      label: "SBLGNT apparatus, #{place}",
+      locator: "#{book}.#{chapter}.#{v} line #{line}",
+      url: "#{github_blob(source_url)}/#{file}.xml#L#{line}"
+    }
+    |> translated(false)
+  end
+
+  @doc """
+  An entry of the UBS Hebrew Old Testament Text Project (`id` '00015') at
+  a verse: the report's XML at the pinned commit (GitHub doesn't display a
+  file that size, so the raw file; the entry is `<HOTTP_Entry Id=…>`). Its
+  English is the report's own.
+  """
+  @spec hottp(String.t(), verse(), String.t()) :: Citation.t()
+  def hottp(id, verse, source_url) do
+    {book, chapter, v} = parse(verse)
+
+    %Citation{
+      work: "hottp",
+      label: "HOTTP entry #{id} (#{place(Reference.book_name(book) || book, chapter, v)})",
+      locator: "entry #{id}",
+      url: "#{github_raw(source_url)}/HOTTP.XML"
+    }
+  end
+
+  @doc """
+  The HOTTP report's introduction that explains its ratings (`:ratings`,
+  `HOTTP-RATINGS-EN.HTML`) or its factors (`:factors`,
+  `HOTTP-FACTORS-EN.HTML`), at the pinned commit.
+  """
+  @spec hottp_glossary(:ratings | :factors, String.t()) :: Citation.t()
+  def hottp_glossary(kind, source_url) do
+    {label, file} =
+      case kind do
+        :ratings -> {"HOTTP: the committee's ratings", "HOTTP-RATINGS-EN.HTML"}
+        :factors -> {"HOTTP: factors involved in textual decisions", "HOTTP-FACTORS-EN.HTML"}
+      end
+
+    %Citation{
+      work: "hottp",
+      label: label,
+      locator: file,
+      url: "#{github_blob(source_url)}/#{file}"
+    }
+  end
+
+  defp github_blob(tree_url), do: String.replace(tree_url, "/tree/", "/blob/", global: false)
+
+  defp github_raw(tree_url) do
+    tree_url
+    |> String.replace("https://github.com/", "https://raw.githubusercontent.com/", global: false)
+    |> String.replace("/tree/", "/", global: false)
   end
 
   # ── Scholarship ──────────────────────────────────────────────────────────

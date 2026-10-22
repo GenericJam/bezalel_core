@@ -57,4 +57,28 @@ defmodule Bezalel.Agent.CardTest do
     assert card["version"] == ""
     assert card["version_url"] == nil
   end
+
+  @ult %{key: "ult", abbreviation: "ULT", url: "https://www.unfoldingword.org/ult"}
+
+  test "a verse the BSB stands in for is labelled BSB on its own row, and in the copied text" do
+    card = lookup([verse(2, true), Map.put(verse(3, true), :fallback, true)], @ult)
+    assert card["version"] == "ULT"
+
+    assert [%{"url" => "https://preview.door43.org/" <> _} = own, bsb] = card["verses"]
+    refute Map.has_key?(own, "version")
+    assert %{"version" => "BSB", "url" => "https://biblehub.com/exodus/31-3.htm"} = bsb
+
+    assert Card.text(card) == "2 verse 2 3 verse 3 (BSB) (Exodus 31:2-3, ULT)"
+  end
+
+  test "when every quoted verse is the BSB standing in, the card's version is BSB" do
+    card = lookup([verse(2, false), Map.put(verse(3, true), :fallback, true)], @ult)
+    assert card["version"] == "BSB"
+    assert Card.text(card) == "2 verse 2 3 verse 3 (Exodus 31:2-3, BSB)"
+
+    # The NET's link is never a BSB page.
+    net = lookup([Map.put(verse(3, true), :fallback, true)], @net)
+    assert net["version"] == "BSB"
+    assert net["version_url"] == nil
+  end
 end

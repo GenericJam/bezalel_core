@@ -3,7 +3,9 @@ defmodule Bezalel.Data.Report do
   The import reports. NET (`out/net_report.txt`): what was dropped, and how
   NET's verse set compares with the BSB references of a core pack
   (`bsb_verses.reference`), so the study tools know where a NET lookup can
-  come back empty. Scrolls (`out/scrolls_report.txt`): what the scrolls pack
+  come back empty. JPS 1917, ULT, UST (`out/translations_report.txt`): what
+  each import dropped and kept, and its verse set against the BSB's in the
+  books it has. Scrolls (`out/scrolls_report.txt`): what the scrolls pack
   holds and what it leaves out, by rule.
   """
 
@@ -213,6 +215,94 @@ defmodule Bezalel.Data.Report do
         "#{length(biblical.unmapped)}",
       examples(Enum.uniq(biblical.unmapped))
     ]
+  end
+
+  @doc """
+  The report of a translation read from USFM (`out/translations_report.txt`
+  has one per translation): `info` has `:title`, `:source` (a line),
+  `:parsed` (`Bezalel.Data.Jps.rows/2` or `Bezalel.Data.Door43.rows/1`) and
+  `:bsb` (`{label, [reference]}`, a core pack's `bsb_verses` references).
+  The comparison is per book the translation has; the books it lacks are
+  listed (the study tools quote the BSB for them, with a note).
+  """
+  @spec translation(map()) :: String.t()
+  def translation(info) do
+    parsed = info.parsed
+    refs = Enum.map(parsed.rows, & &1.reference)
+    {label, bsb} = info.bsb
+    books = MapSet.new(parsed.books)
+    in_books = Enum.filter(bsb, &MapSet.member?(books, hd(String.split(&1, "."))))
+    %{both: both, only_a: only_source, only_b: only_bsb} = compare(refs, in_books)
+    lacking = for {code, _name, _chapters} <- Books.all(), code not in parsed.books, do: code
+
+    [
+      "#{info.title}",
+      "",
+      info.source,
+      "Rows: #{length(refs)} (#{count_verse0(refs)} Psalm superscriptions as verse 0) " <>
+        "in #{length(parsed.books)} books",
+      "Books not in the source: #{length(lacking)}" <>
+        if(lacking == [], do: "", else: " (" <> Enum.join(lacking, " ") <> ")"),
+      "",
+      "Verses the source gives without text: #{length(parsed.empty)}",
+      examples(parsed.empty),
+      "Verse bridges, kept whole on their first verse (the later verses have no row): " <>
+        "#{length(parsed.bridges)}",
+      all(Enum.map(parsed.bridges, fn {reference, span} -> "#{reference}(#{span})" end)),
+      "Footnotes dropped (\\f … \\f*): #{length(parsed.footnotes)}",
+      Enum.map(Enum.take(parsed.footnotes, 3), fn {ref, text} -> "    #{ref}: #{text}" end),
+      "Headings dropped: #{length(parsed.headings)}",
+      parsed.headings
+      |> Enum.group_by(&elem(&1, 1))
+      |> Enum.sort()
+      |> Enum.map(fn {marker, headings} ->
+        [
+          "  \\#{marker}: #{length(headings)}",
+          headings
+          |> Enum.take(3)
+          |> Enum.map(fn {reference, _marker, text} -> "    #{reference}: #{text}" end)
+        ]
+      end),
+      hebrew_numbers(parsed),
+      renumbered(parsed),
+      "",
+      "Compared with #{label}, in the books the source has: #{length(in_books)} BSB references " <>
+        "(#{count_verse0(in_books)} superscriptions)",
+      "In both: #{both}",
+      "Only in the source: #{length(only_source)}",
+      all(only_source),
+      "Only in the BSB (in a book the translation has, a lookup shows STEPBible's gloss): " <>
+        "#{length(only_bsb)}",
+      all(only_bsb)
+    ]
+    |> List.flatten()
+    |> Enum.join("\n")
+    |> Kernel.<>("\n")
+  end
+
+  defp hebrew_numbers(%{numbers: numbers} = parsed) do
+    [
+      "Inline Hebrew verse numbers removed (\"(3-2)\"): #{numbers}",
+      "Psalm titles moved to verse 0 by their Hebrew numbers: #{length(parsed.titles)}",
+      "Hebrew numbers the core pack places in another English verse (the text stays in " <>
+        "eBible's verse): " <>
+        Enum.map_join(parsed.elsewhere, " ", fn {reference, number} -> reference <> number end)
+    ]
+  end
+
+  defp hebrew_numbers(_parsed), do: []
+
+  defp renumbered(%{renumbered: moved}) do
+    "Verses moved to the packs' English numbering (unfoldingWord's versification differs): " <>
+      Enum.map_join(moved, " ", fn {from, to} -> "#{from}→#{to}" end)
+  end
+
+  defp renumbered(_parsed), do: []
+
+  defp all([]), do: []
+
+  defp all(references) do
+    references |> Enum.chunk_every(12) |> Enum.map(&("  " <> Enum.join(&1, " ")))
   end
 
   @doc "References in canonical order (book, chapter, verse)."

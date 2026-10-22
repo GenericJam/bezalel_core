@@ -29,6 +29,11 @@ defmodule Bezalel.Study.Credits do
   # terms ask for it verbatim).
   @net Bezalel.Study.Translations.get("net")
 
+  # The ULT and UST as adapted here: their notices (the attribution and the
+  # changes their CC BY-SA licence asks for) are the translations metadata's.
+  @ult Bezalel.Study.Translations.get("ult")
+  @ust Bezalel.Study.Translations.get("ust")
+
   @notice "Modified for Bezalel: the sources below were converted into SQLite databases, " <>
             "selected and excerpted, reformatted (for example HTML to plain text), re-keyed to " <>
             "Bible references, indexed for search, and split into downloadable packs. Their " <>
@@ -115,9 +120,51 @@ defmodule Bezalel.Study.Credits do
      "4 Ezra (2 Esdras 3–14): King James Version, from eBible.org; Latin: Clementine Vulgate from Latin Wikisource, CC BY-SA 4.0. Modified.",
      [{"CC BY-SA 4.0 (Latin)", @by_sa}, {"Public domain (English)", nil}],
      ["https://la.wikisource.org"]},
+    {"Samaritan Pentateuch",
+     "The Samaritan Pentateuch: Christian Canu Højgaard, Martijn Naaijer and Stefan Schorch, Text-Fabric Dataset of the Samaritan Pentateuch (Zenodo, 2023, doi:10.5281/zenodo.7734632), DT-UCPH/sp, CC BY-NC 4.0; the text of MS Dublin Chester Beatty Library 751 and MS Garizim 1 as transcribed by the Samaritanus project (Stefan Schorch, Halle). Modified.",
+     [{"CC BY-NC 4.0", @by_nc}],
+     ["https://github.com/DT-UCPH/sp", "https://doi.org/10.5281/zenodo.7734632"]},
+    {"SBL Greek New Testament",
+     "The SBL Greek New Testament and its apparatus, copyright 2010 by the Society of Biblical Literature and Logos Bible Software, CC BY 4.0, from Faithlife/SBLGNT. Modified.",
+     [{"CC BY 4.0", @by}], ["https://sblgnt.com", "https://github.com/Faithlife/SBLGNT"]},
+    {"Hebrew Old Testament Text Project",
+     "Preliminary and Interim Report on the Hebrew Old Testament Text Project (HOTTP), © United Bible Societies 1973-1980, 2003-2023, CC BY-SA 4.0, from ubsicap/ubs-open-license (the English text). Modified.",
+     [{"CC BY-SA 4.0", @by_sa}], ["https://github.com/ubsicap/ubs-open-license/tree/main/HOTTP"]},
     {"studybible-mcp",
      "Study tools, ANE context, theology summaries, textual variants and editorial notes adapted from studybible-mcp, Copyright (c) 2024 Study Bible MCP Contributors, MIT License.",
-     [{"MIT (full text below)", nil}], ["https://github.com/djayatillake/studybible-mcp"]}
+     [{"MIT (full text below)", nil}], ["https://github.com/djayatillake/studybible-mcp"]},
+    {"JPS 1917",
+     "The Holy Scriptures according to the Masoretic Text: A New Translation (Jewish Publication Society of America, 1917), public domain, from eBible.org. Modified: eBible's inline Hebrew verse numbers removed and the Psalm titles numbered verse 0.",
+     [{"Public domain", nil}], ["https://ebible.org/find/details.php?id=engjps"]},
+    {@ult.name, @ult.copyright, [{"CC BY-SA 4.0", @by_sa}],
+     ["https://www.unfoldingword.org/ult", "https://git.door43.org/unfoldingWord/en_ult"]},
+    {@ust.name, @ust.copyright, [{"CC BY-SA 4.0", @by_sa}],
+     ["https://www.unfoldingword.org/ust", "https://git.door43.org/unfoldingWord/en_ust"]},
+    {"Apostolic Fathers",
+     "The Apostolic Fathers: Greek (and Latin) text from Open Apostolic Fathers 1.0, edited by James Tauber and Seumas Macdonald (2019), a corrected text of Kirsopp Lake's edition (1912–1913), doi:10.5281/zenodo.2555673, CC BY-SA 4.0; English from CAFE, the Contemporary Apostolic Fathers Edition by James Cuénod (2024), a machine translation drafted with GPT-4o, CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     ["https://github.com/jtauber/apostolic-fathers", "https://github.com/jcuenod/CAFE"]},
+    {"UBS Dictionary of Biblical Hebrew",
+     "UBS Dictionary of Biblical Hebrew © United Bible Societies, 2023. Adapted from Semantic Dictionary of Biblical Hebrew © 2000-2023 United Bible Societies. Licensed under CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     [
+       "https://translation.bible/tools-resources/ubs-dictionary-of-biblical-hebrew/",
+       "https://github.com/ubsicap/ubs-open-license/tree/main/dictionaries/hebrew"
+     ]},
+    {"UBS Dictionary of the Greek New Testament",
+     "UBS Dictionary of New Testament Greek, © United Bible Societies, 2023. Adapted from Semantic Dictionary of Biblical Greek: © United Bible Societies 2018-2023, which is adapted from Greek-English Lexicon of the New Testament: Based on Semantic Domains, Eds. J P Louw, Eugene Albert Nida © United Bible Societies 1988, 1989. Licensed under CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     [
+       "https://translation.bible/tools-resources/ubs-dictionary-of-the-greek-new-testament/",
+       "https://github.com/ubsicap/ubs-open-license/tree/main/dictionaries/greek"
+     ]},
+    {"MACULA syntax trees",
+     "Clause structure from the MACULA Hebrew Linguistic Datasets, available at https://github.com/Clear-Bible/macula-hebrew/, and the MACULA Greek Linguistic Datasets, available at https://github.com/Clear-Bible/macula-greek/, © 2022-2024 Biblica, Inc, CC BY 4.0: syntax trees of the Westminster Leningrad Codex (public domain) with the Westminster Hebrew Syntax (J. Alan Groves Center for Advanced Biblical Research, CC BY 4.0), OpenScriptures Hebrew Bible morphology (CC BY 4.0) and Cherith glosses (Andi Wu, Cherith Analytics, CC BY 4.0); and of the SBL Greek New Testament (Society of Biblical Literature and Logos Bible Software, CC BY 4.0) with Berean Interlinear Bible glosses (public domain) and Cherith glosses (CC BY 4.0). The United Bible Societies' semantic data MACULA uses by permission, and the SIL Hebrew glosses (SILHA) it carries, are not included. Modified.",
+     [{"CC BY 4.0", @by}, {"Public domain (WLC text, Berean glosses)", nil}],
+     [
+       "https://github.com/Clear-Bible/macula-hebrew",
+       "https://github.com/Clear-Bible/macula-greek"
+     ]}
   ]
 
   @scholarship [

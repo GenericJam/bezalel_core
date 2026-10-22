@@ -366,8 +366,11 @@ defmodule Bezalel.Study.Ancient do
   @typedoc "A parsed fragment locator: the label as cited and the lines, if any."
   @type fragment :: %{label: String.t(), lines: {pos_integer(), pos_integer()} | nil}
 
-  @doc "The pack a work's passages are in: `:ancient`, or the work's `pack` (`:scrolls`)."
-  @spec pack(work()) :: :ancient | :scrolls
+  @doc """
+  The pack a work's passages are in: `:ancient`, or the work's `pack`
+  (`:scrolls`, `:fathers`).
+  """
+  @spec pack(work()) :: :ancient | :scrolls | :fathers
   def pack(work), do: Map.get(work, :pack, :ancient)
 
   @doc """

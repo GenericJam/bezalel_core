@@ -1,29 +1,51 @@
 defmodule Mix.Tasks.Bezalel.Data.Fixtures do
-  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls}.sqlite"
+  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,fathers,dictionaries,syntax,witnesses}.sqlite"
 
   @moduledoc """
   Cuts the fixtures core's tests read from the packs built here.
 
-      mix bezalel.data.fixtures [--pack translations|scrolls]
+      mix bezalel.data.fixtures [--pack translations|scrolls|fathers|dictionaries|syntax|witnesses]
                                 [--from DIR] [--core ../test/fixtures/packs/core.sqlite]
                                 [--out DIR]
 
   `--from` (default `out/`) holds the built packs, `--out` (default
-  `../test/fixtures/packs/`) the fixtures; without `--pack` both are cut.
+  `../test/fixtures/packs/`) the fixtures; without `--pack` every one is cut.
 
     * `translations.sqlite`: every translation's metadata row, and its verses
       for exactly the references in the core fixture's `bsb_verses`. Run
-      `mix bezalel.data.net` first.
+      `mix bezalel.data.translations` first.
     * `scrolls.sqlite`: the passages of the works and labels the tests cite
       (`@scroll_works`, `@scroll_labels`) and the biblical readings of
       `@scroll_verses` (a reading of each kind the tools handle: preserved,
       partly and wholly reconstructed, Hebrew numbering, a verse the MT
       lacks), with their manuscripts. Run `mix bezalel.data.scrolls` first.
+    * `fathers.sqlite`: the passages of `@fathers_ranges`
+      (a chapter of each kind the tests cite: Ignatius, 1 Clement, Barnabas,
+      a chapter of each part of the Shepherd, Latin text, the Moscow
+      epilogue). Run `mix bezalel.data.fathers` first.
+    * `dictionaries.sqlite`: the UBS entries of `@dictionary_strongs` (Hebrew,
+      Greek and an Aramaic code) with their meanings, domains and the
+      domain names they use, and both dictionaries' rows. Run
+      `mix bezalel.data.dictionaries` first.
+    * `syntax.sqlite`: both editions and the verses of `@syntax_verses` (a
+      verse of each edition, two Psalm superscriptions, a sentence running
+      past its verse). Run `mix bezalel.data.syntax` first.
+    * `witnesses.sqlite`: the rows of the verses the tests cite
+      (`Bezalel.Data.WitnessesPack.cut/3`). Run `mix bezalel.data.witnesses`
+      first.
   """
 
   use Mix.Task
 
-  alias Bezalel.Data.{Pack, Report, ScrollsPack}
+  alias Bezalel.Data.{
+    DictionariesPack,
+    FathersPack,
+    Pack,
+    Report,
+    ScrollsPack,
+    SyntaxPack,
+    WitnessesPack
+  }
 
   @switches [pack: :string, from: :string, core: :string, out: :string]
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
@@ -39,6 +61,29 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
   # verse), Mal 4:1 (Hebrew 3:19).
   @scroll_verses ~w(Deu.32.8 Isa.53.11 Psa.22.16 Deu.1.10 Jos.5.0 Mal.4.1)
 
+  # {work, first sort key, last}: Didache 0–1 (title, the two ways), 9 and
+  # 14 (the Lord's day); Ignatius, To the Ephesians 20 ('medicine of
+  # immortality'), 1 Clement 5, Barnabas 18 (the two ways), Hermas, Vision
+  # 1.1, Mandate 4.1 and Similitude 9.30 (Latin and Greek), Polycarp, To the
+  # Philippians 10 (Latin) and the Moscow epilogue.
+  @fathers_ranges [
+    {"didache", 0, 1_999},
+    {"didache", 9_000, 9_999},
+    {"didache", 14_000, 14_999},
+    {"ignatius_ephesians", 20_000, 20_999},
+    {"1_clement", 5_000, 5_999},
+    {"barnabas", 18_000, 18_999},
+    {"hermas_visions", 1_001_000, 1_001_999},
+    {"hermas_mandates", 4_001_000, 4_001_999},
+    {"hermas_similitudes", 9_030_000, 9_030_999},
+    {"polycarp_philippians", 10_000, 10_999},
+    {"martyrdom_of_polycarp_moscow_epilogue", 0, 999}
+  ]
+
+  # Gen 1:1 (WLC), Ps 3:0 and 22:0 (superscriptions, the WLC's 3:1 and
+  # 22:1), John 1:1 and 3:16 (SBLGNT), Eph 1:7 (a sentence running to 1:10).
+  @syntax_verses ~w(Gen.1.1 Psa.3.0 Psa.22.0 Jhn.1.1 Jhn.3.16 Eph.1.7)
+
   @passage_columns ~w(corpus author work_key work_title reference alternate_reference
                       book_number section_number section_end editorial_heading text original_text
                       period_tags edition translation license source_url collection sort_start
@@ -46,6 +91,10 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
   @manuscript_columns ~w(siglum name site books verses reconstructed_only sort_order)a
   @verse_columns ~w(reference book chapter verse source_reference mt_verse siglum occurrence
                     locator text letters preserved_letters language)a
+
+  # word_study's tests: אֱלֹהִים, רוּחַ, חָכְמָה (whose entry gives the Aramaic
+  # A2452, the core lexicon's H2452), ἀγάπη and ἀγαπάω ('love').
+  @dictionary_strongs ~w(H0430 H7307 H2452 G0026 G0025)
 
   @impl Mix.Task
   def run(args) do
@@ -57,6 +106,10 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       nil ->
         translations(from, out, opts)
         scrolls(from, out)
+        fathers(from, out)
+        dictionaries(from, out)
+        syntax(from, out)
+        witnesses(from, out)
 
       "translations" ->
         translations(from, out, opts)
@@ -64,8 +117,23 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       "scrolls" ->
         scrolls(from, out)
 
+      "fathers" ->
+        fathers(from, out)
+
+      "dictionaries" ->
+        dictionaries(from, out)
+
+      "syntax" ->
+        syntax(from, out)
+
+      "witnesses" ->
+        witnesses(from, out)
+
       other ->
-        Mix.raise("--pack must be translations or scrolls, not #{inspect(other)}")
+        Mix.raise(
+          "--pack must be translations, scrolls, fathers, dictionaries, syntax or witnesses, " <>
+            "not #{inspect(other)}"
+        )
     end
   end
 
@@ -156,6 +224,59 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
     )
   end
 
+  defp fathers(from_dir, out_dir) do
+    from = Path.join(from_dir, "fathers.sqlite")
+    out = Path.join(out_dir, "fathers.sqlite")
+    columns = @passage_columns
+
+    range_condition =
+      Enum.map_join(@fathers_ranges, " OR ", fn _ ->
+        "(work_key = ? AND sort_start BETWEEN ? AND ?)"
+      end)
+
+    passages =
+      from
+      |> Pack.read(
+        "SELECT #{Enum.join(columns, ", ")} FROM ancient_source_passages " <>
+          "WHERE #{range_condition} ORDER BY id",
+        Enum.flat_map(@fathers_ranges, &Tuple.to_list/1)
+      )
+      |> rows(columns)
+
+    FathersPack.write(out, passages, fixture_meta(from))
+    Mix.shell().info("#{out}: #{length(passages)} passages")
+  end
+
+  defp syntax(from_dir, out_dir) do
+    from = Path.join(from_dir, "syntax.sqlite")
+    out = Path.join(out_dir, "syntax.sqlite")
+    columns = SyntaxPack.columns()
+
+    editions =
+      from
+      |> Pack.read("SELECT #{Enum.join(columns.editions, ", ")} FROM syntax_editions")
+      |> rows(columns.editions)
+
+    verses =
+      from
+      |> Pack.read(
+        "SELECT #{Enum.join(columns.verses, ", ")} FROM syntax_verses " <>
+          "WHERE reference IN (#{placeholders(@syntax_verses)}) ORDER BY rowid",
+        @syntax_verses
+      )
+      |> rows(columns.verses)
+
+    SyntaxPack.write(out, editions, verses, fixture_meta(from))
+    Mix.shell().info("#{out}: #{length(verses)} of #{length(@syntax_verses)} verses")
+  end
+
+  defp witnesses(from_dir, out_dir) do
+    from = Path.join(from_dir, "witnesses.sqlite")
+    out = Path.join(out_dir, "witnesses.sqlite")
+    counts = WitnessesPack.cut(from, out, fixture_meta(from))
+    Mix.shell().info("#{out}: " <> Enum.map_join(counts, ", ", fn {t, n} -> "#{n} #{t}" end))
+  end
+
   defp rows(rows, columns), do: Enum.map(rows, &(columns |> Enum.zip(&1) |> Map.new()))
 
   defp placeholders(values), do: Enum.map_join(values, ", ", fn _ -> "?" end)
@@ -166,5 +287,78 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
     |> Map.new(&List.to_tuple/1)
     |> Map.drop(~w(pack description tables sqlite_version))
     |> Map.put("fixture", "cut by bezalel_core data/: mix bezalel.data.fixtures")
+  end
+
+  defp dictionaries(from_dir, out_dir) do
+    from = Path.join(from_dir, "dictionaries.sqlite")
+    out = Path.join(out_dir, "dictionaries.sqlite")
+    columns = DictionariesPack.columns()
+
+    read = fn table, where, args ->
+      cols = Map.fetch!(columns, table)
+
+      from
+      |> Pack.read("SELECT #{Enum.join(cols, ", ")} FROM #{table} #{where}", args)
+      |> rows(cols)
+    end
+
+    strongs =
+      read.(
+        "dictionary_strongs",
+        "WHERE strongs IN (#{placeholders(@dictionary_strongs)})",
+        @dictionary_strongs
+      )
+
+    entries = strongs |> Enum.map(&{&1.dictionary, &1.entry_id}) |> Enum.uniq()
+
+    in_entries =
+      "WHERE (dictionary, entry_id) IN (VALUES #{Enum.map_join(entries, ", ", fn _ -> "(?, ?)" end)})"
+
+    entry_args = Enum.flat_map(entries, &Tuple.to_list/1)
+
+    meanings =
+      read.(
+        "dictionary_meanings",
+        in_entries <> " ORDER BY dictionary, entry_id, position",
+        entry_args
+      )
+
+    meaning_ids = Enum.map(meanings, &{&1.dictionary, &1.meaning_id})
+    wanted = MapSet.new(meaning_ids)
+
+    meaning_domains =
+      "dictionary_meaning_domains"
+      |> read.("ORDER BY dictionary, meaning_id, kind, position", [])
+      |> Enum.filter(&MapSet.member?(wanted, {&1.dictionary, &1.meaning_id}))
+
+    codes =
+      meaning_domains
+      |> Enum.flat_map(&[{&1.dictionary, &1.code}, {&1.dictionary, &1.source_code}])
+      |> MapSet.new()
+
+    tables = %{
+      "dictionaries" => read.("dictionaries", "ORDER BY key", []),
+      "dictionary_entries" =>
+        read.("dictionary_entries", in_entries <> " ORDER BY dictionary, entry_id", entry_args),
+      "dictionary_strongs" =>
+        read.(
+          "dictionary_strongs",
+          in_entries <> " ORDER BY strongs, dictionary, entry_id",
+          entry_args
+        ),
+      "dictionary_meanings" => meanings,
+      "dictionary_meaning_domains" => meaning_domains,
+      "dictionary_domains" =>
+        "dictionary_domains"
+        |> read.("ORDER BY dictionary, code", [])
+        |> Enum.filter(&MapSet.member?(codes, {&1.dictionary, &1.code}))
+    }
+
+    DictionariesPack.write(out, tables, fixture_meta(from))
+
+    Mix.shell().info(
+      "#{out}: #{length(entries)} entries (#{Enum.join(@dictionary_strongs, " ")}), " <>
+        "#{length(meanings)} meanings, #{length(tables["dictionary_domains"])} domain names"
+    )
   end
 end

@@ -140,8 +140,24 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
 
   defp found(reference, limit, translation, note) do
     with {:ok, found} <- DB.with_pack(:core, &similar(&1, reference, limit, translation)) do
+      previews = Enum.map(found.passages, & &1.preview)
+
+      {quoted, note, [source | rest]} =
+        Translations.settle(translation, note, [found.source | List.flatten(previews)])
+
+      {passages, []} =
+        Enum.map_reduce(Enum.zip(found.passages, previews), rest, fn {passage, preview}, rest ->
+          {preview, rest} = Enum.split(rest, length(preview))
+          {%{passage | preview: preview}, rest}
+        end)
+
       {:ok,
-       Map.merge(found, %{translation: Translations.ref(translation), translation_note: note})}
+       Map.merge(found, %{
+         source: source,
+         passages: passages,
+         translation: quoted,
+         translation_note: note
+       })}
     end
   end
 
@@ -201,7 +217,7 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
 
     "## Passages Similar to #{reference}#{label}\n\n" <>
       Format.translation_note(result.translation_note) <>
-      "**Source**: #{source.english}\n" <>
+      "**Source**#{Format.fallback_label(source)}: #{source.english}\n" <>
       Citation.source_line(verse_citation(source, result.translation)) <>
       "\n\n" <>
       "---\n\n" <>
@@ -238,7 +254,7 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
     do: passage.preview |> shown_preview() |> Enum.map(&verse_citation(&1, translation))
 
   defp verse_citation(view, translation),
-    do: Citations.scripture(view.reference, if(view.translated, do: translation))
+    do: Citations.scripture(view.reference, Format.quoted(view, translation))
 
   # The preview verses whose text starts within the characters shown.
   defp shown_preview(preview) do
@@ -270,9 +286,11 @@ defmodule Bezalel.Study.Tools.FindSimilarPassages do
         do: "*(#{passage.verse_count} verses in this passage)*\n\n",
         else: ""
 
+    label = if Enum.any?(passage.preview, & &1.fallback), do: " (BSB)", else: ""
+
     "### #{rank}. #{passage.reference} (#{percent}% similar)\n\n" <>
       genre_line <>
-      "#{text}\n" <>
+      "#{text}#{label}\n" <>
       Citation.source_line(passage_citations(passage, translation)) <> "\n\n" <> count
   end
 end
