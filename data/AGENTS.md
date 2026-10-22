@@ -33,6 +33,10 @@ path). Read [README.md](README.md) first. bezalel_core's
    Dictionaries: the UBS dictionaries are CC BY-SA 4.0, their licence and
    attribution in each `dictionaries` row; a sense UBS marks `AIGenerated`
    isn't imported.
+   Syntax: MACULA is
+   CC BY 4.0 except the UBS data it uses "with permission" (`sdbh`,
+   `lexdomain`, `coredomain`, `contextualdomain`, `ln`, `domain`) and the
+   Hebrew `gloss` (SIL's SILHA, an SIL licence), which are never imported (`Bezalel.Data.Syntax` reads only the attributes it names).
 3. **Text is not altered.** Markup is removed and whitespace collapsed;
    small capitals become capitals. Anything else the source sends that isn't
    verse text (headings, labels, notes) is dropped by a rule naming its
@@ -76,7 +80,7 @@ mix compile --warnings-as-errors
 mix test
 ```
 
-Re-run `mix bezalel.data.translations` / `mix bezalel.data.scrolls` / `mix bezalel.data.fathers` / `mix bezalel.data.dictionaries` and `mix
+Re-run `mix bezalel.data.translations` / `mix bezalel.data.scrolls` / `mix bezalel.data.fathers` / `mix bezalel.data.dictionaries` / `mix bezalel.data.syntax` and `mix
 bezalel.data.fixtures --pack <pack>` when an importer changes, and run
 core's suite (`cd .. && mix test`) when a fixture changes. Which Dead Sea
 Scrolls are imported is core's `Bezalel.Study.Ancient.Scrolls`: a work added

@@ -29,6 +29,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     Preferences,
     Reference,
     Sources,
+    Syntax,
     Translations,
     Verses
   }
@@ -59,6 +60,9 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     - A word-by-word breakdown with Strong's numbers and glosses (single verses;
       for a passage only when include_morphology is set)
     - Optional grammatical parsing for each word
+    - The clause structure (with the original text, for single verses; for a passage
+      only when include_morphology is set): each clause's parts with their roles (subject, verb, object…) and
+      words, from the MACULA syntax trees of the WLC and the SBLGNT
 
     And once for the passage:
     - Genre-specific interpretive background for the passage's literary type (when
@@ -155,7 +159,8 @@ defmodule Bezalel.Study.Tools.LookupVerse do
           include_morphology: boolean(),
           translation: Translations.ref(),
           translation_note: String.t() | nil,
-          verses: [Format.verse_view()]
+          verses: [Format.verse_view()],
+          syntax: [Syntax.verse()]
         }
 
   @doc """
@@ -173,13 +178,26 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
   def result(args, prefs) do
     with {:ok, found} <- find(Args.reference(args), prefs) do
+      include_original = Args.flag(args, "include_original", true)
+      include_morphology = Args.flag(args, "include_morphology", false)
+
       {:ok,
        Map.merge(found, %{
-         include_original: Args.flag(args, "include_original", true),
-         include_morphology: Args.flag(args, "include_morphology", false)
+         include_original: include_original,
+         include_morphology: include_morphology,
+         syntax: syntax(found, include_original, include_morphology)
        })}
     end
   end
+
+  # The clause structure (syntax pack, none without it), gated like the
+  # word list: the original shown, and a single verse or a passage with
+  # include_morphology.
+  defp syntax(%{single: single, book: book, verses: verses}, true, include_morphology)
+       when single or include_morphology,
+       do: Syntax.verses(book, verses |> Enum.map(&{&1.chapter, &1.verse}) |> Enum.uniq())
+
+  defp syntax(_found, _include_original, _include_morphology), do: []
 
   defp find("", _prefs), do: {:error, "Please provide a verse reference (e.g., 'John 3:16')."}
 
@@ -461,6 +479,7 @@ defmodule Bezalel.Study.Tools.LookupVerse do
 
     Format.translation_note(result.translation_note) <>
       text <>
+      Syntax.render(result.syntax) <>
       genre(result.genre_guidance && result.genre) <>
       torah_weave_hint(result) <>
       variant_hints(result) <>
@@ -479,12 +498,14 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   @doc """
   The sources `render/1` shows, in its order (a `Source:` line under each
   verse): each verse in the quoted translation (unless only STEPBible's
-  gloss stands in for it) and its original on STEP Bible, then Fee &
-  Stuart when the genre guidance is shown.
+  gloss stands in for it) and its original on STEP Bible, the MACULA tree
+  files of the clause structure, then Fee & Stuart when the genre guidance
+  is shown.
   """
   @spec citations(t()) :: [Citation.t()]
   def citations(result) do
     Enum.flat_map(result.verses, &verse_citations(&1, result)) ++
+      Syntax.citations(result.syntax) ++
       if(result.genre_guidance && result.genre, do: [genre_citation(result.genre)], else: [])
   end
 

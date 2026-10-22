@@ -33,7 +33,8 @@ defmodule Bezalel.Study.DB do
     translations: "Bible translations",
     scrolls: "Dead Sea Scrolls",
     fathers: "Apostolic Fathers",
-    dictionaries: "UBS Hebrew and Greek dictionaries"
+    dictionaries: "UBS Hebrew and Greek dictionaries",
+    syntax: "clause structure"
   }
 
   @type pack ::
@@ -46,6 +47,7 @@ defmodule Bezalel.Study.DB do
           | :scrolls
           | :fathers
           | :dictionaries
+          | :syntax
   @type conn :: Sqlite3.db()
   @type row :: %{String.t() => term()}
 

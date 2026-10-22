@@ -106,7 +106,14 @@ defmodule Bezalel.Data.PublishTest do
            } = entry
 
     assert entry["licence"] =~ "CC BY-NC 4.0"
-    assert Publish.built_here() == ["translations", "scrolls", "fathers", "dictionaries"]
+
+    assert Publish.built_here() == [
+             "translations",
+             "scrolls",
+             "fathers",
+             "dictionaries",
+             "syntax"
+           ]
 
     assert_raise KeyError, fn ->
       Publish.entry("core", 2, %{size: 1, sha256: @sha}, %{size: 1, sha256: @sha}, [])
@@ -212,6 +219,45 @@ defmodule Bezalel.Data.PublishTest do
 
     assert {:error, "was built by other code than this checkout's"} =
              Publish.check_dictionaries(Map.delete(meta, "build_sha256"), expected)
+  end
+
+  test "the syntax entry is optional and carries the CC BY licence" do
+    entry =
+      Publish.entry("syntax", 2, %{size: 3, sha256: @sha}, %{size: 9, sha256: @raw_sha}, ["t"])
+
+    assert %{
+             "name" => "syntax",
+             "required" => false,
+             "url" => "https://bezalel.genericjam.com/packs/v2/syntax.sqlite.zst"
+           } = entry
+
+    assert entry["licence"] =~ "CC BY 4.0"
+    refute entry["licence"] =~ "NC"
+  end
+
+  test "a syntax pack is refused unless built from the pins, the base core and this code" do
+    meta = %{
+      "macula_sha256" => "m",
+      "macula_source" => "s",
+      "core_sha256" => "c",
+      "build_sha256" => "b"
+    }
+
+    expected = %{macula_sha256: "m", macula_source: "s", core_sha256: "c", build_sha256: "b"}
+
+    assert Publish.check_syntax(meta, expected) == :ok
+
+    assert {:error, "wasn't built from pins.json's MACULA files"} =
+             Publish.check_syntax(meta, %{expected | macula_sha256: "x"})
+
+    assert {:error, "wasn't built from pins.json's MACULA files"} =
+             Publish.check_syntax(meta, %{expected | macula_source: "x"})
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_syntax(meta, %{expected | core_sha256: "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_syntax(Map.delete(meta, "build_sha256"), expected)
   end
 
   describe "manifest/4" do

@@ -206,7 +206,8 @@ defmodule Bezalel.Study.Citations do
     "ust" => "Simplified Text (UST, adapted)",
     "apostolic_fathers" => "Apostolic Fathers",
     "ubs_hebrew" => "UBS Dictionary of Biblical Hebrew",
-    "ubs_greek" => "UBS Dictionary of the Greek New Testament"
+    "ubs_greek" => "UBS Dictionary of the Greek New Testament",
+    "macula" => "MACULA syntax trees"
   }
 
   # The UBS dictionaries' files at the commit the dictionaries pack was built
@@ -377,6 +378,32 @@ defmodule Bezalel.Study.Citations do
       label: "#{place(Reference.book_name(book) || book, chapter, v)} (Brenton)",
       locator: "#{book}.#{chapter}.#{v}",
       url: "https://ebible.org/eng-Brenton/#{file}#{number}.htm#V#{v}"
+    }
+  end
+
+  @doc """
+  A verse's clause structure in Clear-Bible MACULA's syntax trees (the
+  syntax pack; CC BY 4.0): the tree file `file` ('WLC/lowfat/01-Gen-001-lowfat.xml',
+  one per chapter in MACULA Hebrew, per book in MACULA Greek) in `repo`
+  ('https://github.com/Clear-Bible/macula-hebrew') at `commit`, the one the
+  pack was built from, as the pack records them. The glosses are MACULA's.
+  """
+  @spec macula(verse(), String.t(), String.t(), String.t()) :: Citation.t()
+  def macula(verse, repo, commit, file) do
+    {book, chapter, v} = parse(verse)
+
+    edition =
+      if MapSet.member?(@nt, book), do: "MACULA Greek, SBLGNT", else: "MACULA Hebrew, WLC"
+
+    raw = String.replace_prefix(repo, "https://github.com/", "https://raw.githubusercontent.com/")
+
+    %Citation{
+      work: "macula",
+      label: "#{place(Reference.book_name(book) || book, chapter, v)} (#{edition})",
+      locator: "#{book}.#{chapter}.#{v}",
+      url: "#{repo}/blob/#{commit}/#{file}",
+      licence: "CC BY 4.0",
+      dataset_url: "#{raw}/#{commit}/#{file}"
     }
   end
 

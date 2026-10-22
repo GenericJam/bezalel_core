@@ -8,6 +8,8 @@ unfoldingWord's ULT and UST; the **`scrolls` pack**, the Dead Sea Scrolls' major
 non-biblical works and the biblical manuscripts' readings, from ETCBC/dss;
 and the **`fathers` pack**, the Apostolic Fathers' Greek with CAFE's
 machine-translated English.
+The **`syntax` pack** is each verse's clause structure, from Clear-Bible
+MACULA's syntax trees.
 
 Bezalel's study tools are an Elixir port of
 [studybible-mcp](https://github.com/djayatillake/studybible-mcp) by
@@ -41,17 +43,19 @@ mix bezalel.data.translations  # → out/translations.sqlite, out/{net,translati
 mix bezalel.data.scrolls       # → out/scrolls.sqlite, out/scrolls_report.txt
 mix bezalel.data.fathers       # → out/fathers.sqlite, out/fathers_report.txt
 mix bezalel.data.dictionaries  # → out/dictionaries.sqlite, out/dictionaries_report.txt
-mix bezalel.data.fixtures      # → ../test/fixtures/packs/{translations,scrolls,fathers,dictionaries}.sqlite
+mix bezalel.data.syntax        # → out/syntax.sqlite, out/syntax_report.txt
+mix bezalel.data.fixtures      # → ../test/fixtures/packs/{translations,scrolls,fathers,dictionaries,syntax}.sqlite
 mix bezalel.data.abbott_smith  # → ../priv/study/abbott_smith_pages.json
 ```
 
 Needs the network for the first run (NET: 66 requests, about 30 seconds;
 JPS: one 1 MB zip; ULT and UST: 122 files, about 170 MB; scrolls: 19
-ETCBC/dss files, 48 MB; and the base core pack, 26 MB, for both, unless
-`--core PATH` names a copy); later runs reuse the verified downloads in
-`work/`. Writes only `work/` and `out/` (both gitignored), and the fixtures
-with `bezalel.data.fixtures` (`--pack translations`, `--pack scrolls`,
-`--pack fathers` or `--pack dictionaries` for one).
+ETCBC/dss files, 48 MB; syntax: 956 MACULA files, 533 MB, one request at a
+time; and the base core pack, 26 MB, for all three, unless `--core PATH`
+names a copy); later runs reuse the verified downloads in `work/`. Writes
+only `work/` and `out/` (both gitignored), and the fixtures with
+`bezalel.data.fixtures` (`--pack translations`, `--pack scrolls`, `--pack
+fathers`, `--pack dictionaries` or `--pack syntax` for one).
 
 `mix bezalel.data.translations` compares each translation's verse set with
 the BSB references (`bsb_verses.reference`) of the base core pack
@@ -420,12 +424,72 @@ a usable Strong's code (6 compound names); Greek 5,507 entries, 9,178 meanings,
 counted, not imported: 291,411 Hebrew, 130,923 Greek. 9.9 MB, 1.6 MB with
 `zstd -19`.
 
+## The `syntax` pack
+
+`syntax.sqlite`, built like the others (page size 4096, ANALYZEd, VACUUMed,
+integrity checked) by `mix bezalel.data.syntax [--core PATH]`: how each verse
+is put together, for `lookup_verse`'s "Clause structure" section (why this
+shape and what was left out:
+[../decisions/2026-10-22-syntax-pack.md](../decisions/2026-10-22-syntax-pack.md)).
+
+| Table | Columns | Licence |
+|---|---|---|
+| `syntax_editions` | `edition` (PK: `WLC`, `SBLGNT`), `language`, `name`, `repo`, `commit_sha` (the pinned commit), `licence`, `attribution` (MACULA's required wording) | — |
+| `syntax_verses` | `reference` (PK, STEP form in the packs' English numbering: `Psa.3.0`), `book`, `chapter`, `verse`, `edition`, `source_reference` (the edition's own verse(s), `Psa.3.1`), `source_files` (the tree file(s) in the repo), `clauses` (JSON: the clauses of the sentences touching the verse, `Bezalel.Data.Syntax`); index `(book, chapter, verse)` | MACULA Hebrew / Greek Linguistic Datasets © 2022-2024 Biblica, Inc: CC BY 4.0 (WLC text public domain; SBLGNT CC BY 4.0) |
+| `pack_meta` | `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `macula_source`, `macula_sha256`, `versification`, `core_sha256`, `build_sha256` (`Bezalel.Data.Syntax.build_digest/0`) | — |
+
+**Source.** [Clear-Bible/macula-hebrew](https://github.com/Clear-Bible/macula-hebrew)
+at `47db250b` (`WLC/lowfat/NN-Bbb-CCC-lowfat.xml`, 929 chapter files, 423 MB)
+and [Clear-Bible/macula-greek](https://github.com/Clear-Bible/macula-greek) at
+`8423afe4` (`SBLGNT/lowfat/NN-book.xml`, 27 book files, 110 MB), each file
+pinned by sha256 in [macula_files.json](macula_files.json) (named by
+[pins.json](pins.json) → `macula`) and checked once against its git blob at
+the commit. Neither is in Git LFS. Cached in `work/macula/`.
+
+**What the import does** (`Bezalel.Data.Syntax`):
+
+- reads, of each word, its text and following punctuation, `ref`, `role`,
+  Strong's number (normalised to `H0430`/`G0976`; none for a number with
+  MACULA's letter suffix, `0871a` בְּ, which names another word than the
+  bare number), English gloss (Hebrew: Cherith's `english` only; Greek: the
+  Berean Interlinear's `gloss`, else Cherith's `english`) and `lemma`; of each word group its `class`, `rule` and `role`.
+  Nothing else: **not the UBS data MACULA marks "Used with permission"**
+  (Hebrew `sdbh`, `lexdomain`, `coredomain`, `contextualdomain`; Greek `ln`,
+  `domain`), which isn't under its CC BY licence, **nor the Hebrew `gloss`**,
+  SIL's SILHA glosses under an SIL licence; the report counts every
+  attribute seen and names those;
+- a sentence becomes its clauses in order; a clause's parts are its words
+  grouped by the constituent they are in (the nearest role between word and
+  clause; a role inside a role of the same clause is counted and the outer
+  kept; two sibling constituents with one role stay two parts); a clause
+  inside a clause is a numbered reference from the part it sits in (else
+  its own role), and its role is its own only; a clause
+  made only of clauses (`ClCl`) is dissolved into them; a group at the top
+  of a sentence (MACULA's way of joining clauses with conjunctions) is shown
+  as a clause so its conjunctions keep their place;
+- for each verse, the clauses with words in it and the clauses around them;
+  a word outside the verse keeps only its text, marked with its verse (at
+  most 8 words of a run); the sentence's other clauses are counted;
+- numbers verses from the base core pack's `verses.reference` (split
+  references `Psa.3.0(3.1)` map the WLC's numbering; a Hebrew verse the core
+  pack splits between two English verses, `Psa.23.0(23.1)` beside
+  `Psa.23.1`, is filed whole under both, and the row says so);
+- refuses an element it doesn't know.
+
+**Coverage** (build of 2026-10-22; `out/syntax_report.txt`): 31,201 verses
+(WLC 23,213 sentences; SBLGNT 8,010 sentences, 1,196 of them with words in
+more than one verse).
+Every source verse maps to a core verse. 18 core verses have no row: 14 of
+the 15 verses modern critical texts omit (all but Romans 16:24), Acts 24:7,
+and Romans 16:25–27 (MACULA Greek's SBLGNT trees end Romans with a 16:24 and
+have no doxology). 44.2 MB raw, 3.96 MB with `zstd -19`.
+
 ## Publish
 
 The apps read one URL, **https://bezalel.genericjam.com/packs/manifest.json**
 (schema 1, parsed by the phone app's `Bezalel.Packs.Manifest`), served from
 the Cloudflare R2 bucket `bezalel-packs`. `mix bezalel.data.publish` publishes
-the packs built here (`translations`, `scrolls`, `fathers`, `dictionaries`) as the next data version
+the packs built here (`translations`, `scrolls`, `fathers`, `dictionaries`, `syntax`) as the next data version
 **without uploading the base again**: the five base entries keep their v1 URLs and checksums exactly as
 `base.json` pins them, so an app that has them sees the same `raw_sha256`,
 records the new version and downloads nothing.
@@ -436,6 +500,7 @@ mix bezalel.data.translations           # if out/translations.sqlite isn't built
 mix bezalel.data.scrolls                # if out/scrolls.sqlite isn't built
 mix bezalel.data.fathers                # if out/fathers.sqlite isn't built
 mix bezalel.data.dictionaries           # if out/dictionaries.sqlite isn't built
+mix bezalel.data.syntax                 # if out/syntax.sqlite isn't built
 mix bezalel.data.publish --dry-run      # what would be uploaded; writes out/manifest.json
 mix bezalel.data.publish
 ```
@@ -453,12 +518,12 @@ What it does, in order:
    entries' descriptions, licences, `required` and tables are copied from
    the published manifest.
 2. Checks `out/translations.sqlite`, `out/scrolls.sqlite`,
-   `out/fathers.sqlite` and `out/dictionaries.sqlite` were built from
-   `pins.json`'s NET responses, JPS zip, ULT and UST files, ETCBC/dss files,
-   Apostolic Fathers files and UBS files (the translations, scrolls and
-   dictionaries packs also with `base.json`'s core pack; the scrolls,
-   fathers and dictionaries packs by this checkout's code, their
-   `build_sha256`), compresses each
+   `out/fathers.sqlite`, `out/dictionaries.sqlite` and `out/syntax.sqlite`
+   were built from `pins.json`'s NET responses, JPS zip, ULT and UST files,
+   ETCBC/dss files, Apostolic Fathers files, UBS files and MACULA files (the
+   translations, scrolls, dictionaries and syntax packs also with
+   `base.json`'s core pack; the scrolls, fathers, dictionaries and syntax
+   packs by this checkout's code, their `build_sha256`), compresses each
    with `zstd -19` (as the phone app's `make_packs.py` compresses the base)
    and uploads it to `packs/v<N>/<pack>.sqlite.zst` with
    `Cache-Control: public, max-age=31536000, immutable`. An object already
@@ -474,7 +539,7 @@ Uploads use `npx -y wrangler@4 r2 object put bezalel-packs/<key> --file …
 --remote`. The manifest keeps the published fields (`schema`,
 `data_version`, `built`, `bezalel_commit` — the bezalel_mob commit that built
 the base —, `studybible_mcp`, `sources`, `packs`) and adds `bezalel_core`
-(`repo`, `commit`). Its `translations`, `scrolls` and `dictionaries` entries are
+(`repo`, `commit`). Its `translations`, `scrolls`, `fathers`, `dictionaries` and `syntax` entries are
 `required: false`. Apps
 that don't know a pack ignore its entry.
 
@@ -497,11 +562,14 @@ that don't know a pack ignore its entry.
 | `lib/bezalel/data/fathers_pack.ex` | The fathers pack's writer |
 | `lib/bezalel/data/dictionaries.ex` | The UBS dictionaries' JSON → the dictionaries pack's rows |
 | `lib/bezalel/data/dictionaries_pack.ex` | The dictionaries pack's schema and writer |
+| `lib/bezalel/data/syntax.ex` | MACULA's lowfat syntax trees → the syntax pack's rows |
+| `lib/bezalel/data/syntax_pack.ex` | The syntax pack's schema and writer |
+| `macula_files.json` | The MACULA files read, by sha256 |
 | `lib/bezalel/data/report.ex` | The import reports and the verse-set comparison |
 | `lib/bezalel/data/books.ex` | The 66 books: STEP code, name, chapters |
 | `lib/bezalel/data/download.ex` | Cached, checked downloads |
 | `lib/bezalel/data/publish.ex` | Assembles the manifest (pure) |
-| `lib/mix/tasks/` | `bezalel.data.translations`, `bezalel.data.scrolls`, `bezalel.data.fathers`, `bezalel.data.dictionaries`, `bezalel.data.fixtures`, `bezalel.data.publish` |
+| `lib/mix/tasks/` | `bezalel.data.translations`, `bezalel.data.scrolls`, `bezalel.data.fathers`, `bezalel.data.dictionaries`, `bezalel.data.syntax`, `bezalel.data.fixtures`, `bezalel.data.publish` |
 
 ## Checks
 

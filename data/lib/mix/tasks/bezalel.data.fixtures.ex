@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.Bezalel.Data.Fixtures do
-  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,fathers,dictionaries}.sqlite"
+  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,fathers,dictionaries,syntax}.sqlite"
 
   @moduledoc """
   Cuts the fixtures core's tests read from the packs built here.
 
-      mix bezalel.data.fixtures [--pack translations|scrolls|fathers|dictionaries]
+      mix bezalel.data.fixtures [--pack translations|scrolls|fathers|dictionaries|syntax]
                                 [--from DIR] [--core ../test/fixtures/packs/core.sqlite]
                                 [--out DIR]
 
@@ -27,11 +27,14 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       Greek and an Aramaic code) with their meanings, domains and the
       domain names they use, and both dictionaries' rows. Run
       `mix bezalel.data.dictionaries` first.
+    * `syntax.sqlite`: both editions and the verses of `@syntax_verses` (a
+      verse of each edition, two Psalm superscriptions, a sentence running
+      past its verse). Run `mix bezalel.data.syntax` first.
   """
 
   use Mix.Task
 
-  alias Bezalel.Data.{DictionariesPack, FathersPack, Pack, Report, ScrollsPack}
+  alias Bezalel.Data.{DictionariesPack, FathersPack, Pack, Report, ScrollsPack, SyntaxPack}
 
   @switches [pack: :string, from: :string, core: :string, out: :string]
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
@@ -66,6 +69,10 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
     {"martyrdom_of_polycarp_moscow_epilogue", 0, 999}
   ]
 
+  # Gen 1:1 (WLC), Ps 3:0 and 22:0 (superscriptions, the WLC's 3:1 and
+  # 22:1), John 1:1 and 3:16 (SBLGNT), Eph 1:7 (a sentence running to 1:10).
+  @syntax_verses ~w(Gen.1.1 Psa.3.0 Psa.22.0 Jhn.1.1 Jhn.3.16 Eph.1.7)
+
   @passage_columns ~w(corpus author work_key work_title reference alternate_reference
                       book_number section_number section_end editorial_heading text original_text
                       period_tags edition translation license source_url collection sort_start
@@ -90,6 +97,7 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
         scrolls(from, out)
         fathers(from, out)
         dictionaries(from, out)
+        syntax(from, out)
 
       "translations" ->
         translations(from, out, opts)
@@ -103,9 +111,13 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       "dictionaries" ->
         dictionaries(from, out)
 
+      "syntax" ->
+        syntax(from, out)
+
       other ->
         Mix.raise(
-          "--pack must be translations, scrolls, fathers or dictionaries, not #{inspect(other)}"
+          "--pack must be translations, scrolls, fathers, dictionaries or syntax, not " <>
+            inspect(other)
         )
     end
   end
@@ -218,6 +230,29 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
 
     FathersPack.write(out, passages, fixture_meta(from))
     Mix.shell().info("#{out}: #{length(passages)} passages")
+  end
+
+  defp syntax(from_dir, out_dir) do
+    from = Path.join(from_dir, "syntax.sqlite")
+    out = Path.join(out_dir, "syntax.sqlite")
+    columns = SyntaxPack.columns()
+
+    editions =
+      from
+      |> Pack.read("SELECT #{Enum.join(columns.editions, ", ")} FROM syntax_editions")
+      |> rows(columns.editions)
+
+    verses =
+      from
+      |> Pack.read(
+        "SELECT #{Enum.join(columns.verses, ", ")} FROM syntax_verses " <>
+          "WHERE reference IN (#{placeholders(@syntax_verses)}) ORDER BY rowid",
+        @syntax_verses
+      )
+      |> rows(columns.verses)
+
+    SyntaxPack.write(out, editions, verses, fixture_meta(from))
+    Mix.shell().info("#{out}: #{length(verses)} of #{length(@syntax_verses)} verses")
   end
 
   defp rows(rows, columns), do: Enum.map(rows, &(columns |> Enum.zip(&1) |> Map.new()))

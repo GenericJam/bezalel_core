@@ -147,6 +147,13 @@ defmodule Bezalel.Study.Credits do
      [
        "https://translation.bible/tools-resources/ubs-dictionary-of-the-greek-new-testament/",
        "https://github.com/ubsicap/ubs-open-license/tree/main/dictionaries/greek"
+     ]},
+    {"MACULA syntax trees",
+     "Clause structure from the MACULA Hebrew Linguistic Datasets, available at https://github.com/Clear-Bible/macula-hebrew/, and the MACULA Greek Linguistic Datasets, available at https://github.com/Clear-Bible/macula-greek/, © 2022-2024 Biblica, Inc, CC BY 4.0: syntax trees of the Westminster Leningrad Codex (public domain) with the Westminster Hebrew Syntax (J. Alan Groves Center for Advanced Biblical Research, CC BY 4.0), OpenScriptures Hebrew Bible morphology (CC BY 4.0) and Cherith glosses (Andi Wu, Cherith Analytics, CC BY 4.0); and of the SBL Greek New Testament (Society of Biblical Literature and Logos Bible Software, CC BY 4.0) with Berean Interlinear Bible glosses (public domain) and Cherith glosses (CC BY 4.0). The United Bible Societies' semantic data MACULA uses by permission, and the SIL Hebrew glosses (SILHA) it carries, are not included. Modified.",
+     [{"CC BY 4.0", @by}, {"Public domain (WLC text, Berean glosses)", nil}],
+     [
+       "https://github.com/Clear-Bible/macula-hebrew",
+       "https://github.com/Clear-Bible/macula-greek"
      ]}
   ]
 
