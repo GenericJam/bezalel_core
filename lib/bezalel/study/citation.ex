@@ -20,11 +20,13 @@ defmodule Bezalel.Study.Citation do
     * `translation`: `:published` (the tool's English is a published
       translation, or there is no English to speak of), `:assistant` (the
       tool gives the original only, or English of something else, as the
-      Targum's: any English for it is the model's own, an AI translation)
-      or `:unpublished_draft` (an unpublished, AI-assisted rendering the
-      tool quotes, the "HLT").
-    * `original`: for `:assistant` and `:unpublished_draft`, the
-      original-language texts to check it against, `[%{label, url}]`.
+      Targum's: any English for it is the model's own, an AI translation),
+      `:unpublished_draft` (an unpublished, AI-assisted rendering the
+      tool quotes, the "HLT") or `:machine` (a published machine
+      translation the tool quotes, AI-generated and not a human
+      translator's: the Apostolic Fathers' CAFE English).
+    * `original`: for `:assistant`, `:unpublished_draft` and `:machine`,
+      the original-language texts to check it against, `[%{label, url}]`.
     * `cited`: set by `Bezalel.Study.Citations.mark/2`: the reply links it
       (or names the book).
 
@@ -46,7 +48,7 @@ defmodule Bezalel.Study.Citation do
     cited: false
   ]
 
-  @type translation :: :published | :assistant | :unpublished_draft
+  @type translation :: :published | :assistant | :unpublished_draft | :machine
 
   @type t :: %__MODULE__{
           work: String.t(),
@@ -64,13 +66,14 @@ defmodule Bezalel.Study.Citation do
   @translations %{
     "published" => :published,
     "assistant" => :assistant,
-    "unpublished_draft" => :unpublished_draft
+    "unpublished_draft" => :unpublished_draft,
+    "machine" => :machine
   }
 
   @doc """
   The citation as Markdown for the model to copy: `[label](url)`, or the
-  book (`Author, *Title* (year), locator`), with what an AI translation or
-  an unpublished draft must say.
+  book (`Author, *Title* (year), locator`), with what an AI translation, a
+  machine translation or an unpublished draft must say.
   """
   @spec markdown(t()) :: String.t()
   def markdown(%__MODULE__{translation: :unpublished_draft} = c) do
@@ -80,6 +83,12 @@ defmodule Bezalel.Study.Citation do
   def markdown(%__MODULE__{translation: :assistant} = c) do
     link(c) <>
       " (original text: any English you give for it is your own translation; say so and link this)"
+  end
+
+  def markdown(%__MODULE__{translation: :machine} = c) do
+    link(c) <>
+      " (machine translation: AI-generated English, not a published human translation; " <>
+      "say so when you quote it#{originals(c, "; original: ")})"
   end
 
   def markdown(%__MODULE__{} = c), do: link(c)

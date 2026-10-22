@@ -631,15 +631,17 @@ defmodule Bezalel.Study.Ancient.Passages do
     end
   end
 
-  # One line per provenance, with each of its URLs once.
+  # One line per provenance, with each of its URLs once (a file, not its
+  # line anchors: each passage's Source line links its line).
   defp sources(shown) do
     {order, urls} =
       Enum.reduce(shown, {[], %{}}, fn %{source: s}, {order, urls} ->
         key = {s.label, s.language, s.edition, s.translation, s.license}
         list = Map.get(urls, key, [])
+        url = s.url |> to_string() |> String.split("#") |> hd()
 
         {if(Map.has_key?(urls, key), do: order, else: [key | order]),
-         Map.put(urls, key, if(s.url in list, do: list, else: list ++ [s.url]))}
+         Map.put(urls, key, if(url in list, do: list, else: list ++ [url]))}
       end)
 
     for {label, language, edition, translation, license} = key <- Enum.reverse(order) do

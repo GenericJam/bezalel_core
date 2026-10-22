@@ -129,7 +129,11 @@ defmodule Bezalel.Study.Credits do
     {@ult.name, @ult.copyright, [{"CC BY-SA 4.0", @by_sa}],
      ["https://www.unfoldingword.org/ult", "https://git.door43.org/unfoldingWord/en_ult"]},
     {@ust.name, @ust.copyright, [{"CC BY-SA 4.0", @by_sa}],
-     ["https://www.unfoldingword.org/ust", "https://git.door43.org/unfoldingWord/en_ust"]}
+     ["https://www.unfoldingword.org/ust", "https://git.door43.org/unfoldingWord/en_ust"]},
+    {"Apostolic Fathers",
+     "The Apostolic Fathers: Greek (and Latin) text from Open Apostolic Fathers 1.0, edited by James Tauber and Seumas Macdonald (2019), a corrected text of Kirsopp Lake's edition (1912–1913), doi:10.5281/zenodo.2555673, CC BY-SA 4.0; English from CAFE, the Contemporary Apostolic Fathers Edition by James Cuénod (2024), a machine translation drafted with GPT-4o, CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     ["https://github.com/jtauber/apostolic-fathers", "https://github.com/jcuenod/CAFE"]}
   ]
 
   @scholarship [

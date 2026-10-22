@@ -24,7 +24,7 @@ defmodule Bezalel.Data.ScrollsPack do
   }
 
   # The ancient pack's schema (studybible-mcp database.py), unchanged.
-  @schema [
+  @ancient_tables [
     """
     CREATE TABLE ancient_source_passages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +92,10 @@ defmodule Bezalel.Data.ScrollsPack do
       aligned TEXT NOT NULL DEFAULT '',
       UNIQUE(passage_id, citation, kind, note)
     )
-    """,
+    """
+  ]
+
+  @dss_tables [
     """
     CREATE TABLE dss_biblical_manuscripts (
       siglum TEXT PRIMARY KEY,
@@ -121,8 +124,12 @@ defmodule Bezalel.Data.ScrollsPack do
       language TEXT NOT NULL,
       PRIMARY KEY (reference, siglum, occurrence)
     )
-    """,
-    "CREATE TABLE pack_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID",
+    """
+  ]
+
+  @pack_meta "CREATE TABLE pack_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID"
+
+  @ancient_indexes [
     "CREATE INDEX idx_asp_corpus_period ON ancient_source_passages(corpus, period_tags)",
     "CREATE INDEX idx_asp_locator ON ancient_source_passages(corpus, work_key, sort_start, sort_end)",
     """
@@ -134,9 +141,13 @@ defmodule Bezalel.Data.ScrollsPack do
     ON ancient_source_biblical_links(biblical_book, sort_start, sort_end)
     """,
     "CREATE INDEX idx_asn_locator ON ancient_source_notes(corpus, work_key, sort_start, sort_end)",
-    "CREATE INDEX idx_asn_passage ON ancient_source_notes(passage_id)",
-    "CREATE INDEX idx_dbv_verse ON dss_biblical_verses(book, chapter, verse)"
+    "CREATE INDEX idx_asn_passage ON ancient_source_notes(passage_id)"
   ]
+
+  @schema @ancient_tables ++
+            @dss_tables ++
+            [@pack_meta | @ancient_indexes] ++
+            ["CREATE INDEX idx_dbv_verse ON dss_biblical_verses(book, chapter, verse)"]
 
   @passage_columns ~w(id corpus author work_key work_title reference alternate_reference
                       book_number section_number section_end editorial_heading text original_text
@@ -154,6 +165,18 @@ defmodule Bezalel.Data.ScrollsPack do
   @doc "The CREATE statements, in order."
   @spec schema() :: [String.t()]
   def schema, do: @schema
+
+  @doc """
+  The ancient pack's tables, `pack_meta` and indexes, in the order `schema/0`
+  creates them: a pack of other ancient passages (the fathers pack) reads
+  with the same SQL.
+  """
+  @spec ancient_schema() :: [String.t()]
+  def ancient_schema, do: @ancient_tables ++ [@pack_meta | @ancient_indexes]
+
+  @doc "The columns of `ancient_source_passages` a writer fills, in insert order."
+  @spec passage_columns() :: [atom()]
+  def passage_columns, do: @passage_columns
 
   @doc """
   Writes `path` with `passages` (`Bezalel.Data.Scrolls.passages/3` rows, given

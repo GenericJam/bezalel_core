@@ -4,8 +4,10 @@ A separate Mix project (`:bezalel_data`) inside bezalel_core that builds
 study data the tools read: the **`translations` pack**, English verse texts
 other than the BSB (which stays in the core pack's `bsb_verses`): the NET
 Bible, the JPS 1917 and the Literal and Simplified Texts adapted from
-unfoldingWord's ULT and UST; and the **`scrolls` pack**, the Dead Sea Scrolls' major
-non-biblical works and the biblical manuscripts' readings, from ETCBC/dss.
+unfoldingWord's ULT and UST; the **`scrolls` pack**, the Dead Sea Scrolls' major
+non-biblical works and the biblical manuscripts' readings, from ETCBC/dss;
+and the **`fathers` pack**, the Apostolic Fathers' Greek with CAFE's
+machine-translated English.
 
 Bezalel's study tools are an Elixir port of
 [studybible-mcp](https://github.com/djayatillake/studybible-mcp) by
@@ -36,8 +38,9 @@ another CPU). `base.json` records the details.
 cd data
 mix deps.get
 mix bezalel.data.translations  # → out/translations.sqlite, out/{net,translations}_report.txt
-mix bezalel.data.scrolls    # → out/scrolls.sqlite, out/scrolls_report.txt
-mix bezalel.data.fixtures   # → ../test/fixtures/packs/{translations,scrolls}.sqlite
+mix bezalel.data.scrolls       # → out/scrolls.sqlite, out/scrolls_report.txt
+mix bezalel.data.fathers       # → out/fathers.sqlite, out/fathers_report.txt
+mix bezalel.data.fixtures      # → ../test/fixtures/packs/{translations,scrolls,fathers}.sqlite
 mix bezalel.data.abbott_smith  # → ../priv/study/abbott_smith_pages.json
 ```
 
@@ -46,8 +49,8 @@ JPS: one 1 MB zip; ULT and UST: 122 files, about 170 MB; scrolls: 19
 ETCBC/dss files, 48 MB; and the base core pack, 26 MB, for both, unless
 `--core PATH` names a copy); later runs reuse the verified downloads in
 `work/`. Writes only `work/` and `out/` (both gitignored), and the fixtures
-with `bezalel.data.fixtures` (`--pack translations` or `--pack scrolls` for
-one).
+with `bezalel.data.fixtures` (`--pack translations`, `--pack scrolls` or
+`--pack fathers` for one).
 
 `mix bezalel.data.translations` compares each translation's verse set with
 the BSB references (`bsb_verses.reference`) of the base core pack
@@ -313,12 +316,64 @@ reconstructed, and 349 verses with no letter preserved in any manuscript;
 one verse ETCBC numbers that the MT lacks (Josh 5:0, 4QJosha's text before
 5:2).
 
+## The `fathers` pack
+
+`fathers.sqlite`, built like the scrolls pack (page size 4096, ANALYZEd,
+VACUUMed, integrity checked): the Apostolic Fathers, `mix bezalel.data.fathers`
+→ `out/fathers.sqlite` and `out/fathers_report.txt` (15 files a side, about
+1.4 MB, from GitHub; later runs reuse `work/fathers/`).
+
+| Table | Columns | Licence |
+|---|---|---|
+| `ancient_source_passages`, `ancient_source_passages_fts` | the ancient pack's schema, FTS5 columns and tokenizer, unchanged (`ScrollsPack.ancient_schema/0`): corpus `apostolic_fathers`, one passage per verse, `reference` as cited ('Didache 9.1', 'Hermas, Vision 1.1.1'), `sort_start` = `sort_end` the levels × 1000 each, `source_url` the verse's line of the Greek file at the pinned commit (`…/011-didache.txt#L51`; CAFE's English line has the same number), `original_language` Greek or Latin, `text` CAFE's English, `translation` saying it is a machine translation | Greek and Latin: Open Apostolic Fathers 1.0, CC BY-SA 4.0; English: CAFE, CC BY-SA 4.0 |
+| `ancient_source_biblical_links`, `ancient_source_notes` | the ancient pack's, empty | — |
+| `pack_meta` | `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `greek_source`, `english_source`, `fathers_sha256` (the pinned files), `build_sha256` (`Bezalel.Data.Fathers.build_digest/0`) | — |
+
+**Sources** ([pins.json](pins.json) → `fathers`, every file by sha256).
+Greek: [jtauber/apostolic-fathers](https://github.com/jtauber/apostolic-fathers)
+`texts/` at `a07f9207`, Kirsopp Lake's text (Loeb, 1912–1913) as corrected by
+James Tauber and Seumas Macdonald against scans of the printed Lake, *Open
+Apostolic Fathers* 1.0 (2019, doi:10.5281/zenodo.2555673; `texts/` has not
+changed since that release), CC BY-SA 4.0. English:
+[jcuenod/CAFE](https://github.com/jcuenod/CAFE) at `06b19aec`, the
+*Contemporary Apostolic Fathers Edition* (James Cuénod, 2024), CC BY-SA 4.0:
+a **machine translation**. Its README says "these first drafts were generated
+using GPT-4o"; `scripts/translate.py` sends each Greek line to
+`gpt-4o-2024-05-13`; the history shows two lines changed by hand since (1 Clem
+0.1, Did. 4.3) and no systematic revision. Every place the English is shown
+says so. Not imported: jcuenod/tagged-apostolic-fathers (lemmas and parts of
+speech), which has no licence.
+
+**What the import does** (`Bezalel.Data.Fathers`):
+
+- joins each Greek file with its CAFE file line by line, and stops unless both
+  have the same references in the same order (at these pins they do: all
+  1,975 lines of the 15 files);
+- one passage per verse; the text is the files' own (line ends trimmed);
+- the Shepherd is three works by Lake's book number (1–5 Visions, 6–17
+  Mandates 1–12, 18–27 Similitudes 1–10); the Martyrdom's `EP.<n>` lines, the
+  Moscow manuscript's epilogue, are a work of their own;
+- leaves out, by rule, and lists in the report: Lake's section titles (the
+  Shepherd's `<book>.0.0` and the Martyrdom's `EP.0`, 28) and the two
+  subscriptions `SB.1` (the manuscripts' closing titles of 1 Clement and
+  Barnabas);
+- a passage is Latin when it has no Greek letter (38: Polycarp, To the
+  Philippians 10–12 and 14; most of Hermas, Similitude 9.30–10.4);
+- search text: editorial signs dropped and marks and case folded with core's
+  `Bezalel.Study.Ancient.Passages`, as the ancient pack's Greek is (checked:
+  the same function reproduces all 10,205 Josephus and Philo rows'
+  `original_text_folded`); English in the FTS `text` column, stemmed by the
+  tokenizer.
+
+**Coverage** (build of 2026-10-22): 1,945 passages in 18 works; 5.8 MB raw,
+0.96 MB with `zstd -19`.
+
 ## Publish
 
 The apps read one URL, **https://bezalel.genericjam.com/packs/manifest.json**
 (schema 1, parsed by the phone app's `Bezalel.Packs.Manifest`), served from
 the Cloudflare R2 bucket `bezalel-packs`. `mix bezalel.data.publish` publishes
-the packs built here (`translations`, `scrolls`) as the next data version
+the packs built here (`translations`, `scrolls`, `fathers`) as the next data version
 **without uploading the base again**: the five base entries keep their v1 URLs and checksums exactly as
 `base.json` pins them, so an app that has them sees the same `raw_sha256`,
 records the new version and downloads nothing.
@@ -327,6 +382,7 @@ records the new version and downloads nothing.
 cd data
 mix bezalel.data.translations           # if out/translations.sqlite isn't built
 mix bezalel.data.scrolls                # if out/scrolls.sqlite isn't built
+mix bezalel.data.fathers                # if out/fathers.sqlite isn't built
 mix bezalel.data.publish --dry-run      # what would be uploaded; writes out/manifest.json
 mix bezalel.data.publish
 ```
@@ -343,10 +399,12 @@ What it does, in order:
    sha256s; checks each base file is still served with its size. The base
    entries' descriptions, licences, `required` and tables are copied from
    the published manifest.
-2. Checks `out/translations.sqlite` and `out/scrolls.sqlite` were built
-   from `pins.json`'s NET responses, JPS zip, ULT and UST files and ETCBC/dss
-   files (both packs also with `base.json`'s core pack, the scrolls pack by
-   this checkout's code, its `build_sha256`), compresses each
+2. Checks `out/translations.sqlite`, `out/scrolls.sqlite` and
+   `out/fathers.sqlite` were built from `pins.json`'s NET responses, JPS zip,
+   ULT and UST files, ETCBC/dss files and Apostolic Fathers files (the
+   translations and scrolls packs also with `base.json`'s core pack; the
+   scrolls and fathers packs by this checkout's code, their `build_sha256`),
+   compresses each
    with `zstd -19` (as the phone app's `make_packs.py` compresses the base)
    and uploads it to `packs/v<N>/<pack>.sqlite.zst` with
    `Cache-Control: public, max-age=31536000, immutable`. An object already
@@ -380,12 +438,14 @@ that don't know a pack ignore its entry.
 | `lib/bezalel/data/pack.ex` | Writes and reads pack files |
 | `lib/bezalel/data/text_fabric.ex` | Reads Text-Fabric feature files |
 | `lib/bezalel/data/scrolls.ex` | ETCBC/dss → the scrolls pack's rows |
-| `lib/bezalel/data/scrolls_pack.ex` | The scrolls pack's schema and writer |
+| `lib/bezalel/data/scrolls_pack.ex` | The scrolls pack's schema and writer (and the ancient pack's schema, `ancient_schema/0`) |
+| `lib/bezalel/data/fathers.ex` | The Apostolic Fathers' Greek and CAFE files → the fathers pack's rows, and its report |
+| `lib/bezalel/data/fathers_pack.ex` | The fathers pack's writer |
 | `lib/bezalel/data/report.ex` | The import reports and the verse-set comparison |
 | `lib/bezalel/data/books.ex` | The 66 books: STEP code, name, chapters |
 | `lib/bezalel/data/download.ex` | Cached, checked downloads |
 | `lib/bezalel/data/publish.ex` | Assembles the manifest (pure) |
-| `lib/mix/tasks/` | `bezalel.data.translations`, `bezalel.data.scrolls`, `bezalel.data.fixtures`, `bezalel.data.publish` |
+| `lib/mix/tasks/` | `bezalel.data.translations`, `bezalel.data.scrolls`, `bezalel.data.fathers`, `bezalel.data.fixtures`, `bezalel.data.publish` |
 
 ## Checks
 

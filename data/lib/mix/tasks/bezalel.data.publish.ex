@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   @moduledoc """
   Publishes the packs built here (`out/translations.sqlite`,
-  `out/scrolls.sqlite`) as the next data version, on top of the frozen base,
+  `out/scrolls.sqlite`, `out/fathers.sqlite`) as the next data version, on top of the frozen base,
   without uploading the base.
 
       mix bezalel.data.publish [--dry-run] [--version N]
@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   use Mix.Task
 
-  alias Bezalel.Data.{Books, Door43, Download, Net, Pack, Publish, Scrolls}
+  alias Bezalel.Data.{Books, Door43, Download, Fathers, Net, Pack, Publish, Scrolls}
 
   @bucket "bezalel-packs"
   @manifest_key "packs/manifest.json"
@@ -192,6 +192,23 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     case Publish.check_scrolls(meta, expected) do
       :ok -> :ok
       {:error, reason} -> Mix.raise("out/scrolls.sqlite #{reason}; run mix bezalel.data.scrolls")
+    end
+  end
+
+  defp check_source!("fathers", meta) do
+    pin = Download.pin!("fathers")
+    provenance = Fathers.provenance(pin)
+
+    expected = %{
+      fathers_sha256: Fathers.digest(pin),
+      greek_source: provenance.greek_source,
+      english_source: provenance.english_source,
+      build_sha256: Fathers.build_digest()
+    }
+
+    case Publish.check_fathers(meta, expected) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise("out/fathers.sqlite #{reason}; run mix bezalel.data.fathers")
     end
   end
 

@@ -31,10 +31,12 @@ defmodule Bezalel.Study.DB do
     ancient: "ancient sources",
     graph: "people, places and events",
     translations: "Bible translations",
-    scrolls: "Dead Sea Scrolls"
+    scrolls: "Dead Sea Scrolls",
+    fathers: "Apostolic Fathers"
   }
 
-  @type pack :: :core | :notes | :lxx | :ancient | :graph | :translations | :scrolls
+  @type pack ::
+          :core | :notes | :lxx | :ancient | :graph | :translations | :scrolls | :fathers
   @type conn :: Sqlite3.db()
   @type row :: %{String.t() => term()}
 

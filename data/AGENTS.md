@@ -25,6 +25,11 @@ path). Read [README.md](README.md) first. bezalel_core's
    name never carries the unfoldingWord® trademark and its `copyright`
    states the changes and the attribution the LICENSE.md asks for (core's
    `Bezalel.Study.Translations` is the one place these are written).
+   Fathers: Open Apostolic Fathers and CAFE are CC BY-SA 4.0, kept in their own pack, never
+   mixed into a CC BY-NC one; CAFE's English is a machine translation and
+   every row says so (`translation`), never presented as a human
+   translation; jcuenod/tagged-apostolic-fathers has no licence and is not
+   imported.
 3. **Text is not altered.** Markup is removed and whitespace collapsed;
    small capitals become capitals. Anything else the source sends that isn't
    verse text (headings, labels, notes) is dropped by a rule naming its
@@ -65,4 +70,7 @@ Re-run `mix bezalel.data.translations` / `mix bezalel.data.scrolls` and `mix
 bezalel.data.fixtures --pack <pack>` when an importer changes, and run
 core's suite (`cd .. && mix test`) when a fixture changes. Which Dead Sea
 Scrolls are imported is core's `Bezalel.Study.Ancient.Scrolls`: a work added
-there is imported by the next `mix bezalel.data.scrolls`.
+there is imported by the next `mix bezalel.data.scrolls`. Likewise the
+Apostolic Fathers' works are core's `Bezalel.Study.Ancient.Fathers`; `mix
+bezalel.data.fathers` stops if the Greek and English files' references
+differ.

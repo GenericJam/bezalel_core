@@ -96,7 +96,7 @@ mix test
 
 `test/fixtures/packs` are cut from the real packs by the phone app's
 `data/scripts/make_fixtures.py` (it writes here by default when the two
-repositories are checked out side by side), except `translations.sqlite`
-and `scrolls.sqlite`, the packs built here, which `data/`'s `mix
+repositories are checked out side by side), except `translations.sqlite`,
+`scrolls.sqlite` and `fathers.sqlite`, the packs built here, which `data/`'s `mix
 bezalel.data.fixtures` cuts. Re-cut them when a test needs a row they don't
 keep; the phone app's tests read them from this dependency.

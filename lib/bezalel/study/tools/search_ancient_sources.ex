@@ -24,13 +24,17 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   corpus is 'all'), and decide the scripture labels and editorial verdicts
   (`Bezalel.Study.Ancient.Passages`).
 
-  Changed for Bezalel: a search of `qumran` or `all` also reads the scrolls
-  pack (the Qumran manuscripts of `Bezalel.Study.Ancient.Scrolls`; same
-  tables, search columns and tokenizer) when it is on the device: each pack
-  is searched stage by stage as before, and a stage's rows from both are
-  ranked together by bm25, then corpus, work and position. Without the pack
-  the ancient pack's four Qumran works are searched and the result says the
-  rest need it (`missing_packs`).
+  Changed for Bezalel: a search reads every pack holding a work of the
+  corpora in scope (same tables, search columns and tokenizer): the ancient
+  pack, the scrolls pack for `qumran` (the Qumran manuscripts of
+  `Bezalel.Study.Ancient.Scrolls`) and the fathers pack for
+  `apostolic_fathers` (`Bezalel.Study.Ancient.Fathers`), when they are on
+  the device. Each pack is searched stage by stage as before, and a stage's
+  rows from all of them are ranked together by bm25, then corpus, work and
+  position. A pack in scope that isn't there (or can't be read) is left out
+  and the result says what that left unsearched (`missing_packs`); without
+  the ancient pack the others are searched if they are there, and a search
+  of only a missing pack's corpus is the missing-pack error.
   """
   @behaviour Rho.Tool
 
@@ -51,7 +55,10 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
     major works: the Qumran rules, War Scroll, Hodayot, Temple Scroll, MMT,
     pesharim, Songs of the Sabbath Sacrifice, Melchizedek, 4Q246, 4Q521,
     Genesis Apocryphon, Aramaic Enoch, Jubilees and more, each copy by its
-    siglum; Philo; 1 Enoch and 4 Ezra; the Mishnah). Each result carries a date and edition tag
+    siglum; Philo; 1 Enoch and 4 Ezra; the Mishnah) and the Apostolic Fathers
+    (1–2 Clement, Ignatius, Polycarp, the Martyrdom of Polycarp, the Didache,
+    Barnabas, the Shepherd of Hermas, Diognetus; Greek with a machine-made
+    English translation). Each result carries a date and edition tag
     (with a canon-status label unless the user turned labels off), and each
     corpus's caveat and the sources are printed once at the end.
 
@@ -84,7 +91,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           "enum" => Ancient.keys() ++ ["all"],
           "default" => "josephus",
           "description" =>
-            "Corpus to search, or 'all'. targum = Onkelos; qumran = the Dead Sea Scrolls' major non-biblical works (CD, 1QS, 1QSa, 1QpHab, and the scrolls pack's manuscripts, e.g. 1QM, 1QHa, 11Q19, 4Q394-399, 4Q174, 11Q13, 4Q246, 1Q20, 4Q201); pseudepigrapha = 1 Enoch, 4 Ezra; rabbinic = Mishnah. Default: josephus"
+            "Corpus to search, or 'all'. targum = Onkelos; qumran = the Dead Sea Scrolls' major non-biblical works (CD, 1QS, 1QSa, 1QpHab, and the scrolls pack's manuscripts, e.g. 1QM, 1QHa, 11Q19, 4Q394-399, 4Q174, 11Q13, 4Q246, 1Q20, 4Q201); pseudepigrapha = 1 Enoch, 4 Ezra; rabbinic = Mishnah; apostolic_fathers = 1-2 Clement, Ignatius' seven letters, Polycarp, the Martyrdom of Polycarp, Didache, Barnabas, Shepherd of Hermas, Diognetus. Default: josephus"
         },
         "biblical_reference" => %{
           "type" => "string",
@@ -120,8 +127,9 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   The search and its filters, then either the passages found (`match`
   `"all"` or `"any"`, `prefix_match` when only prefix-stripped Hebrew
   matched) or `status` `:no_match` / `:no_link` (with the link coverage).
-  `prefs` are the preferences it ran under; `missing_packs` the packs the
-  search would have read but the device lacks (`[:scrolls]`).
+  `prefs` are the preferences it ran under; `packs` the packs searched;
+  `missing_packs` the packs the search would have read but the device
+  lacks or can't read (`[:scrolls]`).
   """
   @type t :: %{
           required(:query) => String.t(),
@@ -131,6 +139,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           required(:terms) => [String.t()],
           required(:prefs) => Preferences.t(),
           required(:missing_packs) => [DB.pack()],
+          required(:packs) => [DB.pack()],
           required(:status) => :ok | :no_match | :no_link,
           optional(:match) => String.t(),
           optional(:prefix_match) => boolean(),
@@ -226,7 +235,8 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
           period: period,
           terms: terms,
           prefs: prefs,
-          missing_packs: []
+          missing_packs: [],
+          packs: []
         }
 
         search_installed(base, corpus, link_range, limit)
@@ -236,90 +246,134 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
   @tables ~w(ancient_source_passages ancient_source_passages_fts ancient_source_biblical_links
               ancient_source_notes)
 
-  # Without the ancient pack, a Qumran search still reads the scrolls pack
-  # and says what was left out; any other search needs the ancient pack.
+  # What a pack other than the ancient pack holds, for the missing-pack notes.
+  @pack_works %{scrolls: "the Dead Sea Scrolls", fathers: "the Apostolic Fathers"}
+
+  # Every pack holding a work of the corpora in scope (the one asked for,
+  # or every corpus the user hasn't switched off), the ancient pack first.
+  # The first is the search's own pack: without it, the search needs the
+  # others.
+  defp packs(corpus, prefs) do
+    keys =
+      if corpus,
+        do: [corpus],
+        else: Enum.filter(Ancient.keys(), &Sources.enabled?(prefs, Sources.ancient(&1)))
+
+    in_scope =
+      for key <- keys, work <- Ancient.corpus(key).works, uniq: true, do: Ancient.pack(work)
+
+    Enum.filter([:ancient, :scrolls, :fathers], &(&1 in in_scope))
+  end
+
+  # With its own pack on the device, the search reads it and every other
+  # pack in scope that is there and readable, and notes the rest. Without it,
+  # the search reads the other packs in scope and names the missing pack;
+  # if none is there it is the missing-pack error, and a damaged or empty one
+  # leaves the search an error naming it.
   defp search_installed(base, corpus, link_range, limit) do
-    if DB.available?(:ancient) or not scrolls_wanted?(corpus, base.prefs) or
-         not DB.available?(:scrolls) do
-      with {:ok, found} <-
-             DB.with_pack(:ancient, &search_packs(&1, base, corpus, link_range, limit)),
-           do: found
-    else
-      case DB.with_pack(:scrolls, &search_scrolls_only(&1, base, corpus, link_range, limit)) do
-        {:ok, found} -> found
-        {:error, unreadable} -> {:error, DB.missing(:ancient) <> " " <> unreadable}
-      end
-    end
-  end
+    [own | others] = packs(corpus, base.prefs)
+    scope = scope(corpus, base.prefs)
 
-  # A damaged scrolls pack leaves nothing to search: both packs are named.
-  defp search_scrolls_only(scrolls, base, corpus, link_range, limit) do
-    case DB.check_tables(scrolls, :scrolls, @tables) do
-      :ok -> find([scrolls], %{base | missing_packs: [:ancient]}, corpus, link_range, limit)
-      {:error, damaged} -> {:error, DB.missing(:ancient) <> " " <> damaged}
-    end
-  end
-
-  defp scrolls_wanted?(corpus, prefs),
-    do: corpus in [nil, "qumran"] and Sources.enabled?(prefs, Sources.ancient("qumran"))
-
-  defp search_packs(ancient, base, corpus, link_range, limit) do
-    with_scrolls(ancient, corpus, base.prefs, fn conns, missing ->
+    search = fn conns, missing ->
       find(conns, %{base | missing_packs: missing}, corpus, link_range, limit)
-    end)
-  end
+    end
 
-  # The scrolls pack holds most Qumran works: a search of 'qumran' or 'all'
-  # (with Qumran on) reads it too when it is on the device, and notes that it
-  # isn't otherwise (or can't be read). `fun` gets the connections and the
-  # packs missing.
-  defp with_scrolls(ancient, corpus, prefs, fun) do
     cond do
-      not scrolls_wanted?(corpus, prefs) ->
-        fun.([ancient], [])
+      DB.available?(own) ->
+        with {:ok, found} <- DB.with_pack(own, &with_own(&1, own, others, scope, search)),
+             do: found
 
-      DB.available?(:scrolls) ->
-        case DB.with_pack(:scrolls, &with_readable_scrolls(ancient, &1, fun)) do
-          {:ok, result} -> result
-          {:error, _unreadable} -> fun.([ancient], [:scrolls])
-        end
+      (present = Enum.filter(others, &DB.available?/1)) != [] ->
+        missing = [own | others -- present]
+        with_strict(present, [], own, scope, corpus, &search.(&1, missing))
 
       true ->
-        fun.([ancient], [:scrolls])
+        {:error, DB.missing(own)}
     end
   end
 
-  # A damaged scrolls pack is searched as if it were missing.
-  defp with_readable_scrolls(ancient, scrolls, fun) do
-    case DB.check_tables(scrolls, :scrolls, @tables) do
-      :ok -> fun.([ancient, scrolls], [])
-      {:error, _damaged} -> fun.([ancient], [:scrolls])
+  # Not the FTS5 table: a SQLite without FTS5 gets find/5's message.
+  defp with_own(conn, own, others, scope, search) do
+    with :ok <- DB.check_tables(conn, own, @tables -- ["ancient_source_passages_fts"]),
+         do: with_others(others, [{own, conn}], [], scope, search)
+  end
+
+  # Opens each of `packs` that is on the device and readable, with passages
+  # in scope; one that isn't is searched around and noted. `fun` gets the
+  # `{pack, connection}` pairs and the packs missing.
+  defp with_others([], conns, missing, _scope, fun),
+    do: fun.(Enum.reverse(conns), Enum.reverse(missing))
+
+  defp with_others([pack | rest], conns, missing, scope, fun) do
+    noted = fn -> with_others(rest, conns, [pack | missing], scope, fun) end
+
+    if DB.available?(pack) do
+      case DB.with_pack(pack, &with_readable(&1, pack, scope, rest, conns, missing, fun, noted)) do
+        {:ok, result} -> result
+        {:error, _unreadable} -> noted.()
+      end
+    else
+      noted.()
     end
   end
 
-  defp find(conns, base, corpus, link_range, limit) do
+  defp with_readable(conn, pack, scope, rest, conns, missing, fun, noted) do
+    if DB.check_tables(conn, pack, @tables) == :ok and in_scope?(conn, scope),
+      do: with_others(rest, [{pack, conn} | conns], missing, scope, fun),
+      else: noted.()
+  end
+
+  # Without the search's own pack (`own`), every other pack on the device
+  # must be readable, with passages in scope; else the search is an error
+  # naming it.
+  defp with_strict([], conns, _own, _scope, _corpus, fun), do: fun.(Enum.reverse(conns))
+
+  defp with_strict([pack | rest], conns, own, scope, corpus, fun) do
+    case DB.with_pack(pack, &strict(&1, pack, rest, conns, own, scope, corpus, fun)) do
+      {:ok, found} -> found
+      {:error, unreadable} -> {:error, DB.missing(own) <> " " <> unreadable}
+    end
+  end
+
+  defp strict(conn, pack, rest, conns, own, scope, corpus, fun) do
+    cond do
+      match?({:error, _}, damaged = DB.check_tables(conn, pack, @tables)) ->
+        {:error, DB.missing(own) <> " " <> elem(damaged, 1)}
+
+      in_scope?(conn, scope) ->
+        with_strict(rest, [{pack, conn} | conns], own, scope, corpus, fun)
+
+      true ->
+        {:error, DB.missing(own) <> " " <> empty(corpus, pack)}
+    end
+  end
+
+  defp in_scope?(conn, {corpus_condition, corpus_params}) do
+    DB.one(
+      conn,
+      "SELECT 1 FROM ancient_source_passages p WHERE #{corpus_condition} LIMIT 1",
+      corpus_params
+    ) != nil
+  end
+
+  defp empty(corpus, pack) do
+    scope =
+      if corpus,
+        do: "The #{label(corpus)} corpus is not in this device's #{pack} pack",
+        else: "This device's #{pack} pack has no ancient-source passages"
+
+    "#{scope} (the ancient_source_passages table is empty)."
+  end
+
+  defp find(pack_conns, base, corpus, link_range, limit) do
     {corpus_condition, corpus_params} = scope(corpus, base.prefs)
     verdicts = Sources.enabled?(base.prefs, "editorial:verdicts")
-
-    present =
-      Enum.find_value(conns, fn conn ->
-        DB.one(
-          conn,
-          "SELECT 1 FROM ancient_source_passages p WHERE #{corpus_condition} LIMIT 1",
-          corpus_params
-        )
-      end)
+    conns = Enum.map(pack_conns, &elem(&1, 1))
+    base = %{base | packs: Enum.map(pack_conns, &elem(&1, 0))}
 
     cond do
-      present == nil ->
-        pack = if :ancient in base.missing_packs, do: "scrolls", else: "ancient"
-
-        scope =
-          if corpus,
-            do: "The #{label(corpus)} corpus is not in this device's #{pack} pack",
-            else: "This device's #{pack} pack has no ancient-source passages"
-
-        {:error, "#{scope} (the ancient_source_passages table is empty)."}
+      not Enum.any?(conns, &in_scope?(&1, {corpus_condition, corpus_params})) ->
+        {:error, empty(corpus, base.packs |> hd())}
 
       not Enum.all?(conns, &fts5?/1) ->
         {:error,
@@ -575,24 +629,38 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
       "(#{Enum.join(r.terms, ", ")})#{scope}." <> missing_note(r, " ")
   end
 
-  # Searching without the ancient pack covers only the scrolls pack's Qumran works.
-  defp missing_note(%{missing_packs: [:ancient]}, lead) do
-    lead <>
-      "The ancient study pack (ancient sources) isn't downloaded on this device, so " <>
-      "only the Dead Sea Scrolls were searched (not CD, 1QS, 1QSa, 1QpHab or the other " <>
+  # One note per pack the search would have read but couldn't.
+  defp missing_note(%{missing_packs: []}, _lead), do: ""
+
+  defp missing_note(r, lead),
+    do: lead <> Enum.map_join(r.missing_packs, " ", &pack_note(&1, r))
+
+  # Without the ancient pack only the other packs' works were searched.
+  defp pack_note(:ancient, r) do
+    searched = Enum.map_join(r.packs, " and ", &@pack_works[&1])
+
+    "The ancient study pack (ancient sources) isn't downloaded on this device, so " <>
+      "only #{searched} were searched (not CD, 1QS, 1QSa, 1QpHab or the other " <>
       "ancient corpora); tell the user the rest needs that pack."
   end
 
   # Searching Qumran without the scrolls pack covers only the ancient pack's four works.
-  defp missing_note(%{missing_packs: [_ | _]}, lead) do
-    lead <>
-      "The scrolls study pack (Dead Sea Scrolls) isn't downloaded on this device (or can't be " <>
-      "read), so only " <>
-      "CD, 1QS, 1QSa and 1QpHab of the Qumran works were searched; tell the user the other " <>
-      "scrolls need that pack."
+  defp pack_note(:scrolls, r) do
+    searched =
+      if :ancient in r.missing_packs,
+        do: "none of the Qumran works were searched; tell the user the scrolls need that pack",
+        else:
+          "only CD, 1QS, 1QSa and 1QpHab of the Qumran works were searched; tell the user " <>
+            "the other scrolls need that pack"
+
+    "The scrolls study pack (Dead Sea Scrolls) isn't downloaded on this device (or can't be " <>
+      "read), so #{searched}."
   end
 
-  defp missing_note(_result, _lead), do: ""
+  defp pack_note(:fathers, _r) do
+    "The fathers study pack (Apostolic Fathers) isn't downloaded on this device (or can't be " <>
+      "read), so the Apostolic Fathers weren't searched; tell the user they need that pack."
+  end
 
   defp default_corpus(%{corpus: "all"}), do: nil
   defp default_corpus(%{corpus: corpus}), do: corpus

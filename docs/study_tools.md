@@ -14,7 +14,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Tools` | `all/0`, every study tool module; `materials/0`, the tools that make materials (`draw_image`); `withheld/1`, the tool names to withhold under a user's preferences |
 | `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by the image model the user chose ("Pictures by": OpenAI's gpt-image or a Gemini image model, `models/0`) on that provider's API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
 | `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. Every `run/2` hands rho the data with its `citations` as the result's details (`{:ok, {:details, markdown, data}}`, [Sources](#sources)): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card for `lookup_verse` and `word_study`. The Mermaid diagrams of the graph tools stay in the Markdown only |
-| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
+| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`, `fathers`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation, image model, pushback model; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
 | `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB, JPS 1917, ULT, UST) with their labels, links and acknowledgements, and the BSB for a book the chosen one lacks |
@@ -28,7 +28,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Args`, `Bezalel.Study.Patterns` | Argument reading; the regexes, compiled at run time (mob_dev rule) |
 | `Bezalel.Study.Graph` | Person lookup, family and Mermaid helpers shared by the graph tools |
 | `Bezalel.Study.Aquifer` | Dictionary and key-term search and article Markdown |
-| `Bezalel.Study.Ancient`, `Bezalel.Study.Ancient.Passages`, `Bezalel.Study.Ancient.Registry`, `Bezalel.Study.Ancient.Scrolls` | Ancient-source citations (with the scrolls pack's fragment locators), search folding and excerpts, and their corpus registry (6 corpora, 241 works, 132 of them Dead Sea Scrolls manuscripts) as data |
+| `Bezalel.Study.Ancient`, `Bezalel.Study.Ancient.Passages`, `Bezalel.Study.Ancient.Registry`, `Bezalel.Study.Ancient.Scrolls`, `Bezalel.Study.Ancient.Fathers` | Ancient-source citations (with the scrolls pack's fragment locators), search folding and excerpts, and their corpus registry (7 corpora, 259 works, 132 of them Dead Sea Scrolls manuscripts, 18 the Apostolic Fathers) as data |
 | `Bezalel.Study.BiblicalScrolls` | The biblical Dead Sea Scrolls' readings by verse (scrolls pack) |
 | `Bezalel.Study.Citation`, `Bezalel.Study.Citations` | A source a result rests on, and every URL template that builds one ([Sources](#sources)) |
 | `Bezalel.Agent.Details`, `Bezalel.Agent.Reply`, `Bezalel.Agent.Card` | What the session keeps of a tool's data (`keep_details/2`, `kept_card/1`, `kept_citations/1`), a reply's fold and sources, the passage card |
@@ -108,6 +108,33 @@ ETCBC/dss (the Abegg–Bowley–Cook transcription, CC BY-NC 4.0), in two parts
   stays Heiser's curated cases. A reading wholly inside `[ ]` says that
   nothing legible survives; ETCBC's Hebrew numbering is mapped to the packs'
   English one and named ('Hebrew numbering Psa.22.17').
+
+### The Apostolic Fathers (fathers pack)
+
+The fathers pack is built here, by `data/`'s `mix bezalel.data.fathers` (why these
+sources, the numbering, dates and labels:
+[decisions/2026-10-22-apostolic-fathers-pack.md](../decisions/2026-10-22-apostolic-fathers-pack.md)):
+Lake's Greek (and the Latin where only a Latin version survives) as corrected by James
+Tauber and Seumas Macdonald (*Open Apostolic Fathers* 1.0), with CAFE's English, a
+machine translation (GPT-4o's first drafts, published without systematic human
+revision), both CC BY-SA 4.0, one passage per verse in the ancient pack's own tables.
+The `apostolic_fathers` corpus (`Bezalel.Study.Ancient.Fathers`, appended to the
+registry, every work `pack: :fathers`) has 18 works: 1–2 Clement, Ignatius' seven
+letters, Polycarp To the Philippians, the Martyrdom of Polycarp and its Moscow epilogue,
+the Didache, Barnabas, the Shepherd of Hermas as Visions, Mandates and Similitudes
+(book.chapter.verse: 'Hermas, Vision 1.1.1', 'Mandate 4.1.1') and Diognetus; no
+Papias or Quadratus (not in the source). Each tag dates the work as a scholarly range
+with its source (Ehrman's Loeb introductions), tier `A/B` for 1 Clement and the
+Didache, `B` for the rest; the status is "Not Scripture", naming the codices that
+copied a work after Revelation (Alexandrinus: 1–2 Clement; Sinaiticus: Barnabas,
+Hermas). The English is labelled a machine translation wherever it is shown: the tag
+("CAFE machine-translated English"), the corpus caveat, the sources line, and each
+passage's citation (`Citation.translation` `:machine`, whose Source line tells the
+model to say so). `search_ancient_sources` reads every pack holding a work of the
+corpora in scope (ancient, scrolls, fathers); a pack in scope that is missing or
+can't be read is left out with a note naming what that left unsearched, and a search
+of `apostolic_fathers` alone, or a citation of one of its works, is the missing-pack
+error.
 
 ### Full-text search on the phone
 
@@ -242,7 +269,9 @@ settings screen; `keys/0`:
   `ancient:philo`, `ancient:pseudepigrapha`, `ancient:rabbinic` (one per registry
   corpus). Off: the corpus is left out of a search of `all` (and josephus stops being
   the default corpus); naming it, or citing one of its works, is an error saying the
-  user switched it off. `ancient:qumran` covers the scrolls pack's works too.
+  user switched it off. `ancient:qumran` covers the scrolls pack's works too;
+  `ancient:apostolic_fathers` is the fathers pack's corpus (on by default, as every
+  corpus).
 - Biblical manuscripts: `manuscripts:dss`, on by default: the Dead Sea Scrolls'
   readings in `compare_biblical_versions`. Off: the DSS rows are left out of a default
   comparison; asking for `versions: ["DSS"]` is the switched-off error.
@@ -356,7 +385,7 @@ answer (the prompt's rule 6). A citation is the record's `work` (`"net"`, `"bdb"
 year, for a book), `licence` (CC BY-NC sources, which ask for credit with each use),
 `dataset_url` (the pinned file imported), `translation` and `original`.
 
-`translation` is `:published`, `:assistant` or `:unpublished_draft`. `:assistant` marks
+`translation` is `:published`, `:assistant`, `:unpublished_draft` or `:machine`. `:assistant` marks
 a text the tool gives only in its original language (every Dead Sea Scroll, Philo's
 sections without Yonge, Septuagint rows without Brenton, Targum Onkelos, whose English is
 Metsudah's of the Hebrew Torah): any English the model gives is its own, an AI
@@ -364,6 +393,11 @@ translation, and its Source line says so; `original` links the original. The 26 
 Literal Translation" rows of the textual-variants data are `:unpublished_draft`: printed
 as "Unpublished draft rendering (AI-assisted), not Heiser's", never as Heiser's, with
 the verse's Hebrew and Greek on STEP and any Dead Sea Scroll witness as `original`.
+`:machine` marks a published machine translation the tool quotes, the Apostolic
+Fathers' CAFE English (GPT-4o drafts): its Source line says "machine translation:
+AI-generated English, not a published human translation; say so when you quote it",
+with Lake's Greek as `original`. A host app should mark it as it marks the other two
+(the phone app's sources view and the website's citation list key on the value).
 
 `Bezalel.Study.Citations` holds every URL template (checked against the live sites on
 2026-10-18; `test/bezalel/study/citations_test.exs` pins each to a verified example):
@@ -391,6 +425,7 @@ the verse's Hebrew and Greek on STEP and any Dead Sea Scroll witness as `origina
 | Onkelos, Mishnah | Sefaria `Onkelos_{Book}.{c}.{v}`, `Mishnah_{Tractate}.{c}.{m}` |
 | 1 Enoch, 4 Ezra | the stored Wikisource revision; eBible's KJV 2 Esdras |
 | Dead Sea Scrolls | Leon Levy `…/manuscript/{siglum}-1` (biblical manuscripts only where the scrolls pack names them); the Israel Museum for 1QIsaa, 1QS, 1QpHab, 1QM, 11Q19; Cambridge's CD MS A (cols. 1–16) and MS B (19–20); 1QHa as DJD 40 |
+| Apostolic Fathers | the passage's line of CAFE's English at the pinned commit, `github.com/jcuenod/CAFE/blob/{commit}/{file}.en.txt#L{n}` (a `:machine` citation), with Lake's Greek line in jtauber/apostolic-fathers as its original (CAFE numbers its lines as the Greek file it translated) |
 | Theology summaries | Heiser's and Owen's stored URLs and pages; Stott, Lennox, Bradley as their book (author, title, year; no edition, which the data doesn't record) "on" the chapter |
 | ANE entries, Fee & Stuart | book references as given |
 | Textual variants | their stored citation and URL (none in the data version 1 pack) |
@@ -572,7 +607,10 @@ or Ezekiel). `translations.sqlite` and
 `scrolls.sqlite` are cut by this repository's `data/` (`mix bezalel.data.fixtures`):
 the scrolls fixture keeps 11Q13, 4Q174 and 4Q246 whole, 1QM column 1 and fragment 3,
 4Q405 frg. 23 i, and the biblical readings of Deut 32:8, Isa 53:11, Ps 22:16, Deut
-1:10, Josh 5:0 and Mal 4:1 (`scrolls_test.exs`). The ported cases that assert
+1:10, Josh 5:0 and Mal 4:1 (`scrolls_test.exs`). `fathers.sqlite`, cut the same way,
+keeps Didache 0–1, 9 and 14, Ignatius To the Ephesians 20, 1 Clement 5, Barnabas 18,
+Hermas Vision 1.1, Mandate 4.1 and Similitude 9.30, Polycarp To the Philippians 10 and
+the Moscow epilogue (`fathers_test.exs`). The ported cases that assert
 studybible-mcp's wording pass `Preferences` with the BSB and a limit of four (their
 defaults); `preferences_test.exs`, `source_filters_test.exs` and `translations_test.exs`
 cover the settings, the source filters and verdicts, the labels, the translations and
