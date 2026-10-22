@@ -151,13 +151,14 @@ defmodule Bezalel.Data.PublishTest do
              Publish.check_scrolls(Map.delete(meta, "build_sha256"), expected)
   end
 
-  test "a translations pack is refused unless built from every pinned source and the base core" do
+  test "a translations pack is refused unless built from every pinned source, the base core and this code" do
     meta = %{
       "net_sha256" => "n",
       "jps_sha256" => "j",
       "ult_sha256" => "l",
       "ust_sha256" => "s",
-      "core_sha256" => "c"
+      "core_sha256" => "c",
+      "build_sha256" => "b"
     }
 
     assert Publish.check_translations(meta, meta) == :ok
@@ -171,6 +172,13 @@ defmodule Bezalel.Data.PublishTest do
 
     assert {:error, "wasn't numbered with base.json's core pack"} =
              Publish.check_translations(meta, %{meta | "core_sha256" => "x"})
+
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_translations(meta, %{meta | "build_sha256" => "x"})
+
+    # A pack built before the build digest was recorded is refused.
+    assert {:error, "was built by other code than this checkout's"} =
+             Publish.check_translations(Map.delete(meta, "build_sha256"), meta)
   end
 
   test "the fathers entry is optional and CC BY-SA; a fathers pack is refused unless built from the pins and this code" do

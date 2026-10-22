@@ -90,7 +90,7 @@ checked, like the packs `make_packs.py` writes:
 |---|---|---|
 | `translations` | `key` (PK: `net`, `jps1917`, `ult`, `ust`), `name`, `abbreviation`, `url`, `copyright` (the acknowledgement or attribution to show), `licence`, `source_url`, `source_sha256` (digest of the source files) | as the translation |
 | `translation_verses` | `translation`, `reference` (STEP form: `Gen.1.1`; a Psalm superscription is verse 0, `Psa.3.0`), `book`, `chapter`, `verse`, `text`; PK `(translation, reference)` | each translation's own: NET Bible free non-commercial use by permission; JPS 1917 public domain; ULT, UST CC BY-SA 4.0 |
-| `pack_meta` | `key`, `value`: `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `net_source`, `net_sha256`, `jps_source`, `jps_sha256`, `ult_source`, `ult_sha256`, `ust_source`, `ust_sha256` (each the digest of the pinned files), `versification`, `core_sha256` | — |
+| `pack_meta` | `key`, `value`: `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `net_source`, `net_sha256`, `jps_source`, `jps_sha256`, `ult_source`, `ult_sha256`, `ust_source`, `ust_sha256` (each the digest of the pinned files), `versification`, `core_sha256`, `build_sha256` (`Bezalel.Data.Pack.build_digest/0`) | — |
 
 ### NET Bible
 
@@ -563,8 +563,7 @@ What it does, in order:
    zip, ULT and UST files, ETCBC/dss files, Apostolic Fathers files, UBS
    dictionary files, MACULA files and Samaritan Pentateuch, SBLGNT and HOTTP
    files (the translations, scrolls, dictionaries, syntax and witnesses packs
-   also with `base.json`'s core pack; the scrolls, fathers, dictionaries,
-   syntax and witnesses packs by this checkout's code, their
+   also with `base.json`'s core pack; every pack by this checkout's code, its
    `build_sha256`), compresses each
    with `zstd -19` (as the phone app's `make_packs.py` compresses the base)
    and uploads it to `packs/v<N>/<pack>.sqlite.zst` with

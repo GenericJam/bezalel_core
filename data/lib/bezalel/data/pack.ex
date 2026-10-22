@@ -44,9 +44,38 @@ defmodule Bezalel.Data.Pack do
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
   @verse_columns ~w(reference book chapter verse text)a
 
+  # The code that decides the translations pack's rows, relative to data/:
+  # the importers, the base core numbering the JPS is mapped with
+  # (`Scrolls.english_numbering/1`), the task, and core's
+  # `Bezalel.Study.Translations` (the translations rows' names and notices).
+  @build_inputs ~w(
+    lib/bezalel/data/net.ex lib/bezalel/data/usfm.ex lib/bezalel/data/jps.ex
+    lib/bezalel/data/door43.ex lib/bezalel/data/pack.ex lib/bezalel/data/books.ex
+    lib/bezalel/data/scrolls.ex lib/mix/tasks/bezalel.data.translations.ex
+    ../lib/bezalel/study/translations.ex
+  )
+
   @doc "The pack's name, as in `Bezalel.Study.DB` (`translations.sqlite`)."
   @spec name() :: String.t()
   def name, do: @name
+
+  @doc """
+  One checksum of the files that decide the translations pack's rows
+  (`@build_inputs`), recorded in `pack_meta.build_sha256` so a publish can
+  tell a pack built by other code.
+  """
+  @spec build_digest() :: String.t()
+  def build_digest do
+    root = Path.expand("../../..", __DIR__)
+
+    @build_inputs
+    |> Enum.map(fn path ->
+      sha256 = :crypto.hash(:sha256, File.read!(Path.join(root, path)))
+      [path, ?\t, Base.encode16(sha256, case: :lower), ?\n]
+    end)
+    |> then(&:crypto.hash(:sha256, &1))
+    |> Base.encode16(case: :lower)
+  end
 
   @doc "The CREATE statements, in order."
   @spec schema() :: [String.t()]

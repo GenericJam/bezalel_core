@@ -113,7 +113,8 @@ defmodule Mix.Tasks.Bezalel.Data.Translations do
         "versification" =>
           "English (the packs'); the JPS's inline Hebrew numbers mapped with the base core " <>
             "pack's verses.reference",
-        "core_sha256" => base_core_sha256()
+        "core_sha256" => base_core_sha256(),
+        "build_sha256" => Pack.build_digest()
       }
     )
 

@@ -177,7 +177,8 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
       "jps_sha256" => Download.pin!("jps")["sha256"],
       "ult_sha256" => Door43.digest(Download.pin!("ult")["files"]),
       "ust_sha256" => Door43.digest(Download.pin!("ust")["files"]),
-      "core_sha256" => core
+      "core_sha256" => core,
+      "build_sha256" => Pack.build_digest()
     }
 
     case Publish.check_translations(meta, expected) do

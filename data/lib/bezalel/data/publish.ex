@@ -152,8 +152,10 @@ defmodule Bezalel.Data.Publish do
   `:ok` if a translations pack's `meta` (its pack_meta) says it was built
   from `expected`'s sources (string keys, as pack_meta has them):
   `net_sha256`, `jps_sha256`, `ult_sha256`, `ust_sha256` (the pinned
-  downloads' digests) and `core_sha256` (base.json's core pack, which
-  numbers the JPS); else `{:error, reason}` naming what differs.
+  downloads' digests), `core_sha256` (base.json's core pack, which
+  numbers the JPS) and `build_sha256` (this checkout's code,
+  `Bezalel.Data.Pack.build_digest/0`); else `{:error, reason}` naming what
+  differs.
   """
   @spec check_translations(map(), map()) :: :ok | {:error, String.t()}
   def check_translations(meta, expected) do
@@ -166,6 +168,9 @@ defmodule Bezalel.Data.Publish do
 
       meta["core_sha256"] != expected["core_sha256"] ->
         {:error, "wasn't numbered with base.json's core pack"}
+
+      meta["build_sha256"] != expected["build_sha256"] ->
+        {:error, "was built by other code than this checkout's"}
 
       true ->
         :ok
