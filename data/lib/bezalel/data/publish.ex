@@ -38,6 +38,14 @@ defmodule Bezalel.Data.Publish do
       "licence" =>
         "ETCBC/dss (Martin G. Abegg Jr., James E. Bowley, Edward M. Cook): CC BY-NC 4.0 " <>
           "(non-commercial; https://creativecommons.org/licenses/by-nc/4.0/)"
+    },
+    "syntax" => %{
+      "description" =>
+        "Clause structure: each verse's clauses, roles and words (MACULA syntax trees of the " <>
+          "WLC and the SBLGNT)",
+      "licence" =>
+        "MACULA Hebrew and Greek Linguistic Datasets © 2022-2024 Biblica, Inc: CC BY 4.0 " <>
+          "(https://creativecommons.org/licenses/by/4.0/); WLC text public domain, SBLGNT CC BY 4.0"
     }
   }
 
@@ -109,9 +117,34 @@ defmodule Bezalel.Data.Publish do
     end
   end
 
+  @doc """
+  `:ok` if a syntax pack's `meta` (its pack_meta) says it was built from
+  `expected`'s sources: `macula_sha256` and `macula_source` (the pinned
+  MACULA files), `core_sha256` (base.json's core pack) and `build_sha256`
+  (this checkout's code, `Bezalel.Data.Syntax.build_digest/0`); else
+  `{:error, reason}`.
+  """
+  @spec check_syntax(map(), map()) :: :ok | {:error, String.t()}
+  def check_syntax(meta, expected) do
+    cond do
+      meta["macula_sha256"] != expected.macula_sha256 or
+          meta["macula_source"] != expected.macula_source ->
+        {:error, "wasn't built from pins.json's MACULA files"}
+
+      meta["core_sha256"] != expected.core_sha256 ->
+        {:error, "wasn't numbered with base.json's core pack"}
+
+      meta["build_sha256"] != expected.build_sha256 ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
   @doc "The names of the packs built here, in manifest order."
   @spec built_here() :: [String.t()]
-  def built_here, do: ~w(translations scrolls)
+  def built_here, do: ~w(translations scrolls syntax)
 
   @doc """
   The manifest entry of pack `name` (one of `built_here/0`) for a pack

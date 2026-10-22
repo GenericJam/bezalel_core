@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   @moduledoc """
   Publishes the packs built here (`out/translations.sqlite`,
-  `out/scrolls.sqlite`) as the next data version, on top of the frozen base,
+  `out/scrolls.sqlite`, `out/syntax.sqlite`) as the next data version, on top of the frozen base,
   without uploading the base.
 
       mix bezalel.data.publish [--dry-run] [--version N]
@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   use Mix.Task
 
-  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls}
+  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls, Syntax}
 
   @bucket "bezalel-packs"
   @manifest_key "packs/manifest.json"
@@ -183,6 +183,23 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     case Publish.check_scrolls(meta, expected) do
       :ok -> :ok
       {:error, reason} -> Mix.raise("out/scrolls.sqlite #{reason}; run mix bezalel.data.scrolls")
+    end
+  end
+
+  defp check_source!("syntax", meta) do
+    pin = Download.pin!("macula")
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
+
+    expected = %{
+      macula_sha256: pin |> Syntax.pinned_files() |> Syntax.source_digest(),
+      macula_source: Syntax.source(pin),
+      core_sha256: core,
+      build_sha256: Syntax.build_digest()
+    }
+
+    case Publish.check_syntax(meta, expected) do
+      :ok -> :ok
+      {:error, reason} -> Mix.raise("out/syntax.sqlite #{reason}; run mix bezalel.data.syntax")
     end
   end
 

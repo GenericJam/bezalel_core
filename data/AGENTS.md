@@ -19,7 +19,10 @@ path). Read [README.md](README.md) first. bezalel_core's
    isn't imported. NET: the verse text only; the NET translators' and study
    notes are not licensed and must never be imported. Scrolls: ETCBC/dss is
    CC BY-NC 4.0 (non-commercial, credit shown); no English translation of
-   the scrolls is openly licensed, so none is imported.
+   the scrolls is openly licensed, so none is imported. Syntax: MACULA is
+   CC BY 4.0 except the UBS data it uses "with permission" (`sdbh`,
+   `lexdomain`, `coredomain`, `contextualdomain`, `ln`, `domain`), which is
+   never imported (`Bezalel.Data.Syntax` reads only the attributes it names).
 3. **Text is not altered.** Markup is removed and whitespace collapsed;
    small capitals become capitals. Anything else the source sends that isn't
    verse text (headings, labels, notes) is dropped by a rule naming its
@@ -52,7 +55,8 @@ mix compile --warnings-as-errors
 mix test
 ```
 
-Re-run `mix bezalel.data.net` / `mix bezalel.data.scrolls` and `mix
+Re-run `mix bezalel.data.net` / `mix bezalel.data.scrolls` / `mix
+bezalel.data.syntax` and `mix
 bezalel.data.fixtures --pack <pack>` when an importer changes, and run
 core's suite (`cd .. && mix test`) when a fixture changes. Which Dead Sea
 Scrolls are imported is core's `Bezalel.Study.Ancient.Scrolls`: a work added

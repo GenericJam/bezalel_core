@@ -265,10 +265,15 @@ defmodule Bezalel.Study.Tools.LookupVerseTest do
       # The heading keeps the NET's own label.
       assert text =~ ~r/\A## Jhn\.3\.16 \(\[NET\]\(http:\/\/netbible\.org\)\)\n/
 
+      # Then the clause structure's MACULA tree file (the syntax fixture has John 3:16).
       assert [
                %Citation{work: "net", url: "https://netbible.org/bible/John+3:16"} = net,
-               %Citation{work: "step", url: step_url} = step
+               %Citation{work: "step", url: step_url} = step,
+               %Citation{work: "macula", url: macula_url}
              ] = citations
+
+      assert macula_url =~
+               ~r"^https://github\.com/Clear-Bible/macula-greek/blob/\w{40}/SBLGNT/lowfat/04-john\.xml$"
 
       assert step_url =~ "version=THGNT"
       assert step_url =~ "reference=Jhn.3.16"

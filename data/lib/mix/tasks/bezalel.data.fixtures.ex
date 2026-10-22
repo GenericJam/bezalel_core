@@ -1,15 +1,15 @@
 defmodule Mix.Tasks.Bezalel.Data.Fixtures do
-  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls}.sqlite"
+  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,syntax}.sqlite"
 
   @moduledoc """
   Cuts the fixtures core's tests read from the packs built here.
 
-      mix bezalel.data.fixtures [--pack translations|scrolls]
+      mix bezalel.data.fixtures [--pack translations|scrolls|syntax]
                                 [--from DIR] [--core ../test/fixtures/packs/core.sqlite]
                                 [--out DIR]
 
   `--from` (default `out/`) holds the built packs, `--out` (default
-  `../test/fixtures/packs/`) the fixtures; without `--pack` both are cut.
+  `../test/fixtures/packs/`) the fixtures; without `--pack` all are cut.
 
     * `translations.sqlite`: every translation's metadata row, and its verses
       for exactly the references in the core fixture's `bsb_verses`. Run
@@ -19,11 +19,14 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       `@scroll_verses` (a reading of each kind the tools handle: preserved,
       partly and wholly reconstructed, Hebrew numbering, a verse the MT
       lacks), with their manuscripts. Run `mix bezalel.data.scrolls` first.
+    * `syntax.sqlite`: both editions and the verses of `@syntax_verses` (a
+      verse of each edition, two Psalm superscriptions, a sentence running
+      past its verse). Run `mix bezalel.data.syntax` first.
   """
 
   use Mix.Task
 
-  alias Bezalel.Data.{Pack, Report, ScrollsPack}
+  alias Bezalel.Data.{Pack, Report, ScrollsPack, SyntaxPack}
 
   @switches [pack: :string, from: :string, core: :string, out: :string]
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
@@ -38,6 +41,10 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
   # reconstructed in 1Q5), Josh 5:0 (4QJosha's verse before 5:1, no MT
   # verse), Mal 4:1 (Hebrew 3:19).
   @scroll_verses ~w(Deu.32.8 Isa.53.11 Psa.22.16 Deu.1.10 Jos.5.0 Mal.4.1)
+
+  # Gen 1:1 (WLC), Ps 3:0 and 22:0 (superscriptions, the WLC's 3:1 and
+  # 22:1), John 1:1 and 3:16 (SBLGNT), Eph 1:7 (a sentence running to 1:10).
+  @syntax_verses ~w(Gen.1.1 Psa.3.0 Psa.22.0 Jhn.1.1 Jhn.3.16 Eph.1.7)
 
   @passage_columns ~w(corpus author work_key work_title reference alternate_reference
                       book_number section_number section_end editorial_heading text original_text
@@ -57,6 +64,7 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       nil ->
         translations(from, out, opts)
         scrolls(from, out)
+        syntax(from, out)
 
       "translations" ->
         translations(from, out, opts)
@@ -64,8 +72,11 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       "scrolls" ->
         scrolls(from, out)
 
+      "syntax" ->
+        syntax(from, out)
+
       other ->
-        Mix.raise("--pack must be translations or scrolls, not #{inspect(other)}")
+        Mix.raise("--pack must be translations, scrolls or syntax, not #{inspect(other)}")
     end
   end
 
@@ -154,6 +165,29 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
         "(#{verses |> Enum.map(& &1.reference) |> Enum.uniq() |> length()} of " <>
         "#{length(@scroll_verses)} verses), #{length(manuscripts)} manuscripts"
     )
+  end
+
+  defp syntax(from_dir, out_dir) do
+    from = Path.join(from_dir, "syntax.sqlite")
+    out = Path.join(out_dir, "syntax.sqlite")
+    columns = SyntaxPack.columns()
+
+    editions =
+      from
+      |> Pack.read("SELECT #{Enum.join(columns.editions, ", ")} FROM syntax_editions")
+      |> rows(columns.editions)
+
+    verses =
+      from
+      |> Pack.read(
+        "SELECT #{Enum.join(columns.verses, ", ")} FROM syntax_verses " <>
+          "WHERE reference IN (#{placeholders(@syntax_verses)}) ORDER BY rowid",
+        @syntax_verses
+      )
+      |> rows(columns.verses)
+
+    SyntaxPack.write(out, editions, verses, fixture_meta(from))
+    Mix.shell().info("#{out}: #{length(verses)} of #{length(@syntax_verses)} verses")
   end
 
   defp rows(rows, columns), do: Enum.map(rows, &(columns |> Enum.zip(&1) |> Map.new()))

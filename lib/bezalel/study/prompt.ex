@@ -45,7 +45,7 @@ defmodule Bezalel.Study.Prompt do
 
   @guide [
     {"lookup_verse",
-     "the passage in English (the user's translation, labelled) and in Hebrew or Greek; for a single verse, or with `include_morphology`, every word with its Strong's number, gloss and parsing code. A Strong's number may carry a sense letter (H7307G); the tools accept it as it is."},
+     "the passage in English (the user's translation, labelled) and in Hebrew or Greek; for a single verse, or with `include_morphology`, every word with its Strong's number, gloss and parsing code, and the clause structure (each clause's subject, verb, object… with their words). A Strong's number may carry a sense letter (H7307G); the tools accept it as it is."},
     {"word_study",
      "the lexicon entry for a Strong's number or an English word: definitions (BDB for Hebrew; LSJ and Abbott-Smith for Greek), semantic range, related words, occurrence counts and example verses."},
     {"search_lexicon",

@@ -12,7 +12,7 @@ defmodule BezalelData.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger, :crypto]]
+    [extra_applications: [:logger, :crypto, :xmerl]]
   end
 
   defp deps do

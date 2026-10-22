@@ -117,5 +117,28 @@
     "reviewed": "2026-10-18",
     "licence": "Public domain, the marked-up TEI included (the repo's README)",
     "note": "The commit the core pack's lexicon.abbott_smith_def was built from (studybible-mcp). Output: ../priv/study/abbott_smith_pages.json (mix bezalel.data.abbott_smith)."
+  },
+  "macula": {
+    "name": "Clear-Bible MACULA Hebrew and Greek Linguistic Datasets: the lowfat syntax trees of the WLC (one file per chapter) and of the SBLGNT (one file per book)",
+    "reviewed": "2026-10-22",
+    "licence": "CC BY 4.0 (each repo's LICENSE.md), https://creativecommons.org/licenses/by/4.0/; the UBS attributes marked 'Used with permission' (Hebrew sdbh, lexdomain, coredomain, contextualdomain; Greek ln, domain) are not CC-licensed and are not imported",
+    "files": "macula_files.json",
+    "note": "The files' sha256s are in macula_files.json (hebrew: WLC/lowfat/NN-Bbb-CCC-lowfat.xml, not the index file macula-hebrew-lowfat.xml; greek: SBLGNT/lowfat/NN-book.xml). Each was also checked once against the commit's git blob sha. None is a Git LFS pointer.",
+    "hebrew": {
+      "repo": "https://github.com/Clear-Bible/macula-hebrew",
+      "commit": "47db250bd55d0d8577f2a94fba114ef16c35b23c",
+      "path": "WLC/lowfat",
+      "url": "https://raw.githubusercontent.com/Clear-Bible/macula-hebrew/47db250bd55d0d8577f2a94fba114ef16c35b23c/WLC/lowfat/",
+      "edition": "WLC",
+      "attribution": "MACULA Hebrew Linguistic Datasets, available at https://github.com/Clear-Bible/macula-hebrew/"
+    },
+    "greek": {
+      "repo": "https://github.com/Clear-Bible/macula-greek",
+      "commit": "8423afe47b9e8f24b7772e808af45c7159a6fe7e",
+      "path": "SBLGNT/lowfat",
+      "url": "https://raw.githubusercontent.com/Clear-Bible/macula-greek/8423afe47b9e8f24b7772e808af45c7159a6fe7e/SBLGNT/lowfat/",
+      "edition": "SBLGNT",
+      "attribution": "MACULA Greek Linguistic Datasets, available at https://github.com/Clear-Bible/macula-greek/"
+    }
   }
 }

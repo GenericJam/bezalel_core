@@ -14,7 +14,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Tools` | `all/0`, every study tool module; `materials/0`, the tools that make materials (`draw_image`); `withheld/1`, the tool names to withhold under a user's preferences |
 | `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by the image model the user chose ("Pictures by": OpenAI's gpt-image or a Gemini image model, `models/0`) on that provider's API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
 | `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. Every `run/2` hands rho the data with its `citations` as the result's details (`{:ok, {:details, markdown, data}}`, [Sources](#sources)): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card for `lookup_verse` and `word_study`. The Mermaid diagrams of the graph tools stay in the Markdown only |
-| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
+| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`, `syntax`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation, image model, pushback model; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
 | `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB) with their labels, links and acknowledgements |
@@ -30,6 +30,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Aquifer` | Dictionary and key-term search and article Markdown |
 | `Bezalel.Study.Ancient`, `Bezalel.Study.Ancient.Passages`, `Bezalel.Study.Ancient.Registry`, `Bezalel.Study.Ancient.Scrolls` | Ancient-source citations (with the scrolls pack's fragment locators), search folding and excerpts, and their corpus registry (6 corpora, 241 works, 132 of them Dead Sea Scrolls manuscripts) as data |
 | `Bezalel.Study.BiblicalScrolls` | The biblical Dead Sea Scrolls' readings by verse (scrolls pack) |
+| `Bezalel.Study.Syntax` | A verse's clause structure (syntax pack) and `lookup_verse`'s "Clause structure" section |
 | `Bezalel.Study.Citation`, `Bezalel.Study.Citations` | A source a result rests on, and every URL template that builds one ([Sources](#sources)) |
 | `Bezalel.Agent.Details`, `Bezalel.Agent.Reply`, `Bezalel.Agent.Card` | What the session keeps of a tool's data (`keep_details/2`, `kept_card/1`, `kept_citations/1`), a reply's fold and sources, the passage card |
 | `Bezalel.Agent.Pushback` | Another model pushes back on a reply and the lead answers it: the critic's brief, one round per reply, automatic or on demand ([Pushback](#pushback-another-model-reviews-a-reply)) |
@@ -108,6 +109,28 @@ ETCBC/dss (the Abegg–Bowley–Cook transcription, CC BY-NC 4.0), in two parts
   stays Heiser's curated cases. A reading wholly inside `[ ]` says that
   nothing legible survives; ETCBC's Hebrew numbering is mapped to the packs'
   English one and named ('Hebrew numbering Psa.22.17').
+
+### Clause structure (syntax pack)
+
+The syntax pack is built here, by `data/`'s `mix bezalel.data.syntax` from
+Clear-Bible MACULA's lowfat syntax trees (MACULA Hebrew of the WLC, MACULA
+Greek of the SBLGNT; CC BY 4.0; why and what was left out:
+[decisions/2026-10-22-syntax-pack.md](../decisions/2026-10-22-syntax-pack.md)):
+one row per verse in the packs' English numbering, the clauses of the
+sentences that touch it as JSON (`Bezalel.Data.Syntax` documents the shape).
+`lookup_verse` reads it under the word list's gate (a single verse, or a
+passage with `include_morphology`) and adds a "Clause structure" section after
+the verses: each clause's rule and its parts with their roles in plain English
+(`[subject]`, `[verb]`, `[object]`, `[prepositional phrase]`…), their words and
+MACULA's glosses, a clause inside another indented under it and named in its
+part as "(clause n)". It says which text the tree is of (the WLC or the SBLGNT,
+whose words can differ from STEPBible's Hebrew and Greek above), when the
+edition numbers the verse otherwise (a Psalm superscription is the WLC's verse
+1) and when the sentence runs past the verse (the words outside it in ⟨ ⟩ with
+their verse, its other clauses counted). At most 4,000 characters of clause
+lines, cut at a whole line with a note. Each verse cites its MACULA tree file
+at the pinned commit (`Citations.macula/4`). Without the pack, or with one that
+can't be read, `lookup_verse` answers exactly as before.
 
 ### Full-text search on the phone
 
@@ -371,6 +394,7 @@ the verse's Hebrew and Greek on STEP and any Dead Sea Scroll witness as `origina
 | Philo | Scaife, Yonge (`1st1K-eng1`) or the Greek (`1st1K-grc1`) by section |
 | Onkelos, Mishnah | Sefaria `Onkelos_{Book}.{c}.{v}`, `Mishnah_{Tractate}.{c}.{m}` |
 | 1 Enoch, 4 Ezra | the stored Wikisource revision; eBible's KJV 2 Esdras |
+| MACULA syntax trees | the tree file at the pack's commit, `https://github.com/Clear-Bible/macula-{hebrew,greek}/blob/{commit}/{WLC/lowfat/NN-Bbb-CCC-lowfat.xml, SBLGNT/lowfat/NN-book.xml}` |
 | Dead Sea Scrolls | Leon Levy `…/manuscript/{siglum}-1` (biblical manuscripts only where the scrolls pack names them); the Israel Museum for 1QIsaa, 1QS, 1QpHab, 1QM, 11Q19; Cambridge's CD MS A (cols. 1–16) and MS B (19–20); 1QHa as DJD 40 |
 | Theology summaries | Heiser's and Owen's stored URLs and pages; Stott, Lennox, Bradley as their book (author, title, year; no edition, which the data doesn't record) "on" the chapter |
 | ANE entries, Fee & Stuart | book references as given |
@@ -547,11 +571,12 @@ table keeps; `--pack <name>` cuts one). Tests in `test/bezalel/study/` run again
 those, never the real packs; they port studybible-mcp's handler tests (and its
 theology, research-sources, broad-entry, textual-variant, biblical-versions and
 ancient-corpus tests) and add the Exodus 31 cases. `translations.sqlite` holds the NET
-of exactly the verses the core fixture's `bsb_verses` has. `translations.sqlite` and
-`scrolls.sqlite` are cut by this repository's `data/` (`mix bezalel.data.fixtures`):
+of exactly the verses the core fixture's `bsb_verses` has. `translations.sqlite`,
+`scrolls.sqlite` and `syntax.sqlite` are cut by this repository's `data/` (`mix bezalel.data.fixtures`):
 the scrolls fixture keeps 11Q13, 4Q174 and 4Q246 whole, 1QM column 1 and fragment 3,
 4Q405 frg. 23 i, and the biblical readings of Deut 32:8, Isa 53:11, Ps 22:16, Deut
-1:10, Josh 5:0 and Mal 4:1 (`scrolls_test.exs`). The ported cases that assert
+1:10, Josh 5:0 and Mal 4:1 (`scrolls_test.exs`); `syntax.sqlite` keeps Gen 1:1,
+Ps 3:0 and 22:0, John 1:1 and 3:16 and Eph 1:7 (`syntax_test.exs`). The ported cases that assert
 studybible-mcp's wording pass `Preferences` with the BSB and a limit of four (their
 defaults); `preferences_test.exs`, `source_filters_test.exs` and `translations_test.exs`
 cover the settings, the source filters and verdicts, the labels, the translations and
