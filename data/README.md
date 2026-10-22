@@ -253,7 +253,7 @@ and pinned source; `pack_meta.licences` lists them). Pins: [pins.json](pins.json
   remark, suggestion and literal (16,381 fields) are dropped. `<span class="hebrew">`,
   `\heb`, `\grk` markup removed; any other tag or backslash marker stops the build.
 
-Size (build of 2026-10-22): 8,421,376 bytes, 2,007,686 with `zstd -19`.
+Size (build of 2026-10-22): 8,421,376 bytes, 2,007,416 with `zstd -19`.
 
 ## Publish
 
