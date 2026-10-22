@@ -24,10 +24,19 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
   labelled so (their rationale's "the HLT" is "the draft") and cite the
   verse's Hebrew, Greek and scroll witnesses to check them against
   (`Bezalel.Study.Citations.hlt/2`).
+
+  Added for Bezalel: from the witnesses pack when it is on the device (else
+  nothing, silently), after the notes pack's cases, the UBS Hebrew Old
+  Testament Text Project's entries at an Old Testament verse (each reading
+  with the base translations that follow it, then the committee's rating
+  and factors, explained from the report's introduction, as its judgment)
+  and the SBLGNT apparatus's variation units at a New Testament verse (the
+  SBLGNT's reading and each variant, with the editions that print them). A
+  verse with no notes-pack case returns these alone.
   """
   @behaviour Rho.Tool
 
-  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Patterns, Reference}
+  alias Bezalel.Study.{Args, Citation, Citations, DB, Format, Patterns, Reference, Witnesses}
 
   # Cases that record how agreed text is read, not a manuscript variant.
   @interpretive_case_keys ["MT_preserved", "translation_choice"]
@@ -56,6 +65,8 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
     - Translation decisions: a translation's selected reading and rationale
     - NT quotation alignment: separately catalogued links showing which form (an LXX form or the MT) an NT quotation follows
     - Translation and interpretation notes: how a contested verse is read or rendered (e.g. divine-council language at Psalm 82:6); shown separately, after any manuscript variant at the verse, never as one
+    - UBS Hebrew Old Testament Text Project (HOTTP), Old Testament: the forms of the text the committee compared, with the base translations following each, then the committee's rating (A–D) of the reading it preferred and the factors behind its decision, explained, as its judgment
+    - SBLGNT apparatus, New Testament: at each variation unit, the SBL Greek New Testament's reading and the variants, each with the printed editions (Westcott–Hort, Tregelles, NA28, Robinson–Pierpont…) that read it; editions, not manuscripts
 
     Sections with nothing catalogued are omitted. Each manuscript-variant witness
     keeps the dataset's raw support label. A witness date describes the witness
@@ -169,7 +180,21 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
           divergence_note: String.t() | nil
         }
 
-  @type t :: %{reference: String.t(), cases: [variant_case()], quotations: [quotation()]}
+  @typedoc """
+  A verse's record: the notes pack's `cases` and `quotations`; from the
+  witnesses pack, its `hottp` entries and `apparatus` units, with the
+  `glossary` (`ratings`, `factors`) and `witness_sources` (by key) they
+  need (all empty without the pack).
+  """
+  @type t :: %{
+          reference: String.t(),
+          cases: [variant_case()],
+          quotations: [quotation()],
+          hottp: [Witnesses.entry()],
+          apparatus: [Witnesses.unit()],
+          glossary: %{ratings: map(), factors: map()},
+          witness_sources: %{String.t() => Witnesses.source()}
+        }
 
   @doc """
   The cases and quotation alignments catalogued for `args`' verse (an NT
@@ -192,7 +217,44 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
 
       true ->
         with {:ok, record} <- DB.with_pack(:notes, &record(&1, reference, normalized)),
-             do: {:ok, add_scrolls(record)}
+             do: {:ok, record |> add_scrolls() |> add_witnesses(normalized)}
+    end
+  end
+
+  @no_witnesses %{
+    hottp: [],
+    apparatus: [],
+    glossary: %{ratings: %{}, factors: %{}},
+    witness_sources: %{}
+  }
+
+  # The verse's HOTTP entries and apparatus units, from the witnesses pack
+  # (none when it's missing or can't be read).
+  defp add_witnesses(record, normalized) do
+    read = fn conn ->
+      tables = ~w(hottp_entries hottp_alternatives hottp_verses hottp_ratings hottp_factors
+                  sblgnt_apparatus)
+
+      with :ok <- Witnesses.check(conn, tables) do
+        hottp = Witnesses.hottp(conn, normalized)
+
+        {:ok,
+         %{
+           hottp: hottp,
+           apparatus: Witnesses.apparatus(conn, normalized),
+           glossary:
+             if(hottp == [],
+               do: @no_witnesses.glossary,
+               else: %{ratings: Witnesses.ratings(conn), factors: Witnesses.factors(conn)}
+             ),
+           witness_sources: Witnesses.sources(conn)
+         }}
+      end
+    end
+
+    case DB.with_pack(:witnesses, read) do
+      {:ok, {:ok, witnesses}} -> Map.merge(record, witnesses)
+      _missing -> Map.merge(record, @no_witnesses)
     end
   end
 
@@ -450,15 +512,15 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
 
   @doc "The Markdown the model reads for a `result/1`."
   @spec render(t()) :: String.t()
-  def render(%{reference: reference, cases: [], quotations: []}) do
+  def render(%{reference: reference, cases: [], quotations: [], hottp: [], apparatus: []}) do
     "No textual-variant case or NT quotation alignment is catalogued for #{reference}."
   end
 
-  def render(%{reference: reference, cases: cases, quotations: quotations}) do
+  def render(%{reference: reference, cases: cases, quotations: quotations} = result) do
     {interpretive, variants} = Enum.split_with(cases, &(&1.kind == :interpretive))
 
     title =
-      if cases != [] and variants == [],
+      if cases != [] and variants == [] and result.hottp == [] and result.apparatus == [],
         do: "# Translation and interpretation notes for #{reference}",
         else: "# Textual variant record for #{reference}"
 
@@ -468,6 +530,8 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
       [title, ""] ++
         Enum.flat_map(variants, &variant_lines/1) ++
         Enum.flat_map(interpretive, &interpretive_lines(&1, shown[&1.reference])) ++
+        hottp_lines(result) ++
+        apparatus_lines(result) ++
         quotation_lines(quotations)
 
     lines |> Enum.join("\n") |> String.trim_trailing()
@@ -478,7 +542,7 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
   decision `render/1` shows, in its order.
   """
   @spec citations(t()) :: [Citation.t()]
-  def citations(%{cases: cases}) do
+  def citations(%{cases: cases} = result) do
     {interpretive, variants} = Enum.split_with(cases, &(&1.kind == :interpretive))
     shown = shown(variants)
 
@@ -491,7 +555,9 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
         (Enum.flat_map(texts(c, shown[c.reference]), & &1.witnesses) ++ c.citation_evidence)
         |> Enum.flat_map(&witness_citations/1)
         |> Kernel.++(interpretation_citations(c))
-      end)
+      end) ++
+      Enum.flat_map(Map.get(result, :hottp, []), &hottp_citations(&1, result)) ++
+      Enum.flat_map(Map.get(result, :apparatus, []), &[apparatus_citation(&1, result)])
   end
 
   # The readings each verse's variants print, which its notes then skip.
@@ -728,4 +794,195 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
         "- **#{q.nt_display}** quotes **#{q.ot_display}** — *#{type}*: #{note}"
       end
   end
+
+  # --- HOTTP ------------------------------------------------------------------
+
+  defp hottp_lines(%{hottp: []}), do: []
+
+  defp hottp_lines(%{hottp: entries, glossary: glossary} = result) do
+    [
+      "## UBS Hebrew Old Testament Text Project (HOTTP) at #{hd(entries).reference}",
+      "*The committee's entries (UBS, 1969–1980): the forms of the text it compared, each " <>
+        "with how the base translations render it; then its judgment, kept apart: the rating " <>
+        "of the form it judged the earliest attested text, and some of the factors behind its " <>
+        "decision for or against a form. [ ] around Hebrew: a form reconstructed from the " <>
+        "versions, with no Hebrew witness.*",
+      ""
+    ] ++
+      Enum.flat_map(entries, &hottp_entry_lines(&1, result)) ++
+      factor_lines(entries, glossary.factors) ++ ["", "---", ""]
+  end
+
+  defp hottp_entry_lines(entry, result) do
+    numbering =
+      if entry.source_reference != entry.reference,
+        do: " (Hebrew numbering #{entry.source_reference})",
+        else: ""
+
+    ["### HOTTP entry #{entry.id}#{numbering}", "", "**Readings compared:**"] ++
+      Enum.flat_map(entry.alternatives, &alternative_lines/1) ++
+      judgment_lines(entry, result.glossary.ratings) ++
+      source_lines(hottp_citations(entry, result)) ++ [""]
+  end
+
+  defp alternative_lines(alternative) do
+    renderings =
+      alternative.renderings
+      |> Enum.filter(&Format.present?(&1.text))
+      |> Enum.map_join("; ", &"#{&1.version} “#{&1.text}”")
+
+    ["- #{alternative.position}. `#{alternative.hebrew || "(no Hebrew form given)"}`"] ++
+      if(Format.present?(alternative.literal),
+        do: ["  - Literal English (HOTTP): #{alternative.literal}"],
+        else: []
+      ) ++
+      if(renderings != "", do: ["  - Base translations rendering it: #{renderings}"], else: [])
+  end
+
+  defp judgment_lines(entry, ratings) do
+    rated =
+      for a <- entry.alternatives, Format.present?(a.rating) do
+        meaning =
+          case ratings[a.grade] do
+            nil -> ""
+            meaning -> ": #{meaning}"
+          end
+
+        "- Rating **#{a.rating}** for reading #{a.position}#{meaning}."
+      end
+
+    factors =
+      for a <- entry.alternatives, a.factors != [] do
+        "- Factors cited for reading #{a.position}: #{Enum.join(a.factors, ", ")}."
+      end
+
+    remark = if Format.present?(entry.remark), do: ["- Remark: #{entry.remark}"], else: []
+
+    suggestion =
+      if Format.present?(entry.suggestion),
+        do: ["- Suggestion for translators: #{entry.suggestion}"],
+        else: []
+
+    rated = if rated == [], do: ["- No reading rated in this entry."], else: rated
+
+    [
+      "",
+      "**The HOTTP committee's judgment** (its conclusion, not manuscript evidence):"
+    ] ++ rated ++ factors ++ remark ++ suggestion
+  end
+
+  # Each factor the entries cite, once, from the report's introduction.
+  defp factor_lines(entries, factors) do
+    cited =
+      entries
+      |> Enum.flat_map(& &1.alternatives)
+      |> Enum.flat_map(& &1.factors)
+      |> Enum.map(&factor_number/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    explained =
+      for number <- cited do
+        case factors[number] do
+          nil ->
+            "- **Factor #{number}:** not explained in the report's introduction."
+
+          f ->
+            "- **Factor #{number}, #{f.name}** (#{String.downcase(f.kind)}): #{excerpt(f.explanation)}"
+        end
+      end
+
+    if explained == [],
+      do: [],
+      else: [
+        "### The factors cited, as the report's introduction explains them",
+        "*The committee lists after a reading some, not all, of the factors that decided it for " <>
+          "or against that reading, most important first.*"
+        | explained
+      ]
+  end
+
+  # '12 (for/pour …)', '7(?)' → 12, 7.
+  defp factor_number(text) do
+    case Integer.parse(text) do
+      {number, _rest} -> number
+      :error -> nil
+    end
+  end
+
+  # The explanation's first two sentences (the full text is linked).
+  defp excerpt(text) do
+    sentences = String.split(text, ". ")
+
+    case Enum.split(sentences, 2) do
+      {kept, []} -> Enum.join(kept, ". ")
+      {kept, _more} -> Enum.join(kept, ". ") <> ". …"
+    end
+  end
+
+  defp hottp_citations(entry, %{witness_sources: %{"hottp" => source}} = result) do
+    [Citations.hottp(entry.id, entry.reference, source.source_url)] ++
+      if(Enum.any?(entry.alternatives, &Format.present?(&1.rating)),
+        do: [Citations.hottp_glossary(:ratings, source.source_url)],
+        else: []
+      ) ++
+      if(Enum.any?(entry.alternatives, &(&1.factors != [])) and result.glossary.factors != %{},
+        do: [Citations.hottp_glossary(:factors, source.source_url)],
+        else: []
+      )
+  end
+
+  defp hottp_citations(_entry, _result), do: []
+
+  # --- The SBLGNT apparatus ---------------------------------------------------
+
+  defp apparatus_lines(%{apparatus: []}), do: []
+
+  defp apparatus_lines(%{apparatus: units} = result) do
+    sigla =
+      units
+      |> Enum.flat_map(&(&1.lemma_sigla ++ Enum.flat_map(&1.variants, fn v -> v.sigla end)))
+      |> Enum.uniq()
+      |> Enum.map(&{&1, Witnesses.siglum(&1)})
+      |> Enum.reject(fn {_, meaning} -> is_nil(meaning) end)
+
+    [
+      "## SBLGNT apparatus at #{hd(units).reference}",
+      "*Which printed editions read what, not manuscripts: at each variation unit the SBL " <>
+        "Greek New Testament's reading comes first, with the editions that agree, then each " <>
+        "variant with the editions that print it. '+' adds the words, '–' omits them.*",
+      ""
+    ] ++
+      Enum.flat_map(units, &unit_lines(&1, result)) ++
+      if(sigla == [],
+        do: [],
+        else: ["**Editions:** " <> Enum.map_join(sigla, "; ", fn {s, m} -> "#{s}: #{m}" end)]
+      ) ++ ["", "---", ""]
+  end
+
+  defp unit_lines(%{parsed: false} = unit, result) do
+    [
+      "### Variation unit #{unit.unit}",
+      "- The note as the apparatus gives it (not split into readings): `#{String.trim(unit.note)}`"
+    ] ++ source_lines([apparatus_citation(unit, result)]) ++ [""]
+  end
+
+  defp unit_lines(unit, result) do
+    span = if unit.verses, do: " (verses #{unit.verses})", else: ""
+
+    [
+      "### Variation unit #{unit.unit}#{span}",
+      "- **SBLGNT:** #{unit.lemma} — #{Enum.join(unit.lemma_sigla, ", ")}"
+    ] ++
+      Enum.map(unit.variants, fn v ->
+        "- **Variant:** #{variant_text(v.text)} — #{Enum.join(v.sigla, ", ")}"
+      end) ++ source_lines([apparatus_citation(unit, result)]) ++ [""]
+  end
+
+  defp variant_text(""), do: "(the same words, in Westcott and Hort's double brackets)"
+  defp variant_text(text), do: text
+
+  defp apparatus_citation(unit, %{witness_sources: %{"sblgnt_apparatus" => source}}),
+    do: Citations.sblgnt_apparatus(unit.reference, unit.file, unit.line, source.source_url)
 end

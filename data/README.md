@@ -38,6 +38,7 @@ mix bezalel.data.net        # → out/translations.sqlite, out/net_report.txt
 mix bezalel.data.scrolls    # → out/scrolls.sqlite, out/scrolls_report.txt
 mix bezalel.data.fixtures   # → ../test/fixtures/packs/{translations,scrolls}.sqlite
 mix bezalel.data.abbott_smith  # → ../priv/study/abbott_smith_pages.json
+mix bezalel.data.witnesses  # → out/witnesses.sqlite, out/witnesses_report.txt
 ```
 
 Needs the network for the first run (NET: 66 requests, about 30 seconds;
@@ -220,6 +221,40 @@ reconstructed, and 349 verses with no letter preserved in any manuscript;
 one verse ETCBC numbers that the MT lacks (Josh 5:0, 4QJosha's text before
 5:2).
 
+## The `witnesses` pack
+
+`witnesses.sqlite` (`mix bezalel.data.witnesses [--core PATH]`; `Bezalel.Data.Witnesses`,
+`Bezalel.Data.WitnessesPack`), built like the others. Four sources, each in tables of its
+own with its own licence (`witness_sources` names each one's tables, licence, attribution
+and pinned source; `pack_meta.licences` lists them). Pins: [pins.json](pins.json) → `sp`,
+`sblgnt`, `hottp`. Why: [../decisions/2026-10-22-witnesses-pack.md](../decisions/2026-10-22-witnesses-pack.md).
+
+| Table | Columns | Licence |
+|---|---|---|
+| `sp_verses` | `reference` (English STEP), `book`, `chapter`, `verse`, `source_reference` (the dataset's own number, PK), `mt_verse`, `text` (`g_cons_utf8` + `trailer` per word), `words`, `note` (verse division) | DT-UCPH/sp: CC BY-NC 4.0 |
+| `sblgnt_verses` | `reference`, `book`, `chapter`, `verse` (the SBLGNT's numbering = the core pack's `verses` numbering), `text` (as the file gives it, ⸀ ⸂ ⸃ kept), `file`, `line` | SBLGNT: CC BY 4.0 |
+| `sblgnt_apparatus` | `reference`, `book`, `chapter`, `verse`, `unit`, `verses` (a span, '43–44'), `note` (raw), `parsed`, `lemma`, `lemma_sigla`, `variants` (JSON `[{text, sigla}]`), `file`, `line` | SBLGNT: CC BY 4.0 |
+| `hottp_entries`, `hottp_alternatives`, `hottp_verses`, `hottp_ratings`, `hottp_factors` | entry `id`, `remark`, `suggestion`; each alternative's `hebrew`, `rating` (as given) and `grade` (A–D), `factors`, `literal`, `renderings` (base translations); entry × verse (`reference` English, `source_reference` Hebrew, `segments`); the rating and factor glossaries | UBS HOTTP: CC BY-SA 4.0 |
+
+- **Samaritan Pentateuch**: DT-UCPH/sp Text-Fabric 7.2.4 (tag v7.2.4, commit `6da31aa`), 7
+  feature files; `Bezalel.Data.TextFabric` reads it (DT-UCPH spells `@licence=`, there is no
+  `line` type, slots are signs). Hebrew numbering mapped with the base core pack's
+  `verses.reference`. The dataset groups the additions after Gen 30:36 under verse 36 (its
+  README), places the incense altar (MT Exod 30:1–10) in 26:35, and has no Deut 34:2–3; those
+  rows say so, and the report lists the 12 core Torah verses it lacks.
+- **SBLGNT** (Faithlife/SBLGNT `c4d241a`, v1.2 with John 7:53–8:11): 7,939 verses, every one a
+  core verse; the core pack's 19 extra NT verses (Matt 17:21…) are reported.
+- **Apparatus**: 6,934 notes; each parsed by the grammar of the SBLGNT introduction (the
+  verse number or `•`, the SBLGNT reading and its sigla, `]`, variants separated by `;`
+  after a siglum); 1 note that doesn't fit (John 7:52's pericope note) is kept raw,
+  unparsed.
+- **HOTTP** (ubsicap/ubs-open-license `a15a96c`): 4,515 entries, 10,310 alternatives, 4,577
+  entry-verse rows of 3,848 verses (475 renumbered to English). English only: the French
+  remark, suggestion and literal (16,381 fields) are dropped. `<span class="hebrew">`,
+  `\heb`, `\grk` markup removed; any other tag or backslash marker stops the build.
+
+Size (build of 2026-10-22): 8,421,376 bytes, 2,007,686 with `zstd -19`.
+
 ## Publish
 
 The apps read one URL, **https://bezalel.genericjam.com/packs/manifest.json**
@@ -285,11 +320,13 @@ that don't know a pack ignore its entry.
 | `lib/bezalel/data/text_fabric.ex` | Reads Text-Fabric feature files |
 | `lib/bezalel/data/scrolls.ex` | ETCBC/dss → the scrolls pack's rows |
 | `lib/bezalel/data/scrolls_pack.ex` | The scrolls pack's schema and writer |
+| `lib/bezalel/data/witnesses.ex`, `witnesses_pack.ex` | The witnesses pack's rows; its schema, writer and fixture cut |
+| `lib/bezalel/data/xml.ex` | Reads XML (OTP's SAX parser) into a plain tree |
 | `lib/bezalel/data/report.ex` | The import reports and the verse-set comparison |
 | `lib/bezalel/data/books.ex` | The 66 books: STEP code, name, chapters |
 | `lib/bezalel/data/download.ex` | Cached, checked downloads |
 | `lib/bezalel/data/publish.ex` | Assembles the manifest (pure) |
-| `lib/mix/tasks/` | `bezalel.data.net`, `bezalel.data.scrolls`, `bezalel.data.fixtures`, `bezalel.data.publish` |
+| `lib/mix/tasks/` | `bezalel.data.net`, `bezalel.data.scrolls`, `bezalel.data.witnesses`, `bezalel.data.fixtures`, `bezalel.data.publish` |
 
 ## Checks
 

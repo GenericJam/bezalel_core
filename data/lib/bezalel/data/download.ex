@@ -52,4 +52,45 @@ defmodule Bezalel.Data.Download do
         {:error, "#{url}: #{message} (kept as #{path}.unverified)"}
     end
   end
+
+  @base Path.expand("../../../base.json", __DIR__)
+
+  @doc """
+  The path of the base core pack (`base.json` → `packs.core`), whose
+  `verses.reference` maps Hebrew to English numbering (`Psa.3.0(3.1)`):
+  `path` if given (e.g. the phone app's `data/out/core.sqlite`), else
+  downloaded from `base.json`'s URL into `work/base/` and decompressed with
+  `zstd`. Either way its sha256 must be `base.json`'s `raw_sha256`.
+  """
+  @spec base_core!(Path.t() | nil) :: Path.t()
+  def base_core!(path) do
+    pin = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core"])
+    path = path || download_base_core!(pin)
+
+    if sha256(File.read!(path)) != pin["raw_sha256"] do
+      raise "#{path} is not the base core pack (sha256 differs from base.json)"
+    end
+
+    path
+  end
+
+  defp download_base_core!(pin) do
+    zst = Path.join(["work", "base", "core.sqlite.zst"])
+    check = &if(sha256(&1) == pin["sha256"], do: :ok, else: {:error, "sha256 differs"})
+
+    case fetch(pin["url"], zst, check) do
+      {:ok, _bytes} -> :ok
+      {:error, message} -> raise "base core pack: #{message}"
+    end
+
+    raw = Path.join(["work", "base", "core.sqlite"])
+
+    unless File.regular?(raw) and sha256(File.read!(raw)) == pin["raw_sha256"] do
+      {_, 0} = System.cmd("zstd", ["-d", "-q", "-f", zst, "-o", raw])
+    end
+
+    raw
+  end
+
+  defp sha256(bytes), do: :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower)
 end

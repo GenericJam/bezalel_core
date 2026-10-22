@@ -10,7 +10,7 @@ defmodule Bezalel.Data.Publish do
     the same `raw_sha256` and downloads nothing;
   - the published manifest, for the base packs' descriptions, licences,
     `required` and tables;
-  - the packs built here (`translations`, `scrolls`), uploaded under
+  - the packs built here (`translations`, `scrolls`, `witnesses`), uploaded under
     `packs/v<N>/`.
 
   Everything here is pure; `mix bezalel.data.publish` does the network.
@@ -38,6 +38,15 @@ defmodule Bezalel.Data.Publish do
       "licence" =>
         "ETCBC/dss (Martin G. Abegg Jr., James E. Bowley, Edward M. Cook): CC BY-NC 4.0 " <>
           "(non-commercial; https://creativecommons.org/licenses/by-nc/4.0/)"
+    },
+    "witnesses" => %{
+      "description" =>
+        "Textual witnesses: the Samaritan Pentateuch, the SBL Greek New Testament with its " <>
+          "apparatus, the UBS Hebrew Old Testament Text Project",
+      "licence" =>
+        "Samaritan Pentateuch (DT-UCPH/sp, Højgaard, Naaijer & Schorch): CC BY-NC 4.0 " <>
+          "(non-commercial); SBLGNT and its apparatus (SBL and Logos Bible Software): CC BY 4.0; " <>
+          "HOTTP (United Bible Societies): CC BY-SA 4.0. Each in its own tables"
     }
   }
 
@@ -109,9 +118,38 @@ defmodule Bezalel.Data.Publish do
     end
   end
 
+  @doc """
+  `:ok` if a witnesses pack's `meta` says it was built from `expected`'s
+  sources: `sp_sha256`, `sblgnt_sha256` and `hottp_sha256` (the digests of
+  `pins.json`'s files, `Bezalel.Data.Witnesses.digest/1`), `core_sha256`
+  (base.json's core pack) and `build_sha256` (this checkout's code,
+  `Bezalel.Data.Witnesses.build_digest/0`); else `{:error, reason}`.
+  """
+  @spec check_witnesses(map(), map()) :: :ok | {:error, String.t()}
+  def check_witnesses(meta, expected) do
+    sources = [sp_sha256: "sp", sblgnt_sha256: "sblgnt", hottp_sha256: "hottp"]
+
+    case Enum.find(sources, fn {key, _pin} -> meta[Atom.to_string(key)] != expected[key] end) do
+      {_key, pin} ->
+        {:error, "wasn't built from pins.json's #{pin}"}
+
+      nil ->
+        cond do
+          meta["core_sha256"] != expected.core_sha256 ->
+            {:error, "wasn't numbered with base.json's core pack"}
+
+          meta["build_sha256"] != expected.build_sha256 ->
+            {:error, "was built by other code than this checkout's"}
+
+          true ->
+            :ok
+        end
+    end
+  end
+
   @doc "The names of the packs built here, in manifest order."
   @spec built_here() :: [String.t()]
-  def built_here, do: ~w(translations scrolls)
+  def built_here, do: ~w(translations scrolls witnesses)
 
   @doc """
   The manifest entry of pack `name` (one of `built_here/0`) for a pack

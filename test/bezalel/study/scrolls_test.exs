@@ -253,7 +253,7 @@ defmodule Bezalel.Study.ScrollsTest do
       prefs = Preferences.new(excluded_sources: ["manuscripts:dss"])
       {:ok, result} = CompareBiblicalVersions.result(%{"reference" => "Deuteronomy 32:8"}, prefs)
       refute Enum.any?(result.rows, &(&1.version == "DSS"))
-      assert result.versions == ["MT", "LXX"]
+      assert result.versions == ["MT", "LXX", "SP"]
 
       assert {:error, message} =
                CompareBiblicalVersions.result(

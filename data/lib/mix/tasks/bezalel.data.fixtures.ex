@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.Bezalel.Data.Fixtures do
-  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls}.sqlite"
+  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,witnesses}.sqlite"
 
   @moduledoc """
   Cuts the fixtures core's tests read from the packs built here.
 
-      mix bezalel.data.fixtures [--pack translations|scrolls]
+      mix bezalel.data.fixtures [--pack translations|scrolls|witnesses]
                                 [--from DIR] [--core ../test/fixtures/packs/core.sqlite]
                                 [--out DIR]
 
@@ -19,11 +19,14 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       `@scroll_verses` (a reading of each kind the tools handle: preserved,
       partly and wholly reconstructed, Hebrew numbering, a verse the MT
       lacks), with their manuscripts. Run `mix bezalel.data.scrolls` first.
+    * `witnesses.sqlite`: the rows of the verses the tests cite
+      (`Bezalel.Data.WitnessesPack.cut/2`). Run `mix bezalel.data.witnesses`
+      first.
   """
 
   use Mix.Task
 
-  alias Bezalel.Data.{Pack, Report, ScrollsPack}
+  alias Bezalel.Data.{Pack, Report, ScrollsPack, WitnessesPack}
 
   @switches [pack: :string, from: :string, core: :string, out: :string]
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
@@ -57,6 +60,7 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       nil ->
         translations(from, out, opts)
         scrolls(from, out)
+        witnesses(from, out)
 
       "translations" ->
         translations(from, out, opts)
@@ -64,8 +68,11 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       "scrolls" ->
         scrolls(from, out)
 
+      "witnesses" ->
+        witnesses(from, out)
+
       other ->
-        Mix.raise("--pack must be translations or scrolls, not #{inspect(other)}")
+        Mix.raise("--pack must be translations, scrolls or witnesses, not #{inspect(other)}")
     end
   end
 
@@ -154,6 +161,13 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
         "(#{verses |> Enum.map(& &1.reference) |> Enum.uniq() |> length()} of " <>
         "#{length(@scroll_verses)} verses), #{length(manuscripts)} manuscripts"
     )
+  end
+
+  defp witnesses(from_dir, out_dir) do
+    from = Path.join(from_dir, "witnesses.sqlite")
+    out = Path.join(out_dir, "witnesses.sqlite")
+    counts = WitnessesPack.cut(from, out, fixture_meta(from))
+    Mix.shell().info("#{out}: " <> Enum.map_join(counts, ", ", fn {t, n} -> "#{n} #{t}" end))
   end
 
   defp rows(rows, columns), do: Enum.map(rows, &(columns |> Enum.zip(&1) |> Map.new()))

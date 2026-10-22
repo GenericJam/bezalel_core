@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   use Mix.Task
 
-  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls}
+  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls, Witnesses}
 
   @bucket "bezalel-packs"
   @manifest_key "packs/manifest.json"
@@ -183,6 +183,28 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     case Publish.check_scrolls(meta, expected) do
       :ok -> :ok
       {:error, reason} -> Mix.raise("out/scrolls.sqlite #{reason}; run mix bezalel.data.scrolls")
+    end
+  end
+
+  defp check_source!("witnesses", meta) do
+    pins = Map.new(~w(sp sblgnt hottp), &{&1, Download.pin!(&1)})
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
+
+    expected = %{
+      sp_sha256: Witnesses.digest(pins["sp"]["files"]),
+      sblgnt_sha256:
+        Witnesses.digest(Map.merge(pins["sblgnt"]["text"], pins["sblgnt"]["apparatus"])),
+      hottp_sha256: Witnesses.digest(pins["hottp"]["files"]),
+      core_sha256: core,
+      build_sha256: Witnesses.build_digest()
+    }
+
+    case Publish.check_witnesses(meta, expected) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("out/witnesses.sqlite #{reason}; run mix bezalel.data.witnesses")
     end
   end
 

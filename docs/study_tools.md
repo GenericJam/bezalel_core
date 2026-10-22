@@ -109,6 +109,27 @@ ETCBC/dss (the Abegg–Bowley–Cook transcription, CC BY-NC 4.0), in two parts
   nothing legible survives; ETCBC's Hebrew numbering is mapped to the packs'
   English one and named ('Hebrew numbering Psa.22.17').
 
+### Textual witnesses (witnesses pack)
+
+Built by `data/`'s `mix bezalel.data.witnesses` (`data/README.md`; why:
+[decisions/2026-10-22-witnesses-pack.md](../decisions/2026-10-22-witnesses-pack.md)),
+read through `Bezalel.Study.Witnesses`, optional everywhere:
+
+- `compare_biblical_versions`: `SP`, the Samaritan Pentateuch's consonantal text, beside the
+  MT, LXX and DSS for Genesis–Deuteronomy (default on, source `manuscripts:sp`; a note when
+  the pack is missing, an error only for SP alone or outside the Torah). A New Testament
+  reference, refused before, now compares `TAGNT` (the core pack's Greek: STEPBible's
+  amalgamated text, every word of the major editions) with `SBLGNT`, grouped by the core
+  pack's verse numbering, which the SBLGNT shares; without the pack, TAGNT and a note.
+- `get_textual_variant`: after the notes pack's cases, HOTTP's entries (OT: the forms the
+  committee compared with the base translations, then its rating and factors as its
+  judgment, the factors explained from the report's introduction) and the SBLGNT
+  apparatus's units (NT: the SBLGNT reading and each variant with the editions that print
+  it, sigla explained). A verse with no notes-pack case now returns these. Silent without
+  the pack (the notes pack is still required).
+- `lookup_verse`: a hint naming the verses with HOTTP entries or apparatus units (silent
+  without the pack).
+
 ### Full-text search on the phone
 
 The ancient pack's `ancient_source_passages_fts` is an FTS5 table (the scrolls pack's too). The host exqlite

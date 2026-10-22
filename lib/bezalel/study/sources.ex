@@ -80,6 +80,16 @@ defmodule Bezalel.Study.Sources do
       partial_tools: ["compare_biblical_versions"]
     },
     %{
+      key: "manuscripts:sp",
+      label: "Samaritan Pentateuch",
+      group: "Biblical manuscripts",
+      description:
+        "The Samaritan Pentateuch's consonantal text of Genesis–Deuteronomy (DT-UCPH/sp, " <>
+          "CC BY-NC 4.0), shown beside the MT and LXX.",
+      tools: [],
+      partial_tools: ["compare_biblical_versions"]
+    },
+    %{
       key: "notes:study_notes",
       label: "Tyndale Study Notes",
       group: "Notes and reference",
