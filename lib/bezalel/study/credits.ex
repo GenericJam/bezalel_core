@@ -29,6 +29,11 @@ defmodule Bezalel.Study.Credits do
   # terms ask for it verbatim).
   @net Bezalel.Study.Translations.get("net")
 
+  # The ULT and UST as adapted here: their notices (the attribution and the
+  # changes their CC BY-SA licence asks for) are the translations metadata's.
+  @ult Bezalel.Study.Translations.get("ult")
+  @ust Bezalel.Study.Translations.get("ust")
+
   @notice "Modified for Bezalel: the sources below were converted into SQLite databases, " <>
             "selected and excerpted, reformatted (for example HTML to plain text), re-keyed to " <>
             "Bible references, indexed for search, and split into downloadable packs. Their " <>
@@ -117,7 +122,14 @@ defmodule Bezalel.Study.Credits do
      ["https://la.wikisource.org"]},
     {"studybible-mcp",
      "Study tools, ANE context, theology summaries, textual variants and editorial notes adapted from studybible-mcp, Copyright (c) 2024 Study Bible MCP Contributors, MIT License.",
-     [{"MIT (full text below)", nil}], ["https://github.com/djayatillake/studybible-mcp"]}
+     [{"MIT (full text below)", nil}], ["https://github.com/djayatillake/studybible-mcp"]},
+    {"JPS 1917",
+     "The Holy Scriptures according to the Masoretic Text: A New Translation (Jewish Publication Society of America, 1917), public domain, from eBible.org. Modified: eBible's inline Hebrew verse numbers removed and the Psalm titles numbered verse 0.",
+     [{"Public domain", nil}], ["https://ebible.org/find/details.php?id=engjps"]},
+    {@ult.name, @ult.copyright, [{"CC BY-SA 4.0", @by_sa}],
+     ["https://www.unfoldingword.org/ult", "https://git.door43.org/unfoldingWord/en_ult"]},
+    {@ust.name, @ust.copyright, [{"CC BY-SA 4.0", @by_sa}],
+     ["https://www.unfoldingword.org/ust", "https://git.door43.org/unfoldingWord/en_ust"]}
   ]
 
   @scholarship [

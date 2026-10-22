@@ -78,7 +78,9 @@ defmodule Bezalel.Data.PublishTest do
     assert %{
              "name" => "translations",
              "required" => false,
-             "description" => "NET Bible English text",
+             "description" =>
+               "English Bible translations: the NET Bible, the JPS 1917 (Old Testament), and " <>
+                 "the Literal and Simplified Texts adapted from unfoldingWord's ULT and UST",
              "url" => "https://bezalel.genericjam.com/packs/v2/translations.sqlite.zst",
              "compression" => "zstd",
              "size" => 3,
@@ -89,6 +91,8 @@ defmodule Bezalel.Data.PublishTest do
            } = entry
 
     assert entry["licence"] =~ "non-commercial"
+    assert entry["licence"] =~ "CC BY-SA 4.0"
+    assert entry["licence"] =~ "original work by unfoldingWord is available from"
   end
 
   test "the scrolls entry is optional and carries the CC BY-NC licence; packs built here are both" do
@@ -129,6 +133,28 @@ defmodule Bezalel.Data.PublishTest do
 
     assert {:error, "was built by other code than this checkout's"} =
              Publish.check_scrolls(Map.delete(meta, "build_sha256"), expected)
+  end
+
+  test "a translations pack is refused unless built from every pinned source and the base core" do
+    meta = %{
+      "net_sha256" => "n",
+      "jps_sha256" => "j",
+      "ult_sha256" => "l",
+      "ust_sha256" => "s",
+      "core_sha256" => "c"
+    }
+
+    assert Publish.check_translations(meta, meta) == :ok
+
+    assert {:error, "wasn't built from pins.json's jps, ust"} =
+             Publish.check_translations(meta, %{meta | "jps_sha256" => "x", "ust_sha256" => "x"})
+
+    # A pack from before the JPS, ULT and UST (the NET alone) is refused.
+    assert {:error, "wasn't built from pins.json's jps, ult, ust"} =
+             Publish.check_translations(Map.take(meta, ~w(net_sha256 core_sha256)), meta)
+
+    assert {:error, "wasn't numbered with base.json's core pack"} =
+             Publish.check_translations(meta, %{meta | "core_sha256" => "x"})
   end
 
   describe "manifest/4" do

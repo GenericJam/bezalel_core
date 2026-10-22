@@ -42,7 +42,7 @@ defmodule Mix.Tasks.Bezalel.Data.Scrolls do
       |> Enum.sort()
       |> Net.digest()
 
-    core = core!(opts[:core])
+    core = Download.base_core!(opts[:core])
 
     Mix.shell().info("Reading ETCBC/dss…")
     data = Scrolls.load(&Map.fetch!(files, &1))
@@ -117,34 +117,4 @@ defmodule Mix.Tasks.Bezalel.Data.Scrolls do
   end
 
   defp base_core, do: @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core"])
-
-  # The base core pack, checked against base.json.
-  defp core!(path) do
-    pin = base_core()
-
-    path =
-      path ||
-        (
-          zst = Path.join(["work", "base", "core.sqlite.zst"])
-
-          case Download.fetch(pin["url"], zst, &check(&1, pin["sha256"])) do
-            {:ok, _} -> :ok
-            {:error, message} -> Mix.raise("base core pack: #{message}")
-          end
-
-          raw = Path.join(["work", "base", "core.sqlite"])
-
-          unless File.regular?(raw) and Net.sha256(File.read!(raw)) == pin["raw_sha256"] do
-            {_, 0} = System.cmd("zstd", ["-d", "-q", "-f", zst, "-o", raw])
-          end
-
-          raw
-        )
-
-    if Net.sha256(File.read!(path)) != pin["raw_sha256"] do
-      Mix.raise("#{path} is not the base core pack (sha256 differs from base.json)")
-    end
-
-    path
-  end
 end

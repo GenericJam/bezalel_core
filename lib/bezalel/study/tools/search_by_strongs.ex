@@ -99,8 +99,8 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
         {:error, "Unknown Strong's number: #{strongs}"}
 
       {:ok, result} ->
-        {:ok,
-         Map.merge(result, %{translation: Translations.ref(translation), translation_note: note})}
+        {quoted, note, verses} = Translations.settle(translation, note, result.verses)
+        {:ok, Map.merge(result, %{verses: verses, translation: quoted, translation_note: note})}
 
       error ->
         error
@@ -128,7 +128,7 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
         do: "No verses found with this Strong's number in the database.\n",
         else:
           Enum.map_join(verses, fn view ->
-            "**#{view.reference}**: #{view.english}\n" <>
+            "**#{view.reference}**#{Format.fallback_label(view)}: #{view.english}\n" <>
               Citation.source_line(verse_citation(view, result.translation)) <> "\n\n"
           end)
 
@@ -149,5 +149,5 @@ defmodule Bezalel.Study.Tools.SearchByStrongs do
   end
 
   defp verse_citation(view, translation),
-    do: Citations.scripture(view.reference, if(view.translated, do: translation))
+    do: Citations.scripture(view.reference, Format.quoted(view, translation))
 end

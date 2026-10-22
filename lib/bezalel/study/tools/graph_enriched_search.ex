@@ -89,7 +89,7 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
     original = if view.original != "", do: [Citations.step(verse)], else: []
 
     if view.translated,
-      do: [Citations.scripture(verse, translation) | original],
+      do: [Citations.scripture(verse, Format.quoted(view, translation)) | original],
       else: [Citations.step(verse)]
   end
 
@@ -154,11 +154,14 @@ defmodule Bezalel.Study.Tools.GraphEnrichedSearch do
 
   defp verse(entities, reference, translation, note) do
     with {:ok, row} <- DB.with_pack(:core, &Verses.get(&1, reference, translation)) do
+      {quoted, note, [view]} =
+        Translations.settle(translation, note, [row && Format.verse_view(row)])
+
       {:ok,
        Map.merge(entities, %{
          reference: reference,
-         verse: row && Format.verse_view(row),
-         translation: Translations.ref(translation),
+         verse: view,
+         translation: quoted,
          translation_note: note
        })}
     end

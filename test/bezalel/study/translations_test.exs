@@ -212,6 +212,23 @@ defmodule Bezalel.Study.TranslationsTest do
       Sqlite3.close(tconn)
     end
   end
+
+  test "a translation the pack doesn't have (a pack from before it): the BSB, with a note",
+       %{dir: dir} do
+    write_pack(dir, [{"Gen.1.1", "NET marker for Genesis 1:1"}])
+
+    assert {:ok, result} =
+             LookupVerse.result(
+               %{"reference" => "Genesis 1:1"},
+               Preferences.new(translation: "ult")
+             )
+
+    assert result.translation.key == "bsb"
+
+    assert result.translation_note ==
+             "The Literal Text (ULT, adapted) isn't in the translations pack on this device " <>
+               "(the pack needs updating), so this English is the BSB."
+  end
 end
 
 defmodule Bezalel.Study.TranslationsFixtureTest do
@@ -236,5 +253,146 @@ defmodule Bezalel.Study.TranslationsFixtureTest do
              "For the music director, according to the tune “Morning Doe”; a psalm of David.",
              "My God, my God, why have you abandoned me? I groan in prayer, but help seems far away."
            ]
+  end
+end
+
+defmodule Bezalel.Study.TranslationsCoverageTest do
+  # The JPS 1917, ULT and UST from the fixture translations pack (cut from
+  # the real one), and the BSB standing in, with one note, for a book the
+  # chosen translation doesn't have: the JPS's New Testament, a book not in
+  # the ULT's release (Isaiah, Ezekiel).
+  use ExUnit.Case, async: true
+
+  alias Bezalel.Agent.Card
+  alias Bezalel.Study.{Citation, Citations, Preferences}
+  alias Bezalel.Study.Tools.{GetCrossReferences, LookupVerse, SearchByStrongs, WordStudy}
+
+  @jps Preferences.new(translation: "jps1917")
+  @ult Preferences.new(translation: "ult")
+  @ust Preferences.new(translation: "ust")
+
+  test "the JPS 1917 on Genesis 1:1, labelled (JPS) and linked to its eBible verse" do
+    assert {:ok, result} = LookupVerse.result(%{"reference" => "Genesis 1:1"}, @jps)
+    assert result.translation.key == "jps1917"
+    assert result.translation_note == nil
+    assert [%{english: "IN THE beginning God created the heaven and the earth."}] = result.verses
+
+    assert LookupVerse.render(result) =~ ~r/\A## Gen\.1\.1 \(JPS\)\n\nIN THE beginning/
+
+    assert %Citation{work: "jps", url: "https://ebible.org/engjps/GEN01.htm#V1"} =
+             Enum.find(LookupVerse.citations(result), &(&1.work == "jps"))
+
+    card = Card.from_tool("lookup_verse", result)
+    assert card["version"] == "JPS"
+    assert [%{"url" => "https://ebible.org/engjps/GEN01.htm#V1"}] = card["verses"]
+  end
+
+  test "the JPS 1917 on John 3:16: the BSB, labelled (BSB), with one note saying why" do
+    assert {:ok, result} = LookupVerse.result(%{"reference" => "John 3:16"}, @jps)
+    assert result.translation.key == "bsb"
+
+    assert result.translation_note ==
+             "The JPS 1917 covers the Old Testament only; New Testament verses are quoted " <>
+               "from the BSB."
+
+    assert [%{english: "For God so loved the world" <> _, translated: true, fallback: false}] =
+             result.verses
+
+    assert LookupVerse.render(result) =~
+             ~r/\A\*The JPS 1917 covers the Old Testament only; New Testament verses are quoted from the BSB\.\*\n\n## Jhn\.3\.16 \(BSB\)\n/
+
+    assert Enum.any?(LookupVerse.citations(result), &(&1.work == "bsb"))
+    refute Enum.any?(LookupVerse.citations(result), &(&1.work == "jps"))
+    assert Card.from_tool("lookup_verse", result)["version"] == "BSB"
+  end
+
+  test "the ULT on a book its release lacks (Isaiah): the BSB with the note" do
+    assert {:ok, result} = LookupVerse.result(%{"reference" => "Isaiah 3:18"}, @ult)
+    assert result.translation.key == "bsb"
+
+    assert result.translation_note ==
+             "The Literal Text (ULT, adapted) doesn't include Isaiah, so it is quoted from the BSB."
+
+    assert [%{english: "In that day the Lord will take away" <> _}] = result.verses
+    assert LookupVerse.render(result) =~ "## Isa.3.18 (BSB)\n"
+  end
+
+  test "the ULT and UST where they have the book, superscription included, linked to Door43's reader" do
+    assert {:ok, psalm} = LookupVerse.result(%{"reference" => "Psalm 22:0-1"}, @ult)
+    assert psalm.translation.key == "ult"
+    assert psalm.translation_note == nil
+
+    assert Enum.map(psalm.verses, & &1.english) == [
+             "For the chief musician; on “The Doe of the Dawn.” A psalm of David.",
+             "My God, my God, why have you forsaken me? {Why are you} far from the salvation " <>
+               "of me, {far from} the words of my groaning?"
+           ]
+
+    assert LookupVerse.render(psalm) =~ ~r/\A# Psalm 22:1 \(ULT\)\n/
+
+    urls = Enum.map(LookupVerse.citations(psalm), & &1.url)
+    assert "https://preview.door43.org/u/unfoldingWord/en_ult/v91/?book=psa#psa-22-1" in urls
+
+    assert {:ok, ust} = LookupVerse.result(%{"reference" => "Genesis 1:1"}, @ust)
+    assert ust.translation.key == "ust"
+
+    assert LookupVerse.render(ust) =~
+             ~r/\A## Gen\.1\.1 \(UST\)\n\n\{This is how everything\} began/
+  end
+
+  test "word_study and search_by_strongs mix: the BSB, labelled per verse, only where the book is missing" do
+    assert {:ok, study} = WordStudy.result(%{"strongs" => "H7307"}, @ult)
+    assert study.translation.key == "ult"
+
+    assert study.translation_note ==
+             "The Literal Text (ULT, adapted) doesn't include Ezekiel, so it is quoted from the BSB."
+
+    assert %{fallback: true} = Enum.find(study.examples, &(&1.book == "Ezk"))
+    assert %{fallback: false} = Enum.find(study.examples, &(&1.reference == "Gen.1.2"))
+
+    text = WordStudy.render(study)
+    assert text =~ "## Example Passages (ULT)\n"
+
+    assert text =~
+             ~r/\*\*Ezk\.27\.26\*\* \(BSB\): .*\nSource: \[Ezekiel 27:26\]\(https:\/\/biblehub\.com\/ezekiel\/27-26\.htm\)/
+
+    assert text =~
+             ~r/\*\*Gen\.1\.2\*\*: .*\nSource: \[Genesis 1:2\]\(https:\/\/preview\.door43\.org/
+
+    assert {:ok, strongs} = SearchByStrongs.result(%{"strongs" => "H0776", "limit" => 50}, @ult)
+
+    assert strongs.translation_note ==
+             "The Literal Text (ULT, adapted) doesn't include Isaiah or Ezekiel, so those books " <>
+               "are quoted from the BSB."
+
+    assert SearchByStrongs.render(strongs) =~ ~r/\*\*Isa\.\d+\.\d+\*\* \(BSB\): /
+
+    # A Greek word's examples are all New Testament: with the JPS chosen,
+    # every one is the BSB's, and the result says so once.
+    assert {:ok, greek} = WordStudy.result(%{"strongs" => "G0026"}, @jps)
+    assert greek.translation.key == "bsb"
+    assert greek.translation_note =~ "The JPS 1917 covers the Old Testament only"
+    refute WordStudy.render(greek) =~ "(BSB):"
+  end
+
+  test "cross references link a verse the translation lacks to the BSB's page" do
+    assert {:ok, result} = GetCrossReferences.result(%{"reference" => "John 3:16"}, @jps)
+    assert "Jhn" in result.bsb_books
+
+    for citation <- tl(GetCrossReferences.citations(result)),
+        do: assert(citation.work == "bsb")
+  end
+
+  test "the citations of the new translations" do
+    assert Citations.jps("Psa.22.0").url == "https://ebible.org/engjps/PSA022.htm#V1"
+    assert Citations.jps({"Mal", 4, 1}).url == "https://ebible.org/engjps/MAL04.htm#V1"
+
+    assert Citations.ult({"1Sa", 3, 10}).url ==
+             "https://preview.door43.org/u/unfoldingWord/en_ult/v91/?book=1sa#1sa-3-10"
+
+    assert Citations.scripture("Tit.1.1", "ust").url ==
+             "https://preview.door43.org/u/unfoldingWord/en_ust/v91/?book=tit#tit-1-1"
+
+    assert Citations.work_title("ult") == "Literal Text (ULT, adapted)"
   end
 end

@@ -24,11 +24,13 @@ defmodule Bezalel.Agent.Card do
 
   `version` is the translation the tool quoted (the result's
   `translation`, the user's choice in Settings or the BSB standing in for
-  a NET that isn't installed) when any verse shown is its text (as
-  `Bezalel.Study.Format.translation_label/2` labels it), empty when every
-  verse shown has only STEPBible's gloss. A verse quoted in a translation
-  has its page there as `url` (`Bezalel.Study.Citations`: netbible.org's
-  verse page, Bible Hub's for the BSB). `version_url` is set for the NET,
+  a translation that isn't installed or lacks the book) when any verse
+  shown is its text (as `Bezalel.Study.Format.translation_label/2` labels
+  it), empty when every verse shown has only STEPBible's gloss. A verse
+  quoted in a translation has its page there as `url`
+  (`Bezalel.Study.Citations.scripture/2`: netbible.org's verse page, Bible
+  Hub's for the BSB and for a verse the BSB stands in for, eBible.org's
+  for the JPS, Door43's reader for the ULT and UST). `version_url` is set for the NET,
   whose terms ask for "(NET)" after the quotation, linked to netbible.org:
   the first quoted verse's page (a page on netbible.org, which the terms
   allow), for the host app to draw after the last verse.
@@ -40,7 +42,7 @@ defmodule Bezalel.Agent.Card do
   """
 
   alias Bezalel.Agent.Patterns
-  alias Bezalel.Study.{Citations, Reference}
+  alias Bezalel.Study.{Citations, Reference, Translations}
 
   # Verses a card shows; a longer passage says how many more there are.
   @max_verses 6
@@ -122,11 +124,13 @@ defmodule Bezalel.Agent.Card do
     }
   end
 
-  # The verse's page in the translation it's quoted in (`Bezalel.Study.Citations`);
-  # nil for a verse shown only as STEPBible's gloss.
-  defp verse_url(%{translated: true, reference: "" <> reference}, %{key: key})
-       when key in ["net", "bsb"],
-       do: Citations.scripture(reference, key).url
+  # The verse's page in the translation it's quoted in (`Bezalel.Study.Citations`;
+  # the BSB's for a verse the BSB stands in for); nil for a verse shown only
+  # as STEPBible's gloss.
+  defp verse_url(%{translated: true, reference: "" <> reference} = verse, %{key: key}) do
+    key = if Map.get(verse, :fallback) == true, do: "bsb", else: key
+    if key in Translations.keys(), do: Citations.scripture(reference, key).url
+  end
 
   defp verse_url(_verse, _translation), do: nil
 

@@ -13,7 +13,7 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
 
     * `translations.sqlite`: every translation's metadata row, and its verses
       for exactly the references in the core fixture's `bsb_verses`. Run
-      `mix bezalel.data.net` first.
+      `mix bezalel.data.translations` first.
     * `scrolls.sqlite`: the passages of the works and labels the tests cite
       (`@scroll_works`, `@scroll_labels`) and the biblical readings of
       `@scroll_verses` (a reading of each kind the tools handle: preserved,

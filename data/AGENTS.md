@@ -12,14 +12,19 @@ path). Read [README.md](README.md) first. bezalel_core's
 1. **Every download is pinned by sha256** in `pins.json`. A build that gets
    different bytes stops; it never builds from them. Bumping a pin is a
    reviewed change: diff the new responses (kept as `work/**.unverified`)
-   and the new `out/net_report.txt` against the old before committing it.
+   and the new `out/net_report.txt` / `out/translations_report.txt` against
+   the old before committing it.
 2. **Every table records its licence** — in README.md's table list, in
    `pack_meta.licences`, and for a translation in its `translations` row
    (`copyright`, `licence`). A source whose licence doesn't allow the use
    isn't imported. NET: the verse text only; the NET translators' and study
    notes are not licensed and must never be imported. Scrolls: ETCBC/dss is
    CC BY-NC 4.0 (non-commercial, credit shown); no English translation of
-   the scrolls is openly licensed, so none is imported.
+   the scrolls is openly licensed, so none is imported. JPS 1917: public
+   domain. ULT/UST: CC BY-SA 4.0; the pack's text is a derivative, so its
+   name never carries the unfoldingWord® trademark and its `copyright`
+   states the changes and the attribution the LICENSE.md asks for (core's
+   `Bezalel.Study.Translations` is the one place these are written).
 3. **Text is not altered.** Markup is removed and whitespace collapsed;
    small capitals become capitals. Anything else the source sends that isn't
    verse text (headings, labels, notes) is dropped by a rule naming its
@@ -27,7 +32,11 @@ path). Read [README.md](README.md) first. bezalel_core's
    Unknown markup stops the build. Scrolls: the text is ETCBC's signs with
    its editorial marks rendered as studybible-mcp did (`Bezalel.Data.Scrolls`);
    what is left out is left out by a feature or sign-type rule and counted in
-   `out/scrolls_report.txt`; an unknown sign type stops the build.
+   `out/scrolls_report.txt`; an unknown sign type stops the build. JPS:
+   eBible's inline Hebrew verse numbers (`(3-2)`) are removed and place a
+   Psalm title in verse 0 by the base core pack's numbering
+   (`Bezalel.Data.Jps`); ULT/UST: the alignment is removed and a verse
+   bridge kept whole on its first verse (`Bezalel.Data.Usfm`).
 4. **Nothing built is committed** except the fixtures in
    `../test/fixtures/packs/` (`mix bezalel.data.fixtures`). `out/`, `work/`,
    `_build/` and `deps/` are gitignored; the parent repo's pre-commit hook
@@ -52,7 +61,7 @@ mix compile --warnings-as-errors
 mix test
 ```
 
-Re-run `mix bezalel.data.net` / `mix bezalel.data.scrolls` and `mix
+Re-run `mix bezalel.data.translations` / `mix bezalel.data.scrolls` and `mix
 bezalel.data.fixtures --pack <pack>` when an importer changes, and run
 core's suite (`cd .. && mix test`) when a fixture changes. Which Dead Sea
 Scrolls are imported is core's `Bezalel.Study.Ancient.Scrolls`: a work added
