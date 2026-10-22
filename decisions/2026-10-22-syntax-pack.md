@@ -47,7 +47,13 @@ them:
 
 - Hebrew: the WLC text is public domain; the Westminster Hebrew Syntax
   (Groves Center), OpenScriptures Hebrew Bible morphology and Cherith's
-  glosses are CC BY 4.0. **The Semantic Dictionary of Biblical Hebrew data
+  glosses (the `@english` attribute) are CC BY 4.0. **The lowfat `@gloss`
+  attribute on Hebrew words is SIL's SILHA glosses** (MACULA's
+  `pipelines/apply-sil-glosses` writes it from
+  `sources/biblicalhumanities/sil-hebrew-annotations`, whose LICENSE.TXT is
+  an SIL end-user licence, © 2020 SIL International: no sale on its own, a
+  licence when given away with a commercial product, its own attribution).
+  MACULA's LICENSE.md doesn't relicense it, so it is not CC BY. **The Semantic Dictionary of Biblical Hebrew data
   (`@sdbh`, `@lexdomain`, `@coredomain`, `@contextualdomain`) is "©2000-2021
   United Bible Societies. Used with permission."** That is MACULA's
   permission, not a CC grant to us.
@@ -59,20 +65,25 @@ them:
   "Used with permission."**
 
 So `Bezalel.Data.Syntax` reads only the attributes it names (word: `ref`,
-`role`, `after`, `strongnumberx`/`strong`, `english`, `gloss`, `lemma`;
+`role`, `after`, `strongnumberx`/`strong`, `english`, `lemma`, and in Greek
+only `gloss`;
 group: `class`, `rule`/`Rule`, `role`) and drops everything else. The build
 report counts every attribute it saw and lists the UBS ones separately
 (this build: Hebrew `sdbh`, `lexdomain`, `coredomain` 244,734 each;
 `contextualdomain` does not occur at this commit; Greek `ln`, `domain`
-128,616 each); a test feeds them in and checks they aren't stored. Other
+128,616 each) and, separately, the Hebrew `gloss` (SILHA, 475,911); tests
+feed them in and check they aren't stored. Other
 CC BY attributes (Mandarin glosses, LXX equivalents, frames, referents,
 morphology codes) are left out because the section doesn't use them, not
 for licence reasons. The pack's whole content is CC BY 4.0 or public
 domain; it has no NC or SA material, and its `pack_meta.licences`,
 manifest entry and Credits say so.
 
-Glosses: Hebrew uses Cherith's `english`, else MACULA's `gloss`; Greek the
-Berean `gloss`, else Cherith's `english`. They are word glosses, and the
+Glosses: Hebrew uses Cherith's `english` only (16,887 Hebrew words have
+none and are shown without a gloss; the first build fell back to `gloss`,
+SILHA, for 13,778 of them: corrected 2026-10-22 after review); Greek the
+Berean `gloss` (README: the Berean Interlinear's, public domain), else
+Cherith's `english` (678 words; both licensed). They are word glosses, and the
 section says "MACULA's word glosses, not a translation". Whether Cherith's
 glosses are machine-made was not checked; they are never presented as a
 translation.
@@ -90,9 +101,15 @@ whole structure, so one indexed read of one row is all it does, and a node
 table (about 1.5 million word and group rows) would cost more in indexes
 than in data.
 
-- A clause is a `wg class="cl"`; its parts are its words grouped by the role
-  they fill (the nearest role between word and clause; MACULA puts roles on
-  the clause's constituents). A role inside a role of the same clause (370
+- A clause is a `wg class="cl"`; its parts are its constituents, each the
+  words of one node bringing a role (the nearest role between word and
+  clause; MACULA puts roles on the clause's constituents), so two sibling
+  prepositional phrases are two parts, as the rule `PP-PP` says.
+- A clause's role is its own `role` only. In its parent it is filed under
+  the role of the constituent it sits in, else its own (Gen 1:4's object
+  clause is the parent's `[object]`). A clause with no role of its own
+  inside a constituent (a relative or participial clause in a subject) is
+  named "Clause in the subject", never "Subject clause". A role inside a role of the same clause (370
   in the Greek, 0 in the Hebrew) is counted and the outer kept; six Greek
   `role="err_…"` values (MACULA's conversion flags) are read as no role.
 - A clause inside a clause is a numbered reference from the part it fills
@@ -100,18 +117,24 @@ than in data.
   `ClCl`) is dissolved into them. A group at the top of a sentence (how
   MACULA joins clauses with conjunctions, rule-less in the Hebrew) is shown
   as "Joined clauses" so its conjunctions keep their place.
-- Sentences across verses (1,194 of the SBLGNT's 8,010; none of the WLC's,
-  which are its verses): a verse shows the clauses with words in it and the
+- Sentences across verses (1,196 of the SBLGNT's 8,010 have words in more
+  than one verse; none of the WLC's, which are its verses): a verse shows the clauses with words in it and the
   clauses around them; their words outside the verse keep only their text
   (at most 8 of a run) and their verse; the sentence's other clauses are
   counted ("5 of its clauses outside it are left out"), not stored. So no
   verse repeats a twelve-verse sentence in full.
-- Strong's numbers in Bezalel's form (`H0430`, `G0976`); MACULA's own letter
-  suffixes (`0871a`) are dropped, since they aren't STEPBible's sense letters
-  and the lexicon falls back to the bare number anyway.
+- Strong's numbers in Bezalel's form (`H0430`, `G0976`). A number with one
+  of MACULA's letter suffixes is stored as none: the suffixes mark other
+  words than the bare number, mostly the prefix particles (`2050b` וְ,
+  `1886a` הַ, `3807a` לְ, `0871a` בְּ; bare H0871 is Atharim, H3807 'beat'),
+  and no mapping to STEPBible's H9xxx prefix numbers is proven (178,270
+  Hebrew words as shown, split verses counted under each, and 5 Greek ones
+  have no Strong's number in the pack). (The first
+  build dropped the suffix and so pointed at unrelated entries; corrected
+  2026-10-22 after review.)
 
-Size (build of 2026-10-22): 31,201 rows, 34 MB of JSON, **44.8 MB raw,
-4.0 MB with `zstd -19`** (target was well under 40 MB).
+Size (build of 2026-10-22): 31,201 rows, 34 MB of JSON, **44.2 MB raw,
+3.96 MB with `zstd -19`** (target was well under 40 MB).
 
 ### Numbering
 
@@ -132,7 +155,8 @@ observed, not explained).
 
 ### In lookup_verse
 
-- Read only under the word list's gate: a single verse, or a passage with
+- Read only under the word list's gate: the original shown
+  (`include_original`, default true), and a single verse or a passage with
   `include_morphology`. Silent without the pack or with one that can't be
   read (the output is then exactly what it was; tested).
 - A "Clause structure" section after the verses: it says which text the
@@ -142,10 +166,12 @@ observed, not explained).
   [verb] בָּרָ֣א 'created' · [subject] אֱלֹהִ֑ים 'God' · [object] …`, roles in
   plain English, nested clauses indented, and a Source line linking the tree
   file at the pinned commit (`Citations.macula/4`, licence CC BY 4.0).
-- Bounded: at most 4,000 characters of lines, cut at a whole line with a note.
-  Over every verse of the Bible the single-verse section is 953 characters at
-  the median, 1,449 at the 95th percentile and 2,691 at most (Mark 12:15), so
-  the cap only bites for passages.
+- Bounded: the whole section (intro, headings, notes, Source lines) is at
+  most 4,000 Unicode code points, cut at a whole line with a note; the
+  verses after the cut are left out and not cited. Over every verse of the
+  Bible the single-verse section is 1,003 code points at the median, 1,534
+  at the 95th percentile and 2,799 at most (Mark 12:15), so no single verse
+  is cut; the cap bites for passages.
 - The tool description and the prompt's guide line name the clause
   structure; nothing else in the prompt changes. No new tool, no new
   parameter, no Sources switch (it is reference data like the word list).

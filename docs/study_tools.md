@@ -118,17 +118,20 @@ Greek of the SBLGNT; CC BY 4.0; why and what was left out:
 [decisions/2026-10-22-syntax-pack.md](../decisions/2026-10-22-syntax-pack.md)):
 one row per verse in the packs' English numbering, the clauses of the
 sentences that touch it as JSON (`Bezalel.Data.Syntax` documents the shape).
-`lookup_verse` reads it under the word list's gate (a single verse, or a
-passage with `include_morphology`) and adds a "Clause structure" section after
+`lookup_verse` reads it under the word list's gate (the original shown, and
+a single verse or a passage with `include_morphology`) and adds a "Clause structure" section after
 the verses: each clause's rule and its parts with their roles in plain English
 (`[subject]`, `[verb]`, `[object]`, `[prepositional phrase]`…), their words and
-MACULA's glosses, a clause inside another indented under it and named in its
-part as "(clause n)". It says which text the tree is of (the WLC or the SBLGNT,
+MACULA's CC BY or public-domain glosses (Cherith's for Hebrew, the Berean
+Interlinear's for Greek), a clause inside another indented under it and named
+in its part as "(clause n)"; a clause with no role of its own is named by the
+part it sits in ("Clause in the subject"). It says which text the tree is of (the WLC or the SBLGNT,
 whose words can differ from STEPBible's Hebrew and Greek above), when the
 edition numbers the verse otherwise (a Psalm superscription is the WLC's verse
 1) and when the sentence runs past the verse (the words outside it in ⟨ ⟩ with
-their verse, its other clauses counted). At most 4,000 characters of clause
-lines, cut at a whole line with a note. Each verse cites its MACULA tree file
+their verse, its other clauses counted). The whole section is at most 4,000 Unicode code points
+(headings, notes and Source lines included), cut at a whole line with a note;
+verses after the cut are neither shown nor cited. Each verse cites its MACULA tree file
 at the pinned commit (`Citations.macula/4`). Without the pack, or with one that
 can't be read, `lookup_verse` answers exactly as before.
 

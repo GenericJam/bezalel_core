@@ -98,6 +98,11 @@ defmodule Bezalel.Study.SyntaxTest do
     end
   end
 
+  test "with include_original false there is no clause structure, as there is no word list" do
+    refute lookup("Genesis 1:1", %{"include_original" => false}) =~ "Clause structure"
+    assert result("Genesis 1:1", %{"include_original" => false}).syntax == []
+  end
+
   describe "a passage" do
     test "has no clause structure unless include_morphology is set" do
       refute lookup("Genesis 1:1-5") =~ "Clause structure"
@@ -118,30 +123,80 @@ defmodule Bezalel.Study.SyntaxTest do
     end
   end
 
+  # A stand-in verse of the syntax pack's shape, with `sentences`.
+  defp verse(verse_number, sentences) do
+    %{
+      reference: "Gen.1.#{verse_number}",
+      book: "Gen",
+      chapter: 1,
+      verse: verse_number,
+      edition: "WLC",
+      language: "Hebrew",
+      source_reference: "Gen.1.#{verse_number}",
+      source_files: ["WLC/lowfat/01-Gen-001-lowfat.xml"],
+      repo: "https://github.com/Clear-Bible/macula-hebrew",
+      commit: String.duplicate("a", 40),
+      sentences: sentences
+    }
+  end
+
+  defp code_points(text), do: text |> String.to_charlist() |> length()
+
   describe "the section's length" do
-    test "is cut at whole lines, with a note saying how many were left out" do
-      clause = [0, nil, "V-S", [["v", [[String.duplicate("א", 300), "H0001", "x", "א"]]]]]
+    test "the whole section, headings and Source lines included, is at most the cap in code points" do
+      clause = [0, nil, "V-S", [["v", [[String.duplicate("אָ", 150), "H0001", "x", "א"]]]]]
+      verses = for n <- 1..40, do: verse(n, [%{"c" => [clause, clause]}])
 
-      verse = %{
-        reference: "Gen.1.1",
-        book: "Gen",
-        chapter: 1,
-        verse: 1,
-        edition: "WLC",
-        language: "Hebrew",
-        source_reference: "Gen.1.1",
-        source_files: ["WLC/lowfat/01-Gen-001-lowfat.xml"],
-        repo: "https://github.com/Clear-Bible/macula-hebrew",
-        commit: String.duplicate("a", 40),
-        sentences: [%{"c" => List.duplicate(clause, 30)}]
-      }
-
-      text = Syntax.render([verse])
+      text = Syntax.render(verses)
       shown = text |> String.split("\n") |> Enum.count(&String.contains?(&1, "Clause (V-S)"))
 
-      assert shown in 1..13
-      assert text =~ "*Cut to keep this short: #{30 - shown} more lines not shown;"
-      assert String.length(text) < 5000
+      assert code_points(text) <= Syntax.max_chars()
+      assert shown in 1..12
+      assert text =~ "*Cut to keep this short: #{80 - shown} more lines not shown;"
+    end
+
+    test "only the verses shown are cited" do
+      clause = [0, nil, "V-S", [["v", [[String.duplicate("א", 400), "H0001", "x", "א"]]]]]
+      verses = for n <- 1..20, do: verse(n, [%{"c" => [clause]}])
+
+      text = Syntax.render(verses)
+      cited = Syntax.citations(verses)
+      headings = text |> String.split("\n") |> Enum.count(&String.starts_with?(&1, "#### "))
+
+      assert headings in 1..19
+      assert length(cited) == headings
+      assert Enum.map(cited, & &1.locator) == Enum.map(1..headings, &"Gen.1.#{&1}")
+    end
+  end
+
+  describe "clause names" do
+    test "a clause is named by its own role, else by the part it sits in, never the part's role" do
+      sentence = %{
+        "c" => [
+          [
+            0,
+            nil,
+            "V-S-O",
+            [
+              ["v", [["ראה ", nil, "saw", "ראה"]]],
+              ["s", [["כל ", nil, "all", "כל"], 2]],
+              ["o", [3]]
+            ]
+          ],
+          [1, nil, "V", [["v", [["עשה ", nil, "made", "עשה"]]]]],
+          [
+            1,
+            "o",
+            "S-P",
+            [["s", [["אור ", nil, "light", "אור"]]], ["p", [["טוב", nil, "good", "טוב"]]]]
+          ]
+        ]
+      }
+
+      text = Syntax.render([verse(4, [sentence])])
+      assert text =~ "\n  2. Clause in the subject (V): [verb] עשה 'made'"
+      assert text =~ "\n  3. Object clause (S-P): [subject] אור 'light'"
+      refute text =~ "Subject clause"
     end
   end
 

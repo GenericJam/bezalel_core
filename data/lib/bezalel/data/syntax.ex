@@ -9,21 +9,24 @@ defmodule Bezalel.Data.Syntax do
   **What is read.** Of each word (`<w>`): its text and `after` (the space
   or punctuation after it), `ref` (book chapter:verse!word), `role`,
   Strong's number (`strongnumberx` in Hebrew, `strong` in Greek), English
-  gloss (Hebrew: `english`, Cherith's, else `gloss`; Greek: `gloss`, the
-  Berean Interlinear's, else `english`, Cherith's) and `lemma`. Of each word
+  gloss (Hebrew: `english`, Cherith's, only; Greek: `gloss`, the Berean
+  Interlinear's, else `english`, Cherith's) and `lemma`. Of each word
   group (`<wg>`, Hebrew `<c>`): `class` (`cl` is a clause), `rule` (or
   `Rule`) and `role`. Nothing else: in particular not the UBS attributes
   MACULA marks "Used with permission" (Hebrew `sdbh`, `lexdomain`,
   `coredomain`, `contextualdomain`; Greek `ln`, `domain`), which are not
-  under its CC BY 4.0 licence. `attribute_counts` in the parse result lists
+  under its CC BY 4.0 licence, nor the Hebrew `gloss`, SIL's SILHA glosses
+  under SIL's own licence. `attribute_counts` in the parse result lists
   every attribute seen, for the report.
 
   **The shape.** A sentence becomes a list of clauses (each `wg class="cl"`)
   in document order; a clause's parts are its words grouped by the role
   they fill in it (`s`, `v`, `o`, …: the nearest role between the word and
   its clause; a word with none, a conjunction, is a part without a role),
-  and a clause inside a clause is a reference from the part it fills to the
-  inner clause. A clause made of nothing but other clauses (a clause
+  one part per constituent (two sibling prepositional phrases are two
+  parts), and a clause inside a clause is a reference from the part it
+  fills (its own role when it brings one) to the inner clause, whose role
+  is its own only. A clause made of nothing but other clauses (a clause
   complex, `ClCl`) is dissolved into them. For a verse, the clauses shown
   are those with a word of their own in the verse and their enclosing
   clauses; the sentence's other clauses are counted, not stored; a word
@@ -47,7 +50,16 @@ defmodule Bezalel.Data.Syntax do
   }
 
   # Attributes of a word the pack keeps (the rest are counted, not read).
-  @word_attributes ~w(ref role after strongnumberx strong english gloss lemma)
+  # The Hebrew `gloss` is SIL's SILHA glosses (SIL's own licence, not CC BY):
+  # never read.
+  @word_attributes %{
+    "hebrew" => ~w(ref role after strongnumberx english lemma),
+    "greek" => ~w(ref role after strong gloss english lemma)
+  }
+  @other_licence %{
+    "hebrew" => %{"gloss" => "SIL's SILHA glosses (an SIL licence, not CC BY)"},
+    "greek" => %{}
+  }
   @group_attributes ~w(class rule Rule role)
   @not_licensed ~w(sdbh lexdomain coredomain contextualdomain ln domain)
 
@@ -231,7 +243,7 @@ defmodule Bezalel.Data.Syntax do
 
     node =
       if name == "w",
-        do: {:w, Map.take(attrs, @word_attributes), ""},
+        do: {:w, Map.take(attrs, @word_attributes[state.language]), ""},
         else: {:wg, Map.take(attrs, @group_attributes), []}
 
     %{state | stack: [node | state.stack], counts: counts}
@@ -265,9 +277,12 @@ defmodule Bezalel.Data.Syntax do
     book =
       book(code) || raise ArgumentError, "unknown book #{inspect(code)} in #{attrs["ref"]}"
 
+    # Hebrew: Cherith's `english` only; the Hebrew `gloss` is SIL's SILHA
+    # (an SIL licence, not CC BY) and is never read. Greek: the Berean
+    # Interlinear's `gloss` (public domain), else Cherith's `english`.
     {gloss, strong} =
       case language do
-        "hebrew" -> {present(attrs["english"]) || present(attrs["gloss"]), attrs["strongnumberx"]}
+        "hebrew" -> {present(attrs["english"]), attrs["strongnumberx"]}
         "greek" -> {present(attrs["gloss"]) || present(attrs["english"]), attrs["strong"]}
       end
 
@@ -297,17 +312,19 @@ defmodule Bezalel.Data.Syntax do
 
   @doc """
   A MACULA Strong's number in Bezalel's form: `prefix` and four digits
-  ('0430' → 'H0430', '976' → 'G0976'). MACULA's own letter suffixes
-  ('0871a') are dropped: they are not STEPBible's sense letters. Nil when
-  there is no number.
+  ('0430' → 'H0430', '976' → 'G0976'). Nil for a number with one of
+  MACULA's letter suffixes ('0871a' בְּ, '2050b' וְ, '3807a' לְ): those mark
+  other words than the bare number (H0871 is Atharim), mostly the prefix
+  particles, and no mapping to STEPBible's numbers for them is proven. Nil
+  when there is no number.
   """
   @spec strong(String.t() | nil, String.t()) :: String.t() | nil
   def strong(nil, _prefix), do: nil
 
   def strong(value, prefix) do
     case Integer.parse(String.trim(value)) do
-      {number, _suffix} -> prefix <> String.pad_leading(Integer.to_string(number), 4, "0")
-      :error -> nil
+      {number, ""} -> prefix <> String.pad_leading(Integer.to_string(number), 4, "0")
+      _suffixed_or_none -> nil
     end
   end
 
@@ -323,8 +340,8 @@ defmodule Bezalel.Data.Syntax do
   """
   @spec clauses(list()) :: {[map()], map()}
   def clauses(sentence) do
-    state = %{clauses: %{}, order: [], next: 1, notes: %{}}
-    ctx = %{clause: nil, role: nil}
+    state = %{clauses: %{}, order: [], next: 1, next_part: 1, notes: %{}}
+    ctx = %{clause: nil, role: nil, part: nil}
     state = Enum.reduce(sentence, state, &walk(&1, ctx, &2))
 
     clauses =
@@ -339,11 +356,14 @@ defmodule Bezalel.Data.Syntax do
     {clauses, state.notes}
   end
 
-  defp reverse_part({role, items}), do: {role, Enum.reverse(items)}
+  defp reverse_part({role, _key, items}), do: {role, Enum.reverse(items)}
 
   # A clause; and a group at the top of the sentence (MACULA wraps clauses
   # joined by conjunctions in one), shown as a clause so its words keep
-  # their place between the clauses.
+  # their place between the clauses. A clause's `role` is its own (a
+  # relative clause inside a subject has none: it isn't the subject); in
+  # its parent it is filed under the role of the constituent it sits in,
+  # else its own.
   defp walk({:wg, attrs, children}, %{clause: parent} = ctx, state)
        when parent == nil or :erlang.map_get("class", attrs) == "cl" do
     {own, state} = role(attrs["role"], state)
@@ -352,7 +372,7 @@ defmodule Bezalel.Data.Syntax do
     clause = %{
       id: id,
       parent: ctx.clause,
-      role: own || ctx.role,
+      role: own,
       rule: attrs["rule"] || attrs["Rule"],
       parts: []
     }
@@ -364,20 +384,40 @@ defmodule Bezalel.Data.Syntax do
         next: id + 1
     }
 
-    state = if ctx.clause, do: append(state, ctx.clause, ctx.role, {:c, id}), else: state
-    Enum.reduce(children, state, &walk(&1, %{clause: id, role: nil}, &2))
+    state =
+      if ctx.clause do
+        {part, state} = constituent(ctx, own, state)
+        append(state, ctx.clause, part, {:c, id})
+      else
+        state
+      end
+
+    Enum.reduce(children, state, &walk(&1, %{clause: id, role: nil, part: nil}, &2))
   end
 
   defp walk({:wg, attrs, children}, ctx, state) do
     {role, state} = inner_role(attrs["role"], ctx.role, state)
-    Enum.reduce(children, state, &walk(&1, %{ctx | role: role}, &2))
+    {{role, key}, state} = constituent(ctx, role, state)
+    Enum.reduce(children, state, &walk(&1, %{ctx | role: role, part: key}, &2))
   end
 
   defp walk({:w, word}, ctx, state) do
     {role, state} = inner_role(word.role, ctx.role, state)
+    {{role, _key} = part, state} = constituent(ctx, role, state)
     {clause, state} = loose(ctx.clause, state)
-    append(state, clause, role, {:w, %{word | role: role}})
+    append(state, clause, part, {:w, %{word | role: role}})
   end
+
+  # The part an item goes in, `{role, key}`: inside a constituent, that
+  # constituent's; a node that brings a role of its own starts a new one
+  # (so two sibling prepositional phrases stay two parts, as in PP-PP); a
+  # node with no role is in the run of role-less items (key nil).
+  defp constituent(%{role: nil}, nil, state), do: {{nil, nil}, state}
+
+  defp constituent(%{role: nil}, role, state),
+    do: {{role, state.next_part}, %{state | next_part: state.next_part + 1}}
+
+  defp constituent(%{role: role, part: key}, _own, state), do: {{role, key}, state}
 
   # A word outside every clause goes into the sentence's one :loose clause.
   defp loose(nil, %{clauses: %{loose: _}} = state), do: {:loose, state}
@@ -414,10 +454,10 @@ defmodule Bezalel.Data.Syntax do
 
   defp note(state, key), do: %{state | notes: Map.update(state.notes, key, 1, &(&1 + 1))}
 
-  defp append(state, id, role, item) do
+  defp append(state, id, {role, key}, item) do
     update_in(state.clauses[id].parts, fn
-      [{^role, items} | rest] -> [{role, [item | items]} | rest]
-      parts -> [{role, [item]} | parts]
+      [{^role, ^key, items} | rest] -> [{role, key, [item | items]} | rest]
+      parts -> [{role, key, [item]} | parts]
     end)
   end
 
@@ -626,7 +666,8 @@ defmodule Bezalel.Data.Syntax do
       rows: rows,
       unmapped: Enum.filter(refs, &(english.(&1) == [])),
       notes: notes,
-      crossing: map_size(by_verse) > 1
+      # The sentence's words are in more than one of the edition's verses.
+      crossing: match?([_, _ | _], Enum.uniq_by(refs, fn {_, c, v} -> {c, v} end))
     }
   end
 
@@ -705,6 +746,9 @@ defmodule Bezalel.Data.Syntax do
     ) <> "\n"
   end
 
+  defp clause_refs_count([_, _, _, parts]),
+    do: for([_, items] <- parts, item <- items, is_integer(item), reduce: 0, do: (n -> n + 1))
+
   defp edition_report(language, parsed, verses) do
     %{edition: edition} = @editions[language]
     rows = Enum.filter(verses, &(&1.edition == edition))
@@ -722,32 +766,58 @@ defmodule Bezalel.Data.Syntax do
     unmapped = parsed |> Enum.flat_map(& &1.unmapped) |> Enum.uniq()
     sentences = rows |> Enum.flat_map(&Jason.decode!(&1.clauses))
     clauses = Enum.flat_map(sentences, & &1["c"])
-    loose = Enum.count(clauses, &match?([0, nil, nil, _], &1))
 
-    words =
-      for [_, _, _, parts] <- clauses, [_, items] <- parts, [_, _, _, _] <- items, reduce: 0 do
-        n -> n + 1
-      end
+    unlabelled =
+      Enum.filter(clauses, fn [_, _, _, parts] -> Enum.all?(parts, &match?([nil, _], &1)) end)
 
-    imported = @word_attributes ++ @group_attributes
+    joined = Enum.count(unlabelled, &(clause_refs_count(&1) >= 2))
+    loose = Enum.count(unlabelled, &(match?([_, _, nil, _], &1) and clause_refs_count(&1) == 0))
+
+    shown_words =
+      for [_, _, _, parts] <- clauses, [_, items] <- parts, [_, _, _, _] = w <- items, do: w
+
+    words = length(shown_words)
+    no_strong = Enum.count(shown_words, &match?([_, nil, _, _], &1))
+
+    """
+    == #{edition} (MACULA #{@editions[language].language}) ==
+    Files: #{length(parsed)}; sentences: #{parsed |> Enum.map(& &1.sentences) |> Enum.sum()}, \
+    #{parsed |> Enum.map(& &1.crossing) |> Enum.sum()} of them with words in more than one of its verses
+    Rows: #{length(rows)} verses (an edition's verse the core pack splits between English \
+    verses is filed under each); #{length(sentences)} sentence views, #{length(clauses)} clauses \
+    shown (#{joined} of them clauses joined by conjunctions, #{loose} groups of words outside \
+    any clause), #{words} words shown in their verse (#{no_strong} without a Strong's number: \
+    MACULA's suffixed numbers, which name other words than the bare number, or none given); \
+    #{sentences |> Enum.map(&Map.get(&1, "x", 0)) |> Enum.sum()} clauses left out as outside their verse
+    Source verses the core pack lacks (not imported): #{if unmapped == [], do: "none", else: unmapped |> Enum.map_join(", ", fn {b, c, v} -> "#{b}.#{c}.#{v}" end)}
+    Roles not read: #{Map.get(notes, :bad_roles, 0)} 'err_…' values; #{Map.get(notes, :inner_roles, 0)} roles inside a constituent's role (the outer kept)
+    #{attribute_lines(language, counts)}\
+    """
+  end
+
+  # What was read and what wasn't, attribute by attribute, with counts.
+  defp attribute_lines(language, counts) do
+    imported = @word_attributes[language] ++ @group_attributes
+    licensed = @other_licence[language]
 
     {kept, dropped} =
       counts |> Enum.sort() |> Enum.split_with(fn {name, _} -> name in imported end)
 
     ubs = for {name, n} <- dropped, name in @not_licensed, do: "#{name} (#{n})"
-    other = for {name, n} <- dropped, name not in @not_licensed, do: "#{name} (#{n})"
+    elsewhere = for {name, n} <- dropped, licensed[name], do: "#{name} (#{n}): #{licensed[name]}"
+
+    other =
+      for {name, n} <- dropped,
+          name not in @not_licensed and licensed[name] == nil,
+          do: "#{name} (#{n})"
+
+    ubs = if ubs == [], do: "none seen", else: Enum.join(ubs, ", ")
+    elsewhere = if elsewhere == [], do: "none", else: Enum.join(elsewhere, "; ")
 
     """
-    == #{edition} (MACULA #{@editions[language].language}) ==
-    Files: #{length(parsed)}; sentences: #{parsed |> Enum.map(& &1.sentences) |> Enum.sum()}, \
-    #{parsed |> Enum.map(& &1.crossing) |> Enum.sum()} of them across verses
-    Rows: #{length(rows)} verses; #{length(sentences)} sentence views, #{length(clauses)} clauses \
-    shown (#{loose} groups of words outside any clause), #{words} words of their verse; \
-    #{sentences |> Enum.map(&Map.get(&1, "x", 0)) |> Enum.sum()} clauses left out as outside their verse
-    Source verses the core pack lacks (not imported): #{if unmapped == [], do: "none", else: unmapped |> Enum.map_join(", ", fn {b, c, v} -> "#{b}.#{c}.#{v}" end)}
-    Roles not read: #{Map.get(notes, :bad_roles, 0)} 'err_…' values; #{Map.get(notes, :inner_roles, 0)} roles inside a constituent's role (the outer kept)
     Attributes read: #{Enum.map_join(kept, ", ", fn {name, n} -> "#{name} (#{n})" end)}
-    Not imported, UBS data MACULA uses by permission (not CC BY): #{if ubs == [], do: "none seen", else: Enum.join(ubs, ", ")}
+    Not imported, UBS data MACULA uses by permission (not CC BY): #{ubs}
+    Not imported, under another licence: #{elsewhere}
     Not imported, not needed: #{Enum.join(other, ", ")}\
     """
   end

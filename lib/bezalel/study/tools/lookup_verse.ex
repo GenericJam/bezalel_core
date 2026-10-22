@@ -59,8 +59,8 @@ defmodule Bezalel.Study.Tools.LookupVerse do
     - A word-by-word breakdown with Strong's numbers and glosses (single verses;
       for a passage only when include_morphology is set)
     - Optional grammatical parsing for each word
-    - The clause structure (single verses; for a passage only when include_morphology
-      is set): each clause's parts with their roles (subject, verb, object…) and
+    - The clause structure (with the original text, for single verses; for a passage
+      only when include_morphology is set): each clause's parts with their roles (subject, verb, object…) and
       words, from the MACULA syntax trees of the WLC and the SBLGNT
 
     And once for the passage:
@@ -177,24 +177,26 @@ defmodule Bezalel.Study.Tools.LookupVerse do
   @spec result(map(), Preferences.t()) :: {:ok, t()} | {:error, String.t()}
   def result(args, prefs) do
     with {:ok, found} <- find(Args.reference(args), prefs) do
+      include_original = Args.flag(args, "include_original", true)
       include_morphology = Args.flag(args, "include_morphology", false)
 
       {:ok,
        Map.merge(found, %{
-         include_original: Args.flag(args, "include_original", true),
+         include_original: include_original,
          include_morphology: include_morphology,
-         syntax: syntax(found, include_morphology)
+         syntax: syntax(found, include_original, include_morphology)
        })}
     end
   end
 
   # The clause structure (syntax pack, none without it), gated like the
-  # word list: a single verse, or a passage with include_morphology.
-  defp syntax(%{single: single, book: book, verses: verses}, include_morphology)
+  # word list: the original shown, and a single verse or a passage with
+  # include_morphology.
+  defp syntax(%{single: single, book: book, verses: verses}, true, include_morphology)
        when single or include_morphology,
        do: Syntax.verses(book, verses |> Enum.map(&{&1.chapter, &1.verse}) |> Enum.uniq())
 
-  defp syntax(_found, _include_morphology), do: []
+  defp syntax(_found, _include_original, _include_morphology), do: []
 
   defp find("", _prefs), do: {:error, "Please provide a verse reference (e.g., 'John 3:16')."}
 

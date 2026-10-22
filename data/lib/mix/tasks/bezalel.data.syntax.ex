@@ -61,7 +61,8 @@ defmodule Mix.Tasks.Bezalel.Data.Syntax do
           "domain; SBLGNT text: CC BY 4.0, Society of Biblical Literature and Logos Bible " <>
           "Software; Greek English glosses: Berean Interlinear Bible, public domain, and " <>
           "Cherith, CC BY 4.0). Not imported: the UBS data MACULA uses by permission (" <>
-          Enum.join(Syntax.not_licensed(), ", ") <> ")",
+          Enum.join(Syntax.not_licensed(), ", ") <>
+          ") and the Hebrew gloss attribute (SIL's SILHA glosses, an SIL licence, not CC BY)",
       "build_sha256" => Syntax.build_digest(),
       "macula_sha256" => Syntax.source_digest(shas),
       "macula_source" => Syntax.source(pin),

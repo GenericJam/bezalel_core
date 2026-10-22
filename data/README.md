@@ -249,18 +249,21 @@ the commit. Neither is in Git LFS. Cached in `work/macula/`.
 **What the import does** (`Bezalel.Data.Syntax`):
 
 - reads, of each word, its text and following punctuation, `ref`, `role`,
-  Strong's number (normalised to `H0430`/`G0976`; MACULA's own letter
-  suffixes, `0871a`, dropped), English gloss (Hebrew: Cherith's `english`,
-  else `gloss`; Greek: the Berean Interlinear's `gloss`, else Cherith's
-  `english`) and `lemma`; of each word group its `class`, `rule` and `role`.
+  Strong's number (normalised to `H0430`/`G0976`; none for a number with
+  MACULA's letter suffix, `0871a` בְּ, which names another word than the
+  bare number), English gloss (Hebrew: Cherith's `english` only; Greek: the
+  Berean Interlinear's `gloss`, else Cherith's `english`) and `lemma`; of each word group its `class`, `rule` and `role`.
   Nothing else: **not the UBS data MACULA marks "Used with permission"**
   (Hebrew `sdbh`, `lexdomain`, `coredomain`, `contextualdomain`; Greek `ln`,
-  `domain`), which isn't under its CC BY licence; the report counts every
+  `domain`), which isn't under its CC BY licence, **nor the Hebrew `gloss`**,
+  SIL's SILHA glosses under an SIL licence; the report counts every
   attribute seen and names those;
 - a sentence becomes its clauses in order; a clause's parts are its words
-  grouped by the role they fill (the nearest role between word and clause;
-  a role inside a role of the same clause is counted and the outer kept); a
-  clause inside a clause is a numbered reference from its part; a clause
+  grouped by the constituent they are in (the nearest role between word and
+  clause; a role inside a role of the same clause is counted and the outer
+  kept; two sibling constituents with one role stay two parts); a clause
+  inside a clause is a numbered reference from the part it sits in (else
+  its own role), and its role is its own only; a clause
   made only of clauses (`ClCl`) is dissolved into them; a group at the top
   of a sentence (MACULA's way of joining clauses with conjunctions) is shown
   as a clause so its conjunctions keep their place;
@@ -274,11 +277,12 @@ the commit. Neither is in Git LFS. Cached in `work/macula/`.
 - refuses an element it doesn't know.
 
 **Coverage** (build of 2026-10-22; `out/syntax_report.txt`): 31,201 verses
-(WLC 23,213 sentences; SBLGNT 8,010 sentences, 1,194 of them across verses).
+(WLC 23,213 sentences; SBLGNT 8,010 sentences, 1,196 of them with words in
+more than one verse).
 Every source verse maps to a core verse. 18 core verses have no row: 14 of
 the 15 verses modern critical texts omit (all but Romans 16:24), Acts 24:7,
 and Romans 16:25–27 (MACULA Greek's SBLGNT trees end Romans with a 16:24 and
-have no doxology). 44.8 MB raw, 4.0 MB with `zstd -19`.
+have no doxology). 44.2 MB raw, 3.96 MB with `zstd -19`.
 
 ## Publish
 

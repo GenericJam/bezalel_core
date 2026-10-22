@@ -97,7 +97,7 @@ defmodule Bezalel.Data.SyntaxTest do
                    "S-P",
                    [
                      ["s", [["מִזְמ֥וֹר ", "H4210", "psalm", "מִזְמוֹר"]]],
-                     ["p", [["לְ", "H3807", "of", "לְ"], ["דָוִ֑ד׃ ", "H1732", "David", "דָּוִד"]]]
+                     ["p", [["לְ", nil, "of", "לְ"], ["דָוִ֑ד׃ ", "H1732", "David", "דָּוִד"]]]
                    ]
                  ]
                ],
@@ -173,9 +173,84 @@ defmodule Bezalel.Data.SyntaxTest do
     end
   end
 
+  # Gen 1:4 (an object clause directly in its clause), Gen 2:4 (two sibling
+  # prepositional phrases, PP-PP) and John 1:3 (a relative clause inside
+  # the subject), shortened.
+  @structures """
+  <?xml version="1.0" encoding="UTF-8"?>
+  <chapter lang="he" id="GEN 1">
+    <sentence>
+      <wg class="cl" rule="V-S-O">
+        <w role="v" ref="GEN 1:4!1" strongnumberx="7200" english="saw" gloss="he.saw" lemma="רָאָה" after=" ">וַיַּ֧רְא</w>
+        <w role="s" ref="GEN 1:4!2" strongnumberx="0430" english="God" lemma="אֱלֹהִים" after=" ">אֱלֹהִ֛ים</w>
+        <wg role="o" class="cl" rule="O-P">
+          <w role="o" ref="GEN 1:4!3" strongnumberx="0216" english="light" lemma="אוֹר" after=" ">הָא֖וֹר</w>
+          <w role="p" ref="GEN 1:4!4" strongnumberx="2896" english="good" lemma="טוֹב" after="׃">ט֑וֹב</w>
+        </wg>
+      </wg>
+    </sentence>
+    <sentence>
+      <wg class="cl" rule="S-PP-PP">
+        <w role="s" ref="GEN 2:4!1" strongnumberx="0428" english="these" lemma="אֵלֶּה" after=" ">אֵ֣לֶּה</w>
+        <wg role="pp" class="pp"><w ref="GEN 2:4!2" strongnumberx="0871a" english="when" lemma="בְּ" after=" ">בְּהִבָּרְאָ֑ם</w></wg>
+        <wg role="pp" class="pp"><w ref="GEN 2:4!3" strongnumberx="3117" english="in day" lemma="יוֹם" after=" ">בְּי֗וֹם</w></wg>
+      </wg>
+    </sentence>
+    <sentence>
+      <wg class="cl" rule="S-V">
+        <w role="v" ref="GEN 2:5!1" strongnumberx="1961" english="was" lemma="הָיָה" after=" ">היה</w>
+        <wg role="s" class="np" rule="NP-CL">
+          <w ref="GEN 2:5!2" strongnumberx="3605" english="all" lemma="כֹּל" after=" ">כל</w>
+          <wg class="cl" rule="V"><w role="v" ref="GEN 2:5!3" strongnumberx="6213" english="made" lemma="עָשָׂה" after="׃">עשה</w></wg>
+        </wg>
+      </wg>
+    </sentence>
+  </chapter>
+  """
+
+  defp clauses_of(xml),
+    do:
+      xml
+      |> Syntax.parse("hebrew")
+      |> Map.fetch!(:sentences)
+      |> Enum.map(&elem(Syntax.clauses(&1), 0))
+
+  describe "clauses/1" do
+    test "an inner clause with a role of its own is filed under that role in its parent" do
+      [[outer, inner] | _] = clauses_of(@structures)
+      assert [{"v", _}, {"s", _}, {"o", [{:c, id}]}] = outer.parts
+      assert inner.id == id and inner.role == "o"
+    end
+
+    test "sibling constituents with the same role stay separate parts" do
+      [_, [clause] | _] = clauses_of(@structures)
+      assert [{"s", _}, {"pp", [_]}, {"pp", [_]}] = clause.parts
+    end
+
+    test "a clause inside a constituent has no role of its own, only its place" do
+      [_, _, [outer, inner]] = clauses_of(@structures)
+      assert [{"v", _}, {"s", [{:w, _}, {:c, id}]}] = outer.parts
+      assert inner.id == id and inner.role == nil
+    end
+
+    test "the Hebrew gloss (SIL's SILHA) is never read; Cherith's english or nothing" do
+      [[outer | _] | _] = clauses_of(@structures)
+      [{"v", [{:w, saw}]} | _] = outer.parts
+      assert saw.gloss == "saw"
+
+      without = String.replace(@structures, ~s(english="saw" ), "")
+      [[outer | _] | _] = clauses_of(without)
+      [{"v", [{:w, saw}]} | _] = outer.parts
+      assert saw.gloss == nil
+      refute without |> Syntax.parse("hebrew") |> Map.fetch!(:sentences) |> inspect() =~ "he.saw"
+    end
+  end
+
   test "strong/2 writes Bezalel's form, dropping MACULA's own letter suffixes" do
     assert Syntax.strong("0430", "H") == "H0430"
-    assert Syntax.strong("0871a", "H") == "H0871"
+    # A suffixed number is another word (0871a בְּ; H0871 is Atharim).
+    assert Syntax.strong("0871a", "H") == nil
+    assert Syntax.strong("2050b", "H") == nil
     assert Syntax.strong("976", "G") == "G0976"
     assert Syntax.strong(nil, "G") == nil
   end

@@ -9,15 +9,16 @@ defmodule Bezalel.Study.Syntax do
   numbers. A clause inside a clause is listed under it; the part of a
   sentence outside the verse is marked with its verse.
 
-  `lookup_verse` shows it for a single verse, or a passage with
-  `include_morphology`; without the pack it shows nothing. The trees are
+  `lookup_verse` shows it with the original text, for a single verse or a
+  passage with `include_morphology`; without the pack it shows nothing. The trees are
   built on the WLC and the SBLGNT, whose words can differ from the core
   pack's (STEPBible's) Hebrew and Greek, and the section says which.
   """
 
   alias Bezalel.Study.{Citation, Citations, DB, Reference}
 
-  # The section's length; the rest is cut with a note.
+  # The whole section's length in Unicode code points (headings, notes and
+  # Source lines included); the rest is cut with a note.
   @max_chars 4000
 
   @roles %{
@@ -132,59 +133,99 @@ defmodule Bezalel.Study.Syntax do
   @spec role(String.t()) :: String.t()
   def role(code), do: Map.get(@roles, code, code)
 
-  @doc "The sources of `verses`: each verse's tree file(s) in MACULA at the pinned commit."
+  @doc """
+  The sources of `render/1`'s section for `verses`: the tree file(s) in
+  MACULA at the pinned commit of each verse it shows (not of those the
+  length cap left out).
+  """
   @spec citations([verse()]) :: [Citation.t()]
-  def citations(verses), do: Enum.flat_map(verses, &verse_citations/1)
+  def citations(verses), do: verses |> layout() |> elem(1) |> Enum.flat_map(&verse_citations/1)
 
   defp verse_citations(verse) do
     Enum.map(verse.source_files, &Citations.macula(verse.reference, verse.repo, verse.commit, &1))
   end
 
   @doc """
-  The "Clause structure" section for `verses` (none for []), at most
-  #{@max_chars} characters of clause lines, with a note when cut; each
-  verse's lines under its heading, with its Source line.
+  The "Clause structure" section for `verses` (none for []): each verse's
+  lines under its heading, with its Source line. The whole section is at
+  most #{@max_chars} Unicode code points; it is cut at a whole line, the
+  verses after the cut are left out, and a note says how many lines.
   """
   @spec render([verse()]) :: String.t()
-  def render([]), do: ""
+  def render(verses), do: verses |> layout() |> elem(0)
 
-  def render([first | _] = verses) do
-    {blocks, _used, cut} =
-      Enum.reduce(verses, {[], 0, 0}, fn verse, {blocks, used, cut} ->
+  @doc "The length `render/1` caps, in Unicode code points."
+  @spec max_chars() :: pos_integer()
+  def max_chars, do: @max_chars
+
+  # The section and the verses it shows.
+  defp layout([]), do: {"", []}
+
+  defp layout([first | _] = verses) do
+    header = "\n\n---\n### Clause structure\n*#{intro(first)}*"
+    budget = @max_chars - size(header) - size(cut_note(@max_chars))
+
+    {blocks, _left, cut} =
+      Enum.reduce(verses, {[], budget, 0}, fn verse, {blocks, left, cut} ->
         lines = verse_lines(verse)
-        {kept, used} = take_lines(lines, used)
-        {[block(verse, kept) | blocks], used, cut + length(lines) - length(kept)}
+        {block, left} = block(verse, lines, left)
+        shown = if block, do: block.lines, else: 0
+
+        {if(block, do: [{verse, block.text} | blocks], else: blocks), left,
+         cut + length(lines) - shown}
       end)
 
-    note =
-      if cut > 0,
-        do:
-          "\n\n*Cut to keep this short: #{cut} more line#{if cut == 1, do: "", else: "s"} " <>
-            "not shown; look up one verse at a time for the rest.*",
-        else: ""
-
-    "\n\n---\n### Clause structure\n*#{intro(first)}*\n\n" <>
-      (blocks |> Enum.reverse() |> Enum.reject(&is_nil/1) |> Enum.join("\n\n")) <> note
+    blocks = Enum.reverse(blocks)
+    note = if cut > 0, do: cut_note(cut), else: ""
+    text = header <> Enum.map_join(blocks, &("\n\n" <> elem(&1, 1))) <> note
+    {text, Enum.map(blocks, &elem(&1, 0))}
   end
 
-  defp block(_verse, []), do: nil
+  # A verse's block, `%{text, lines}`, or nil when not one of its lines
+  # fits, and the room left: its heading, the lines that fit in `left`
+  # with the heading and Source line counted, its Source line. Once a verse
+  # is cut, no room is left for the next.
+  defp block(verse, lines, left) do
+    heading = "#### #{heading(verse)}"
+    source = Citation.source_line(verse_citations(verse))
+    fixed = size("\n\n" <> heading <> "\n" <> source)
+    {kept, taken} = take_lines(lines, left - fixed)
 
-  defp block(verse, lines) do
-    "#### #{heading(verse)}\n" <>
-      Enum.join(lines, "\n") <> "\n" <> Citation.source_line(verse_citations(verse))
+    cond do
+      kept == [] ->
+        {nil, 0}
+
+      length(kept) < length(lines) ->
+        {%{text: assemble(heading, kept, source), lines: length(kept)}, 0}
+
+      true ->
+        {%{text: assemble(heading, kept, source), lines: length(kept)}, left - fixed - taken}
+    end
   end
 
-  # The lines that fit in what is left of @max_chars, in order.
-  defp take_lines(lines, used) do
-    Enum.reduce_while(lines, {[], used}, fn line, {kept, used} ->
-      size = String.length(line) + 1
+  defp assemble(heading, lines, source), do: Enum.join([heading | lines] ++ [source], "\n")
 
-      if used + size <= @max_chars,
-        do: {:cont, {[line | kept], used + size}},
-        else: {:halt, {kept, @max_chars}}
-    end)
-    |> then(fn {kept, used} -> {Enum.reverse(kept), used} end)
+  # The lines that fit in `room` code points, each with its line break, and
+  # the room they take.
+  defp take_lines(lines, room) do
+    {kept, taken} =
+      Enum.reduce_while(lines, {[], 0}, fn line, {kept, taken} ->
+        line_size = size(line) + 1
+
+        if taken + line_size <= room,
+          do: {:cont, {[line | kept], taken + line_size}},
+          else: {:halt, {kept, taken}}
+      end)
+
+    {Enum.reverse(kept), taken}
   end
+
+  defp cut_note(cut) do
+    "\n\n*Cut to keep this short: #{cut} more line#{if cut == 1, do: "", else: "s"} " <>
+      "not shown; look up one verse at a time for the rest.*"
+  end
+
+  defp size(text), do: text |> String.to_charlist() |> length()
 
   defp intro(%{edition: edition, language: language}) do
     "From #{Map.get(@editions, edition, edition)}, whose wording can differ from the " <>
@@ -220,13 +261,25 @@ defmodule Bezalel.Study.Syntax do
       |> Enum.reject(&(&1 in [nil, false]))
 
     clauses = sentence["c"] || []
+    places = places(clauses)
 
     header = if notes == [], do: [], else: ["*" <> Enum.join(notes, " ") <> "*"]
 
     header ++
       (clauses
        |> Enum.with_index(1)
-       |> Enum.map(fn {clause, number} -> clause_line(clause, number) end))
+       |> Enum.map(fn {clause, number} -> clause_line(clause, number, places[number]) end))
+  end
+
+  # Clause number → the role of the part of its parent it sits in.
+  defp places(clauses) do
+    for [_, _, _, parts] when is_list(parts) <- clauses,
+        [role, items] <- parts,
+        is_list(items),
+        number <- items,
+        is_integer(number),
+        into: %{},
+        do: {number, role}
   end
 
   # The edition's own verse number ("r") and, when the core pack splits that
@@ -249,33 +302,36 @@ defmodule Bezalel.Study.Syntax do
     end
   end
 
-  defp clause_line([depth, role, rule, parts], number) when is_list(parts) do
+  defp clause_line([depth, role, rule, parts], number, place) when is_list(parts) do
     indent = String.duplicate("  ", depth)
     body = parts |> Enum.map(&part/1) |> Enum.reject(&(&1 == "")) |> Enum.join(" · ")
-    "#{indent}#{number}. #{clause_label(role, rule, parts)}: #{body}"
+    "#{indent}#{number}. #{clause_label(role, rule, parts, place)}: #{body}"
   end
 
-  defp clause_line(_malformed, number), do: "#{number}. (unreadable clause)"
+  defp clause_line(_malformed, number, _place), do: "#{number}. (unreadable clause)"
 
+  # A clause with a role of its own is named by it ("Object clause"); one
+  # without, inside a part of another clause, by that part ("Clause in the
+  # subject": a relative clause in the subject is not the subject).
   # "Joined clauses" for a group of clauses with nothing but conjunctions
   # between them; "Outside a clause" for words MACULA puts in none.
-  defp clause_label(role, rule, parts) do
-    labelled = Enum.any?(parts, fn [part_role, _] -> part_role != nil end)
+  defp clause_label(role, rule, parts, place) do
+    labelled = Enum.any?(parts, &match?([part_role, _] when part_role != nil, &1))
     joins = for [_, items] <- parts, item <- items, is_integer(item), reduce: 0, do: (n -> n + 1)
 
     name =
       cond do
-        labelled -> clause_name(role)
-        joins >= 2 -> "Joined clauses"
-        rule == nil and joins == 0 -> "Outside a clause"
-        true -> clause_name(role)
+        not labelled and joins >= 2 -> "Joined clauses"
+        not labelled and rule == nil and joins == 0 -> "Outside a clause"
+        true -> clause_name(role, place)
       end
 
     if rule, do: "#{name} (#{rule})", else: name
   end
 
-  defp clause_name(nil), do: "Clause"
-  defp clause_name(role), do: String.capitalize(role(role)) <> " clause"
+  defp clause_name(nil, nil), do: "Clause"
+  defp clause_name(nil, place), do: "Clause in the #{role(place)}"
+  defp clause_name(role, _place), do: String.capitalize(role(role)) <> " clause"
 
   defp part([role, items]) do
     text = items(items)
