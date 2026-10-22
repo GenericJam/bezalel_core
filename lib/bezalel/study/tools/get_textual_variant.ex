@@ -32,7 +32,10 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
   and factors, explained from the report's introduction, as its judgment)
   and the SBLGNT apparatus's variation units at a New Testament verse (the
   SBLGNT's reading and each variant, with the editions that print them). A
-  verse with no notes-pack case returns these alone.
+  verse with no notes-pack case returns these alone; without the notes pack
+  (or with one that can't be read) it returns them with a note that the
+  curated cases are missing, and is the notes pack's error only when the
+  witnesses pack has nothing for the verse either.
   """
   @behaviour Rho.Tool
 
@@ -193,7 +196,8 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
           hottp: [Witnesses.entry()],
           apparatus: [Witnesses.unit()],
           glossary: %{ratings: map(), factors: map()},
-          witness_sources: %{String.t() => Witnesses.source()}
+          witness_sources: %{String.t() => Witnesses.source()},
+          notes: :on | :missing
         }
 
   @doc """
@@ -216,9 +220,29 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
            "takes one verse, e.g. 'Deuteronomy 32:8' or 'Hebrews 10:5'."}
 
       true ->
-        with {:ok, record} <- DB.with_pack(:notes, &record(&1, reference, normalized)),
-             do: {:ok, record |> add_scrolls() |> add_witnesses(normalized)}
+        case DB.with_pack(:notes, &record(&1, reference, normalized)) do
+          {:ok, record} ->
+            {:ok, record |> Map.put(:notes, :on) |> add_scrolls() |> add_witnesses(normalized)}
+
+          {:error, message} ->
+            witnesses_only(reference, normalized, message)
+        end
     end
+  end
+
+  # Without a readable notes pack, the witnesses pack's data for the verse
+  # with a note that the curated cases are missing; nothing there either is
+  # the notes pack's error.
+  defp witnesses_only(reference, normalized, notes_error) do
+    record =
+      add_witnesses(
+        %{reference: reference, cases: [], quotations: [], notes: :missing},
+        normalized
+      )
+
+    if record.hottp == [] and record.apparatus == [],
+      do: {:error, notes_error},
+      else: {:ok, record}
   end
 
   @no_witnesses %{
@@ -528,6 +552,15 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
 
     lines =
       [title, ""] ++
+        if(Map.get(result, :notes) == :missing,
+          do: [
+            "*The notes study pack (studybible-mcp's curated textual-variant cases and " <>
+              "quotation alignments) isn't on this device, so only the witnesses pack's data " <>
+              "is shown; tell the user if the curated cases matter.*",
+            ""
+          ],
+          else: []
+        ) ++
         Enum.flat_map(variants, &variant_lines/1) ++
         Enum.flat_map(interpretive, &interpretive_lines(&1, shown[&1.reference])) ++
         hottp_lines(result) ++

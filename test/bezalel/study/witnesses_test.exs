@@ -6,13 +6,16 @@ defmodule Bezalel.Study.WitnessesTest do
   # :packs_dir.
   use ExUnit.Case, async: false
 
-  alias Bezalel.Study.{Citation, Preferences, Sources}
+  alias Bezalel.Study.{Citation, DB, Preferences, Sources}
   alias Bezalel.Study.Tools.{CompareBiblicalVersions, GetTextualVariant, LookupVerse}
 
   defp ok(result), do: result |> cited() |> elem(0)
   defp cited({:ok, {:details, text, %{citations: citations}}}), do: {text, citations}
 
-  defp without_witnesses(fun) do
+  defp without_witnesses(fun), do: without(["witnesses.sqlite"], fun)
+
+  # The fixture packs without `files`, for the duration of `fun`.
+  defp without(files, fun) do
     fixtures = Application.fetch_env!(:bezalel_core, :packs_dir)
 
     dir =
@@ -21,7 +24,7 @@ defmodule Bezalel.Study.WitnessesTest do
     File.mkdir_p!(dir)
 
     for file <- File.ls!(fixtures),
-        file != "witnesses.sqlite",
+        file not in files,
         do: File.cp!(Path.join(fixtures, file), Path.join(dir, file))
 
     Application.put_env(:bezalel_core, :packs_dir, dir)
@@ -31,6 +34,43 @@ defmodule Bezalel.Study.WitnessesTest do
     after
       Application.put_env(:bezalel_core, :packs_dir, fixtures)
       File.rm_rf!(dir)
+    end
+  end
+
+  describe "get_textual_variant by which packs are on the device" do
+    test "witnesses without notes: the HOTTP and apparatus data, with a note" do
+      without(["notes.sqlite"], fn ->
+        text = ok(GetTextualVariant.run(%{"reference" => "Genesis 4:8"}, %{}))
+        assert text =~ "The notes study pack (studybible-mcp's curated textual-variant cases"
+        assert text =~ "### HOTTP entry 00015"
+
+        assert ok(GetTextualVariant.run(%{"reference" => "John 1:18"}, %{})) =~
+                 "- **SBLGNT:** μονογενὴς θεὸς — WH, Treg, NA28"
+
+        # Nothing in the witnesses pack for the verse: the notes pack's error.
+        assert GetTextualVariant.run(%{"reference" => "Genesis 1:2"}, %{}) ==
+                 {:error, DB.missing(:notes)}
+      end)
+    end
+
+    test "neither pack: the notes pack's error" do
+      without(["notes.sqlite", "witnesses.sqlite"], fn ->
+        assert GetTextualVariant.run(%{"reference" => "Genesis 4:8"}, %{}) ==
+                 {:error, DB.missing(:notes)}
+      end)
+    end
+
+    test "notes without witnesses: the notes pack's cases only, no note" do
+      without_witnesses(fn ->
+        text = ok(GetTextualVariant.run(%{"reference" => "Deuteronomy 32:8"}, %{}))
+        assert text =~ "## Variant at Deu.32.8"
+        refute text =~ "HOTTP"
+        refute text =~ "notes study pack"
+      end)
+    end
+
+    test "both packs: no missing-pack note" do
+      refute ok(GetTextualVariant.run(%{"reference" => "Genesis 4:8"}, %{})) =~ "notes study pack"
     end
   end
 
