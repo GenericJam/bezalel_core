@@ -1341,29 +1341,55 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
   defp sblgnt_note(%{sblgnt: :on, rows: rows}) do
     have = for %{version: "SBLGNT"} = row <- rows, into: MapSet.new(), do: row.canonical_reference
 
-    case for(
-           %{version: "TAGNT"} = row <- rows,
-           not MapSet.member?(have, row.canonical_reference),
-           uniq: true,
-           do: row.canonical_reference
-         ) do
-      [] ->
-        ""
+    lacking =
+      for %{version: "TAGNT"} = row <- rows,
+          not MapSet.member?(have, row.canonical_reference),
+          uniq: true,
+          do: {row.canonical_reference, other_number(row.edition_reference)}
 
-      lacking ->
-        "The SBLGNT doesn't print #{Enum.join(lacking, ", ")}: TAGNT includes the words some " <>
-          "editions have there. The SBLGNT apparatus records such an addition at the verse " <>
-          "before: get_textual_variant with " <>
-          Enum.map_join(
-            Enum.uniq(Enum.map(lacking, &verse_before(&1, lacking))),
-            " or ",
-            &"reference='#{&1}'"
-          ) <>
-          "."
-    end
+    {divided, added} = Enum.split_with(lacking, fn {_, other} -> other != nil end)
+
+    [division_note(divided), addition_note(Enum.map(added, &elem(&1, 0)))]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(" ")
   end
 
   defp sblgnt_note(_result), do: ""
+
+  # The other number a core verse reference carries ('Act.19.41(19.40)' →
+  # '19:40'), or nil.
+  defp other_number(reference) do
+    case String.split(reference, ["(", "[", "{", ")", "]", "}"]) do
+      [_, other | _] -> String.replace(other, ".", ":")
+      [_] -> nil
+    end
+  end
+
+  defp division_note([]), do: ""
+
+  defp division_note(divided) do
+    listed =
+      Enum.map_join(divided, ", ", fn {reference, other} ->
+        "#{reference} (within its #{other})"
+      end)
+
+    "The SBLGNT numbers these verses differently and prints their words within another verse: " <>
+      "#{listed}."
+  end
+
+  defp addition_note([]), do: ""
+
+  defp addition_note(lacking) do
+    "The SBLGNT doesn't print #{Enum.join(lacking, ", ")}: TAGNT includes the words some " <>
+      "editions have there. The SBLGNT apparatus records such an addition at the verse " <>
+      "before: get_textual_variant with " <>
+      Enum.map_join(
+        Enum.uniq(Enum.map(lacking, &verse_before(&1, lacking))),
+        " or ",
+        &"reference='#{&1}'"
+      ) <>
+      "."
+  end
 
   # The verse before `reference` that the SBLGNT prints (past a run of
   # verses it lacks: Rom 16:25–27 → Rom 16:24).
