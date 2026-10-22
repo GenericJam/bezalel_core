@@ -479,6 +479,12 @@ defmodule Bezalel.Data.Syntax do
   defp dissolve(clauses, %{id: id} = complex) do
     inner = for {_role, items} <- complex.parts, {:c, child} <- items, do: child
 
+    roles =
+      for clause <- clauses,
+          clause.parent == id,
+          into: %{},
+          do: {clause.id, clause.role || complex.role}
+
     clauses
     |> Enum.reject(&(&1.id == id))
     |> Enum.map(fn clause ->
@@ -487,7 +493,7 @@ defmodule Bezalel.Data.Syntax do
           %{clause | parent: complex.parent, role: clause.role || complex.role}
 
         clause.id == complex.parent ->
-          %{clause | parts: Enum.map(clause.parts, &replace_ref(&1, id, inner))}
+          %{clause | parts: Enum.flat_map(clause.parts, &replace_ref(&1, id, inner, roles))}
 
         true ->
           clause
@@ -495,12 +501,28 @@ defmodule Bezalel.Data.Syntax do
     end)
   end
 
-  defp replace_ref({role, items}, id, inner) do
-    {role,
-     Enum.flat_map(items, fn item -> if item == {:c, id}, do: inner_refs(inner), else: [item] end)}
-  end
+  # Adjacent role-less parts are one run; parts with a role stay apart.
+  defp join_roleless({nil, items}, [{nil, earlier} | acc]), do: [{nil, earlier ++ items} | acc]
+  defp join_roleless(part, acc), do: [part | acc]
 
-  defp inner_refs(ids), do: Enum.map(ids, &{:c, &1})
+  # In a part with a role, the complex's clauses take its place there; in a
+  # part without one, each clause with a role of its own is a part of that
+  # role (as it would be had MACULA not grouped them).
+  defp replace_ref({role, items} = part, id, inner, roles) do
+    case Enum.split_while(items, &(&1 != {:c, id})) do
+      {_all, []} ->
+        [part]
+
+      {before, [_ref | rest]} when role != nil ->
+        [{role, before ++ Enum.map(inner, &{:c, &1}) ++ rest}]
+
+      {before, [_ref | rest]} ->
+        ([{nil, before}] ++ Enum.map(inner, &{roles[&1], [{:c, &1}]}) ++ [{nil, rest}])
+        |> Enum.reject(&match?({_, []}, &1))
+        |> Enum.reduce([], &join_roleless/2)
+        |> Enum.reverse()
+    end
+  end
 
   # --- A verse's view -----------------------------------------------------------
 

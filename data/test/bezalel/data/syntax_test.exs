@@ -246,6 +246,32 @@ defmodule Bezalel.Data.SyntaxTest do
     end
   end
 
+  # A role-less clause complex (ClCl) directly in its clause, joining an
+  # object clause and a second-object clause.
+  @complex """
+  <?xml version="1.0" encoding="UTF-8"?>
+  <book lang="el" id="JHN">
+    <sentence>
+      <wg class="cl" rule="V-ClCl">
+        <w role="v" ref="JHN 1:1!1" strong="3004" gloss="says" lemma="λέγω" after=" ">λέγει</w>
+        <wg class="cl" Rule="ClCl">
+          <wg class="cl" rule="V" role="o"><w role="v" ref="JHN 1:1!2" strong="2064" gloss="come" lemma="ἔρχομαι" after=" ">ἔρχου</w></wg>
+          <wg class="cl" rule="V" role="o2"><w role="v" ref="JHN 1:1!3" strong="3708" gloss="see" lemma="ὁράω" after=".">ἴδε</w></wg>
+        </wg>
+      </wg>
+    </sentence>
+  </book>
+  """
+
+  test "a role-less clause complex is dissolved, each of its clauses filed under its own role" do
+    [sentence] = @complex |> Syntax.parse("greek") |> Map.fetch!(:sentences)
+    {[outer, first, second], _notes} = Syntax.clauses(sentence)
+
+    assert [{"v", _}, {"o", [{:c, a}]}, {"o2", [{:c, b}]}] = outer.parts
+    assert {first.id, first.role, first.parent} == {a, "o", outer.id}
+    assert {second.id, second.role, second.parent} == {b, "o2", outer.id}
+  end
+
   test "strong/2 writes Bezalel's form, dropping MACULA's own letter suffixes" do
     assert Syntax.strong("0430", "H") == "H0430"
     # A suffixed number is another word (0871a בְּ; H0871 is Atharim).

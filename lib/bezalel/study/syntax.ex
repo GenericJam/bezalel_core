@@ -5,8 +5,9 @@ defmodule Bezalel.Study.Syntax do
   Hebrew's of the Westminster Leningrad Codex, MACULA Greek's of the SBL
   Greek New Testament; CC BY 4.0): the clauses of the sentences that touch
   the verse, each clause's rule (`PP-V-S-O`) and parts with the role they
-  fill (subject, verb, object…) and their words, glosses and Strong's
-  numbers. A clause inside a clause is listed under it; the part of a
+  fill (subject, verb, object…) and their words and glosses (the pack
+  also stores each word's Strong's number and lemma; the section doesn't
+  show them). A clause inside a clause is listed under it; the part of a
   sentence outside the verse is marked with its verse.
 
   `lookup_verse` shows it with the original text, for a single verse or a
