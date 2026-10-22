@@ -55,6 +55,16 @@ too unless this file says otherwise.
   speak (handshake and sealing, frames and chunks, the QR code, the claim,
   the account id), pure functions; the sockets, storage and screens are
   the apps'. Why: `decisions/2026-10-19-link-wire-protocol.md`.
+- **The witnesses pack** (optional, built by `data/`'s `mix
+  bezalel.data.witnesses`): `Bezalel.Study.Witnesses` reads it: the
+  Samaritan Pentateuch (CC BY-NC), the SBLGNT and its apparatus (CC BY) and
+  UBS HOTTP (CC BY-SA), each in its own tables with its own licence.
+  `compare_biblical_versions` shows `SP` beside the MT/LXX/DSS and compares
+  a New Testament verse as `TAGNT` (the core pack's Greek, STEPBible's
+  amalgamated text: label it so, never as one edition) beside `SBLGNT`;
+  `get_textual_variant` adds HOTTP and the apparatus (and answers from them
+  without the notes pack); `lookup_verse` hints at them. Why:
+  `decisions/2026-10-22-witnesses-pack.md`.
 - Why the split: the phone app's
   `decisions/2026-10-17-study-code-in-bezalel-core.md`.
 
@@ -100,3 +110,5 @@ repositories are checked out side by side), except `translations.sqlite`
 and `scrolls.sqlite`, the packs built here, which `data/`'s `mix
 bezalel.data.fixtures` cuts. Re-cut them when a test needs a row they don't
 keep; the phone app's tests read them from this dependency.
+`witnesses.sqlite` is cut by `mix bezalel.data.fixtures --pack witnesses`
+too (`Bezalel.Data.WitnessesPack.cut/3` lists its verses).
