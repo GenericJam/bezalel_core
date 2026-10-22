@@ -204,7 +204,17 @@ defmodule Bezalel.Study.Citations do
     "jps" => "JPS 1917",
     "ult" => "Literal Text (ULT, adapted)",
     "ust" => "Simplified Text (UST, adapted)",
-    "apostolic_fathers" => "Apostolic Fathers"
+    "apostolic_fathers" => "Apostolic Fathers",
+    "ubs_hebrew" => "UBS Dictionary of Biblical Hebrew",
+    "ubs_greek" => "UBS Dictionary of the Greek New Testament"
+  }
+
+  # The UBS dictionaries' files at the commit the dictionaries pack was built
+  # from (data/pins.json → ubs_dictionaries).
+  @ubs_dictionaries "https://github.com/ubsicap/ubs-open-license/blob/a15a96cfaa4ca18a6c0339016645ba1e534db3c8/dictionaries/"
+  @ubs_files %{
+    "ubs_hebrew" => "hebrew/JSON/UBSHebrewDic-v0.9.4-en.JSON",
+    "ubs_greek" => "greek/JSON/UBSGreekNTDic-v1.1-en.JSON"
   }
 
   # ── Scripture ────────────────────────────────────────────────────────────
@@ -502,6 +512,27 @@ defmodule Bezalel.Study.Citations do
       label: Enum.join(Enum.reject(["STEP lexicon #{padded}", word], &blank?/1), " "),
       locator: padded,
       url: "https://www.stepbible.org/?q=strong=#{padded}"
+    }
+  end
+
+  @doc """
+  An entry of a UBS dictionary (`"ubs_hebrew"`, `"ubs_greek"`; CC BY-SA
+  4.0) by its lemma and its Strong's codes as the dictionary gives them.
+  The dictionaries have no page per entry online (SDBH's old site now
+  redirects to marble.bible, an app with no entry links), so the
+  dictionary's file at the commit the dictionaries pack was built from.
+  """
+  @spec ubs_dictionary(String.t(), String.t(), String.t() | nil) :: Citation.t()
+  def ubs_dictionary(dictionary, lemma, codes \\ nil) do
+    url = @ubs_dictionaries <> Map.fetch!(@ubs_files, dictionary)
+    entry = if blank?(codes), do: lemma, else: "#{lemma} (#{codes})"
+
+    %Citation{
+      work: dictionary,
+      label: "#{Map.fetch!(@titles, dictionary)}, #{entry}",
+      locator: entry,
+      url: url,
+      dataset_url: url
     }
   end
 

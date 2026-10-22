@@ -10,7 +10,7 @@ defmodule Bezalel.Data.Publish do
     the same `raw_sha256` and downloads nothing;
   - the published manifest, for the base packs' descriptions, licences,
     `required` and tables;
-  - the packs built here (`translations`, `scrolls`, `fathers`), uploaded under
+  - the packs built here (`translations`, `scrolls`, `fathers`, `dictionaries`), uploaded under
     `packs/v<N>/`.
 
   Everything here is pure; `mix bezalel.data.publish` does the network.
@@ -51,6 +51,14 @@ defmodule Bezalel.Data.Publish do
         "Open Apostolic Fathers (James Tauber, Seumas Macdonald; Lake's text corrected) and " <>
           "CAFE (James Cuénod; machine translation): CC BY-SA 4.0 " <>
           "(https://creativecommons.org/licenses/by-sa/4.0/)"
+    },
+    "dictionaries" => %{
+      "description" =>
+        "UBS dictionaries: Biblical Hebrew (from SDBH) and Greek New Testament (from " <>
+          "Louw & Nida) meanings with semantic domains",
+      "licence" =>
+        "UBS Dictionary of Biblical Hebrew and UBS Dictionary of the Greek New Testament " <>
+          "© United Bible Societies: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)"
     }
   }
 
@@ -169,9 +177,33 @@ defmodule Bezalel.Data.Publish do
     end
   end
 
+  @doc """
+  `:ok` if a dictionaries pack's `meta` says it was built from `expected`'s
+  sources: `ubs_sha256` and `ubs_source` (the pinned UBS files),
+  `core_sha256` (base.json's core pack, which numbers its references) and
+  `build_sha256` (`Bezalel.Data.Dictionaries.build_digest/0`); else
+  `{:error, reason}`.
+  """
+  @spec check_dictionaries(map(), map()) :: :ok | {:error, String.t()}
+  def check_dictionaries(meta, expected) do
+    cond do
+      meta["ubs_sha256"] != expected.ubs_sha256 or meta["ubs_source"] != expected.ubs_source ->
+        {:error, "wasn't built from pins.json's UBS dictionaries"}
+
+      meta["core_sha256"] != expected.core_sha256 ->
+        {:error, "wasn't numbered with base.json's core pack"}
+
+      meta["build_sha256"] != expected.build_sha256 ->
+        {:error, "was built by other code than this checkout's"}
+
+      true ->
+        :ok
+    end
+  end
+
   @doc "The names of the packs built here, in manifest order."
   @spec built_here() :: [String.t()]
-  def built_here, do: ~w(translations scrolls fathers)
+  def built_here, do: ~w(translations scrolls fathers dictionaries)
 
   @doc """
   The manifest entry of pack `name` (one of `built_here/0`) for a pack

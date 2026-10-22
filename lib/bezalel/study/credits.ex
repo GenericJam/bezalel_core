@@ -133,7 +133,21 @@ defmodule Bezalel.Study.Credits do
     {"Apostolic Fathers",
      "The Apostolic Fathers: Greek (and Latin) text from Open Apostolic Fathers 1.0, edited by James Tauber and Seumas Macdonald (2019), a corrected text of Kirsopp Lake's edition (1912–1913), doi:10.5281/zenodo.2555673, CC BY-SA 4.0; English from CAFE, the Contemporary Apostolic Fathers Edition by James Cuénod (2024), a machine translation drafted with GPT-4o, CC BY-SA 4.0. Modified.",
      [{"CC BY-SA 4.0", @by_sa}],
-     ["https://github.com/jtauber/apostolic-fathers", "https://github.com/jcuenod/CAFE"]}
+     ["https://github.com/jtauber/apostolic-fathers", "https://github.com/jcuenod/CAFE"]},
+    {"UBS Dictionary of Biblical Hebrew",
+     "UBS Dictionary of Biblical Hebrew © United Bible Societies, 2023. Adapted from Semantic Dictionary of Biblical Hebrew © 2000-2023 United Bible Societies. Licensed under CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     [
+       "https://translation.bible/tools-resources/ubs-dictionary-of-biblical-hebrew/",
+       "https://github.com/ubsicap/ubs-open-license/tree/main/dictionaries/hebrew"
+     ]},
+    {"UBS Dictionary of the Greek New Testament",
+     "UBS Dictionary of New Testament Greek, © United Bible Societies, 2023. Adapted from Semantic Dictionary of Biblical Greek: © United Bible Societies 2018-2023, which is adapted from Greek-English Lexicon of the New Testament: Based on Semantic Domains, Eds. J P Louw, Eugene Albert Nida © United Bible Societies 1988, 1989. Licensed under CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     [
+       "https://translation.bible/tools-resources/ubs-dictionary-of-the-greek-new-testament/",
+       "https://github.com/ubsicap/ubs-open-license/tree/main/dictionaries/greek"
+     ]}
   ]
 
   @scholarship [

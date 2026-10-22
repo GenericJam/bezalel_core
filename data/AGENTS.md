@@ -30,6 +30,9 @@ path). Read [README.md](README.md) first. bezalel_core's
    every row says so (`translation`), never presented as a human
    translation; jcuenod/tagged-apostolic-fathers has no licence and is not
    imported.
+   Dictionaries: the UBS dictionaries are CC BY-SA 4.0, their licence and
+   attribution in each `dictionaries` row; a sense UBS marks `AIGenerated`
+   isn't imported.
 3. **Text is not altered.** Markup is removed and whitespace collapsed;
    small capitals become capitals. Anything else the source sends that isn't
    verse text (headings, labels, notes) is dropped by a rule naming its
@@ -42,6 +45,13 @@ path). Read [README.md](README.md) first. bezalel_core's
    Psalm title in verse 0 by the base core pack's numbering
    (`Bezalel.Data.Jps`); ULT/UST: the alignment is removed and a verse
    bridge kept whole on its first verse (`Bezalel.Data.Usfm`).
+   Dictionaries: UBS's `{L:}`, `{D:}`, `{S:}`, `{A:}`, `{N:}` and `|i…|i*`
+   markup is rendered by rule (`Bezalel.Data.Dictionaries.clean/3`) and
+   counted in `out/dictionaries_report.txt`; an unknown `{X:` tag, a link
+   remnant (`<SDBH:`) or a leftover `|` stops the build. A domain an entry
+   names differently from the domain file is left out and listed there.
+   SDBH's references are mapped from the Hebrew numbering; the Greek
+   dictionary's are English already (`Dictionaries.english_numbering/2`).
 4. **Nothing built is committed** except the fixtures in
    `../test/fixtures/packs/` (`mix bezalel.data.fixtures`). `out/`, `work/`,
    `_build/` and `deps/` are gitignored; the parent repo's pre-commit hook
@@ -66,7 +76,7 @@ mix compile --warnings-as-errors
 mix test
 ```
 
-Re-run `mix bezalel.data.translations` / `mix bezalel.data.scrolls` and `mix
+Re-run `mix bezalel.data.translations` / `mix bezalel.data.scrolls` / `mix bezalel.data.fathers` / `mix bezalel.data.dictionaries` and `mix
 bezalel.data.fixtures --pack <pack>` when an importer changes, and run
 core's suite (`cd .. && mix test`) when a fixture changes. Which Dead Sea
 Scrolls are imported is core's `Bezalel.Study.Ancient.Scrolls`: a work added
