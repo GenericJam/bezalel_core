@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.Bezalel.Data.Fixtures do
-  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls}.sqlite"
+  @shortdoc "Cuts bezalel_core's test/fixtures/packs/{translations,scrolls,dictionaries}.sqlite"
 
   @moduledoc """
   Cuts the fixtures core's tests read from the packs built here.
 
-      mix bezalel.data.fixtures [--pack translations|scrolls]
+      mix bezalel.data.fixtures [--pack translations|scrolls|dictionaries]
                                 [--from DIR] [--core ../test/fixtures/packs/core.sqlite]
                                 [--out DIR]
 
@@ -19,11 +19,15 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       `@scroll_verses` (a reading of each kind the tools handle: preserved,
       partly and wholly reconstructed, Hebrew numbering, a verse the MT
       lacks), with their manuscripts. Run `mix bezalel.data.scrolls` first.
+    * `dictionaries.sqlite`: the UBS entries of `@dictionary_strongs` (Hebrew,
+      Greek and an Aramaic code) with their meanings, domains and the
+      domain names they use, and both dictionaries' rows. Run
+      `mix bezalel.data.dictionaries` first.
   """
 
   use Mix.Task
 
-  alias Bezalel.Data.{Pack, Report, ScrollsPack}
+  alias Bezalel.Data.{DictionariesPack, Pack, Report, ScrollsPack}
 
   @switches [pack: :string, from: :string, core: :string, out: :string]
   @translation_columns ~w(key name abbreviation url copyright licence source_url source_sha256)a
@@ -47,6 +51,10 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
   @verse_columns ~w(reference book chapter verse source_reference mt_verse siglum occurrence
                     locator text letters preserved_letters language)a
 
+  # word_study's tests: אֱלֹהִים, רוּחַ, חָכְמָה (whose entry gives the Aramaic
+  # A2452, the core lexicon's H2452), ἀγάπη and ἀγαπάω ('love').
+  @dictionary_strongs ~w(H0430 H7307 H2452 G0026 G0025)
+
   @impl Mix.Task
   def run(args) do
     {opts, _rest} = OptionParser.parse!(args, strict: @switches)
@@ -57,6 +65,7 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       nil ->
         translations(from, out, opts)
         scrolls(from, out)
+        dictionaries(from, out)
 
       "translations" ->
         translations(from, out, opts)
@@ -64,8 +73,11 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
       "scrolls" ->
         scrolls(from, out)
 
+      "dictionaries" ->
+        dictionaries(from, out)
+
       other ->
-        Mix.raise("--pack must be translations or scrolls, not #{inspect(other)}")
+        Mix.raise("--pack must be translations, scrolls or dictionaries, not #{inspect(other)}")
     end
   end
 
@@ -166,5 +178,78 @@ defmodule Mix.Tasks.Bezalel.Data.Fixtures do
     |> Map.new(&List.to_tuple/1)
     |> Map.drop(~w(pack description tables sqlite_version))
     |> Map.put("fixture", "cut by bezalel_core data/: mix bezalel.data.fixtures")
+  end
+
+  defp dictionaries(from_dir, out_dir) do
+    from = Path.join(from_dir, "dictionaries.sqlite")
+    out = Path.join(out_dir, "dictionaries.sqlite")
+    columns = DictionariesPack.columns()
+
+    read = fn table, where, args ->
+      cols = Map.fetch!(columns, table)
+
+      from
+      |> Pack.read("SELECT #{Enum.join(cols, ", ")} FROM #{table} #{where}", args)
+      |> rows(cols)
+    end
+
+    strongs =
+      read.(
+        "dictionary_strongs",
+        "WHERE strongs IN (#{placeholders(@dictionary_strongs)})",
+        @dictionary_strongs
+      )
+
+    entries = strongs |> Enum.map(&{&1.dictionary, &1.entry_id}) |> Enum.uniq()
+
+    in_entries =
+      "WHERE (dictionary, entry_id) IN (VALUES #{Enum.map_join(entries, ", ", fn _ -> "(?, ?)" end)})"
+
+    entry_args = Enum.flat_map(entries, &Tuple.to_list/1)
+
+    meanings =
+      read.(
+        "dictionary_meanings",
+        in_entries <> " ORDER BY dictionary, entry_id, position",
+        entry_args
+      )
+
+    meaning_ids = Enum.map(meanings, &{&1.dictionary, &1.meaning_id})
+    wanted = MapSet.new(meaning_ids)
+
+    meaning_domains =
+      "dictionary_meaning_domains"
+      |> read.("ORDER BY dictionary, meaning_id, kind, position", [])
+      |> Enum.filter(&MapSet.member?(wanted, {&1.dictionary, &1.meaning_id}))
+
+    codes =
+      meaning_domains
+      |> Enum.flat_map(&[{&1.dictionary, &1.code}, {&1.dictionary, &1.source_code}])
+      |> MapSet.new()
+
+    tables = %{
+      "dictionaries" => read.("dictionaries", "ORDER BY key", []),
+      "dictionary_entries" =>
+        read.("dictionary_entries", in_entries <> " ORDER BY dictionary, entry_id", entry_args),
+      "dictionary_strongs" =>
+        read.(
+          "dictionary_strongs",
+          in_entries <> " ORDER BY strongs, dictionary, entry_id",
+          entry_args
+        ),
+      "dictionary_meanings" => meanings,
+      "dictionary_meaning_domains" => meaning_domains,
+      "dictionary_domains" =>
+        "dictionary_domains"
+        |> read.("ORDER BY dictionary, code", [])
+        |> Enum.filter(&MapSet.member?(codes, {&1.dictionary, &1.code}))
+    }
+
+    DictionariesPack.write(out, tables, fixture_meta(from))
+
+    Mix.shell().info(
+      "#{out}: #{length(entries)} entries (#{Enum.join(@dictionary_strongs, " ")}), " <>
+        "#{length(meanings)} meanings, #{length(tables["dictionary_domains"])} domain names"
+    )
   end
 end

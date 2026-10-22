@@ -3,7 +3,7 @@ defmodule Bezalel.Study.DB do
   Read-only access to the study packs (built by the phone app's
   `data/build.sh`, GenericJam/bezalel_mob; `data/README.md` there, and by
   this repository's `data/`): `core`, `notes`, `lxx`, `ancient`, `graph`,
-  `translations` and `scrolls`, one SQLite file each in `dir/0`.
+  `translations`, `scrolls` and `dictionaries`, one SQLite file each in `dir/0`.
 
   Every call opens its own read-only connection to the one pack it needs
   and closes it when done (`with_pack/2`), so:
@@ -31,10 +31,12 @@ defmodule Bezalel.Study.DB do
     ancient: "ancient sources",
     graph: "people, places and events",
     translations: "Bible translations",
-    scrolls: "Dead Sea Scrolls"
+    scrolls: "Dead Sea Scrolls",
+    dictionaries: "UBS Hebrew and Greek dictionaries"
   }
 
-  @type pack :: :core | :notes | :lxx | :ancient | :graph | :translations | :scrolls
+  @type pack ::
+          :core | :notes | :lxx | :ancient | :graph | :translations | :scrolls | :dictionaries
   @type conn :: Sqlite3.db()
   @type row :: %{String.t() => term()}
 

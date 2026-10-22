@@ -14,7 +14,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Tools` | `all/0`, every study tool module; `materials/0`, the tools that make materials (`draw_image`); `withheld/1`, the tool names to withhold under a user's preferences |
 | `Bezalel.Study.Tools.DrawImage` | `draw_image`: a picture drawn by the image model the user chose ("Pictures by": OpenAI's gpt-image or a Gemini image model, `models/0`) on that provider's API key, kept as a material, returned by reference ([Materials](#materials-drawings-and-read-aloud)) |
 | `Bezalel.Study.Tools.*` | One module per tool, named after it (`LookupVerse` is `lookup_verse`): tier 1 `LookupVerse`, `WordStudy`, `SearchLexicon`, `SearchByStrongs`, `GetCrossReferences`, `ParseMorphology`, `LookupName`, `PeopleInPassage`, `FindSimilarPassages`; tier 2 `ExploreGenealogy`, `ExplorePersonEvents`, `ExplorePlace`, `FindConnection`, `GraphEnrichedSearch` (graph), `GetStudyNotes`, `GetBibleDictionary`, `GetKeyTerms`, `GetAneContext`, `GetTheologyContext`, `GetTextualVariant` (notes), `GetTorahWeave` (core), `CompareBiblicalVersions` (lxx and core, scrolls for its DSS witnesses), `SearchAncientSources`, `LookupAncientSource` (ancient, and scrolls for most Qumran works), `ListResearchSources` (no pack). Each is a `Rho.Tool` (`run/2` → the Markdown the model reads) with `result/1` (the same answer as data for the screens, e.g. `lookup_verse`'s words with their Strong's numbers, `explore_genealogy`'s tree as nodes linked to the next generation, `explore_person_events`'s timeline, `find_connection`'s path as steps) and `render/1`. Every `run/2` hands rho the data with its `citations` as the result's details (`{:ok, {:details, markdown, data}}`, [Sources](#sources)): the model gets the Markdown, the screen the data, which `Bezalel.Agent.Card` makes the passage card for `lookup_verse` and `word_study`. The Mermaid diagrams of the graph tools stay in the Markdown only |
-| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`) |
+| `Bezalel.Study.DB` | Opens the packs read-only (`core`, `notes`, `lxx`, `ancient`, `graph`, `translations`, `scrolls`, `dictionaries`) |
 | `Bezalel.Study.Preferences` | A user's settings: approach, scripture labels, excluded sources, default result count, translation, image model, pushback model; `current/1` asks the host |
 | `Bezalel.Study.Sources` | The sources a user can switch off, and the tools withheld when all of a tool's sources are off |
 | `Bezalel.Study.Translations` | The English translations the tools quote (NET, BSB) with their labels, links and acknowledgements |
@@ -33,6 +33,7 @@ bezalel_core, so the phone app and the website (bezalel_ca) run the same tools.
 | `Bezalel.Study.Citation`, `Bezalel.Study.Citations` | A source a result rests on, and every URL template that builds one ([Sources](#sources)) |
 | `Bezalel.Agent.Details`, `Bezalel.Agent.Reply`, `Bezalel.Agent.Card` | What the session keeps of a tool's data (`keep_details/2`, `kept_card/1`, `kept_citations/1`), a reply's fold and sources, the passage card |
 | `Bezalel.Agent.Pushback` | Another model pushes back on a reply and the lead answers it: the critic's brief, one round per reply, automatic or on demand ([Pushback](#pushback-another-model-reviews-a-reply)) |
+| `Bezalel.Study.Dictionaries` | The UBS dictionaries' entries for a Strong's number and the Markdown `word_study` appends (dictionaries pack) |
 
 ## Pack access
 
@@ -108,6 +109,24 @@ ETCBC/dss (the Abegg–Bowley–Cook transcription, CC BY-NC 4.0), in two parts
   stays Heiser's curated cases. A reading wholly inside `[ ]` says that
   nothing legible survives; ETCBC's Hebrew numbering is mapped to the packs'
   English one and named ('Hebrew numbering Psa.22.17').
+
+### The UBS dictionaries (dictionaries pack)
+
+The dictionaries pack is built here, by `data/`'s `mix bezalel.data.dictionaries`
+from ubsicap/ubs-open-license (CC BY-SA 4.0; `data/README.md`; why:
+[decisions/2026-10-22-ubs-dictionaries-pack.md](../decisions/2026-10-22-ubs-dictionaries-pack.md)):
+the UBS Dictionary of Biblical Hebrew (from the Semantic Dictionary of Biblical
+Hebrew) and the UBS Dictionary of the Greek New Testament (from Louw & Nida),
+English. `word_study` reads it after the core lexicon (`Bezalel.Study.Dictionaries`):
+for the entry's Strong's number (a UBS `A2452`, Aramaic, is the core lexicon's
+`H2452`) it appends each UBS entry (at most 3) with its meanings (at most 10 and
+about 3,000 characters an entry, saying how many are left out): the semantic
+domain (SDBH's with the domain it is seen from, "Spirits (source domain:
+Deities)"; Louw–Nida's domain › subdomain and number, "LN 25.43"), the short
+definition, glosses, how many references the dictionary lists, and Louw–Nida's
+note cut at 300 characters; a Source line per entry. Without the pack, or with
+one whose tables can't be read, nothing is added and the output is what it was.
+`search_lexicon` and `search_by_strongs` don't read it.
 
 ### Full-text search on the phone
 
@@ -375,6 +394,7 @@ the verse's Hebrew and Greek on STEP and any Dead Sea Scroll witness as `origina
 | Theology summaries | Heiser's and Owen's stored URLs and pages; Stott, Lennox, Bradley as their book (author, title, year; no edition, which the data doesn't record) "on" the chapter |
 | ANE entries, Fee & Stuart | book references as given |
 | Textual variants | their stored citation and URL (none in the data version 1 pack) |
+| UBS dictionaries | the dictionary's JSON file on GitHub at the pinned commit (no page per entry online) |
 
 The session keeps a tool's card and citations (`Bezalel.Agent.Details.keep_details/2`, rho's
 `:keep_details`); `Bezalel.Agent.Reply` collects a reply's citations as it streams and
@@ -558,3 +578,6 @@ cover the settings, the source filters and verdicts, the labels, the translation
 the prompt. The phone app's tests read the same fixtures from this dependency. In the
 phone app, `mix run --no-start scripts/study_tools_smoke.exs` runs every tool in
 `Tools.all/0` against the real packs and fails if one errors or is left out.
+`dictionaries.sqlite` (also cut by `data/`) keeps the UBS entries of H0430, H7307,
+H2452 (the Aramaic code A2452), G0026 and G0025 (`dictionaries_test.exs`, which also
+runs `word_study` without the pack and with a damaged one).

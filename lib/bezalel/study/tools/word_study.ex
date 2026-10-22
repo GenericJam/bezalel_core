@@ -5,7 +5,8 @@ defmodule Bezalel.Study.Tools.WordStudy do
 
   Ported from studybible-mcp's `handle_word_study` (MIT); same text.
   `result/1` returns the entry row and the example verses as data, with
-  the translation they are quoted in.
+  the translation they are quoted in, and the UBS dictionaries' entries
+  for its number when the optional dictionaries pack is installed.
   """
   @behaviour Rho.Tool
 
@@ -14,6 +15,7 @@ defmodule Bezalel.Study.Tools.WordStudy do
     Citation,
     Citations,
     DB,
+    Dictionaries,
     Format,
     Lexicon,
     Preferences,
@@ -41,6 +43,9 @@ defmodule Bezalel.Study.Tools.WordStudy do
     - Brief and full definitions (LSJ for Greek, BDB for Hebrew, plus Abbott-Smith
       for NT Greek where available)
     - Etymology, semantic range, and related words
+    - Where the dictionaries pack is installed, the UBS dictionaries' meanings
+      (Semantic Dictionary of Biblical Hebrew; Louw & Nida for NT Greek) with their
+      semantic domains and glosses
     - Occurrence counts and representative passages
 
     Relevant for questions about a specific original-language term, a theological
@@ -81,11 +86,14 @@ defmodule Bezalel.Study.Tools.WordStudy do
   @typedoc """
   The entry (a lexicon row; nil when a word matched none) and its example
   verses, in `translation` (`translation_note` says why it isn't the one
-  chosen; nil when it is).
+  chosen; nil when it is); `dictionary` the UBS dictionaries' entries for
+  its Strong's number (`Bezalel.Study.Dictionaries.entries/1`: none without
+  the dictionaries pack).
   """
   @type t :: %{
           entry: DB.row() | nil,
           examples: [Format.verse_view()],
+          dictionary: %{entries: [Dictionaries.entry()], more: non_neg_integer()},
           translation: Translations.ref(),
           translation_note: String.t() | nil
         }
@@ -130,7 +138,11 @@ defmodule Bezalel.Study.Tools.WordStudy do
 
       {:ok, study} ->
         {:ok,
-         Map.merge(study, %{translation: Translations.ref(translation), translation_note: note})}
+         Map.merge(study, %{
+           dictionary: Dictionaries.entries(study.entry && study.entry["strongs"]),
+           translation: Translations.ref(translation),
+           translation_note: note
+         })}
 
       error ->
         error
@@ -161,12 +173,13 @@ defmodule Bezalel.Study.Tools.WordStudy do
   @spec render(t()) :: String.t()
   def render(%{entry: nil}), do: not_found()
 
-  def render(%{entry: entry, examples: []}), do: entry_text(entry)
+  def render(%{entry: entry, examples: []} = result), do: entry_text(entry) <> ubs_text(result)
 
   def render(%{entry: entry, examples: examples} = result) do
     label = Format.translation_label(examples, result.translation)
 
     entry_text(entry) <>
+      ubs_text(result) <>
       "\n\n## Example Passages#{label}\n" <>
       Format.translation_note(result.translation_note) <>
       Enum.map_join(examples, fn view ->
@@ -178,16 +191,29 @@ defmodule Bezalel.Study.Tools.WordStudy do
   defp entry_text(entry),
     do: Format.lexicon_entry(entry) <> Citation.source_line(entry_citations(entry, :full))
 
+  # The UBS dictionaries' meanings, after the lexicon entry; nothing without them.
+  defp ubs_text(result) do
+    case result |> dictionary() |> Dictionaries.section() do
+      "" -> ""
+      section -> "\n" <> String.trim_trailing(section)
+    end
+  end
+
+  defp dictionary(result), do: Map.get(result, :dictionary, %{entries: [], more: 0})
+
   @doc """
   The sources `render/1` shows, in its order: the lexicon entry
-  (`entry_citations/2`), then each example verse in the quoted
-  translation (STEP Bible's for a verse shown in STEPBible's gloss).
+  (`entry_citations/2`), each UBS dictionary entry, then each example
+  verse in the quoted translation (STEP Bible's for a verse shown in
+  STEPBible's gloss).
   """
   @spec citations(t()) :: [Citation.t()]
   def citations(%{entry: nil}), do: []
 
-  def citations(%{entry: entry, examples: examples, translation: translation}) do
-    entry_citations(entry, :full) ++ Enum.map(examples, &example_citation(&1, translation))
+  def citations(%{entry: entry, examples: examples, translation: translation} = result) do
+    entry_citations(entry, :full) ++
+      Enum.map(dictionary(result).entries, &Dictionaries.citation/1) ++
+      Enum.map(examples, &example_citation(&1, translation))
   end
 
   defp example_citation(view, translation),

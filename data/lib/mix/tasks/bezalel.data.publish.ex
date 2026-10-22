@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   @moduledoc """
   Publishes the packs built here (`out/translations.sqlite`,
-  `out/scrolls.sqlite`) as the next data version, on top of the frozen base,
+  `out/scrolls.sqlite`, `out/dictionaries.sqlite`) as the next data version, on top of the frozen base,
   without uploading the base.
 
       mix bezalel.data.publish [--dry-run] [--version N]
@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
 
   use Mix.Task
 
-  alias Bezalel.Data.{Books, Download, Net, Pack, Publish, Scrolls}
+  alias Bezalel.Data.{Books, Dictionaries, Download, Net, Pack, Publish, Scrolls}
 
   @bucket "bezalel-packs"
   @manifest_key "packs/manifest.json"
@@ -183,6 +183,26 @@ defmodule Mix.Tasks.Bezalel.Data.Publish do
     case Publish.check_scrolls(meta, expected) do
       :ok -> :ok
       {:error, reason} -> Mix.raise("out/scrolls.sqlite #{reason}; run mix bezalel.data.scrolls")
+    end
+  end
+
+  defp check_source!("dictionaries", meta) do
+    pin = Download.pin!("ubs_dictionaries")
+    core = @base |> File.read!() |> Jason.decode!() |> get_in(["packs", "core", "raw_sha256"])
+
+    expected = %{
+      ubs_sha256: pin["files"] |> Enum.sort() |> Net.digest(),
+      ubs_source: "#{pin["repo"]}/tree/#{pin["commit"]}/dictionaries",
+      core_sha256: core,
+      build_sha256: Dictionaries.build_digest()
+    }
+
+    case Publish.check_dictionaries(meta, expected) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Mix.raise("out/dictionaries.sqlite #{reason}; run mix bezalel.data.dictionaries")
     end
   end
 

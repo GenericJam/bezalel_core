@@ -20,6 +20,9 @@ path). Read [README.md](README.md) first. bezalel_core's
    notes are not licensed and must never be imported. Scrolls: ETCBC/dss is
    CC BY-NC 4.0 (non-commercial, credit shown); no English translation of
    the scrolls is openly licensed, so none is imported.
+   Dictionaries: the UBS dictionaries are CC BY-SA 4.0, their licence and
+   attribution in each `dictionaries` row; a sense UBS marks `AIGenerated`
+   isn't imported.
 3. **Text is not altered.** Markup is removed and whitespace collapsed;
    small capitals become capitals. Anything else the source sends that isn't
    verse text (headings, labels, notes) is dropped by a rule naming its
@@ -28,6 +31,10 @@ path). Read [README.md](README.md) first. bezalel_core's
    its editorial marks rendered as studybible-mcp did (`Bezalel.Data.Scrolls`);
    what is left out is left out by a feature or sign-type rule and counted in
    `out/scrolls_report.txt`; an unknown sign type stops the build.
+   Dictionaries: UBS's `{L:}`, `{D:}`, `{S:}`, `{A:}`, `{N:}` and `|i…|i*`
+   markup is rendered by rule (`Bezalel.Data.Dictionaries.clean/3`) and
+   counted in `out/dictionaries_report.txt`; a domain an entry names
+   differently from the domain file is left out and listed there.
 4. **Nothing built is committed** except the fixtures in
    `../test/fixtures/packs/` (`mix bezalel.data.fixtures`). `out/`, `work/`,
    `_build/` and `deps/` are gitignored; the parent repo's pre-commit hook
@@ -52,7 +59,7 @@ mix compile --warnings-as-errors
 mix test
 ```
 
-Re-run `mix bezalel.data.net` / `mix bezalel.data.scrolls` and `mix
+Re-run `mix bezalel.data.net` / `mix bezalel.data.scrolls` / `mix bezalel.data.dictionaries` and `mix
 bezalel.data.fixtures --pack <pack>` when an importer changes, and run
 core's suite (`cd .. && mix test`) when a fixture changes. Which Dead Sea
 Scrolls are imported is core's `Bezalel.Study.Ancient.Scrolls`: a work added

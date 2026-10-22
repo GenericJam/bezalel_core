@@ -117,7 +117,21 @@ defmodule Bezalel.Study.Credits do
      ["https://la.wikisource.org"]},
     {"studybible-mcp",
      "Study tools, ANE context, theology summaries, textual variants and editorial notes adapted from studybible-mcp, Copyright (c) 2024 Study Bible MCP Contributors, MIT License.",
-     [{"MIT (full text below)", nil}], ["https://github.com/djayatillake/studybible-mcp"]}
+     [{"MIT (full text below)", nil}], ["https://github.com/djayatillake/studybible-mcp"]},
+    {"UBS Dictionary of Biblical Hebrew",
+     "UBS Dictionary of Biblical Hebrew © United Bible Societies, 2023. Adapted from Semantic Dictionary of Biblical Hebrew © 2000-2023 United Bible Societies. Licensed under CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     [
+       "https://translation.bible/tools-resources/ubs-dictionary-of-biblical-hebrew/",
+       "https://github.com/ubsicap/ubs-open-license/tree/main/dictionaries/hebrew"
+     ]},
+    {"UBS Dictionary of the Greek New Testament",
+     "UBS Dictionary of New Testament Greek, © United Bible Societies, 2023. Adapted from Semantic Dictionary of Biblical Greek: © United Bible Societies 2018-2023, which is adapted from Greek-English Lexicon of the New Testament: Based on Semantic Domains, Eds. J P Louw, Eugene Albert Nida © United Bible Societies 1988, 1989. Licensed under CC BY-SA 4.0. Modified.",
+     [{"CC BY-SA 4.0", @by_sa}],
+     [
+       "https://translation.bible/tools-resources/ubs-dictionary-of-the-greek-new-testament/",
+       "https://github.com/ubsicap/ubs-open-license/tree/main/dictionaries/greek"
+     ]}
   ]
 
   @scholarship [

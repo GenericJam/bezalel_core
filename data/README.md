@@ -36,7 +36,8 @@ cd data
 mix deps.get
 mix bezalel.data.net        # → out/translations.sqlite, out/net_report.txt
 mix bezalel.data.scrolls    # → out/scrolls.sqlite, out/scrolls_report.txt
-mix bezalel.data.fixtures   # → ../test/fixtures/packs/{translations,scrolls}.sqlite
+mix bezalel.data.dictionaries  # → out/dictionaries.sqlite, out/dictionaries_report.txt
+mix bezalel.data.fixtures   # → ../test/fixtures/packs/{translations,scrolls,dictionaries}.sqlite
 mix bezalel.data.abbott_smith  # → ../priv/study/abbott_smith_pages.json
 ```
 
@@ -44,7 +45,7 @@ Needs the network for the first run (NET: 66 requests, about 30 seconds;
 scrolls: 19 ETCBC/dss files, 48 MB, and the base core pack, 26 MB, unless
 `--core PATH` names a copy); later runs reuse the verified downloads in
 `work/`. Writes only `work/` and `out/` (both gitignored), and the fixtures
-with `bezalel.data.fixtures` (`--pack translations` or `--pack scrolls` for
+with `bezalel.data.fixtures` (`--pack translations`, `--pack scrolls` or `--pack dictionaries` for
 one).
 
 `mix bezalel.data.net --core PATH` compares NET's verse set with the BSB
@@ -220,12 +221,60 @@ reconstructed, and 349 verses with no letter preserved in any manuscript;
 one verse ETCBC numbers that the MT lacks (Josh 5:0, 4QJosha's text before
 5:2).
 
+## The `dictionaries` pack
+
+`dictionaries.sqlite`, built like the others (`Pack.build/5`) by `mix
+bezalel.data.dictionaries [--core PATH]`: the UBS Dictionary of Biblical Hebrew
+and the UBS Dictionary of the Greek New Testament, English, for `word_study`
+(why and what was checked:
+[../decisions/2026-10-22-ubs-dictionaries-pack.md](../decisions/2026-10-22-ubs-dictionaries-pack.md)).
+
+| Table | Columns | Licence |
+|---|---|---|
+| `dictionaries` | `key` (`ubs_hebrew`, `ubs_greek`), `title`, `edition`, `language`, `source_url` (the JSON file at the pinned commit), `source_sha256`, `licence`, `licence_url`, `attribution` (the README's, verbatim) | as the row says: CC BY-SA 4.0 |
+| `dictionary_entries` | `dictionary`, `entry_id` (UBS `MainId`), `lemma`, `strong_codes` (as given: `H0003 A0004`); PK `(dictionary, entry_id)` | its dictionary's |
+| `dictionary_strongs` | `strongs` (the core lexicon's key: `A0004` → `H0004`, `H0032b` → `H0032`, a bare `2062` → `H2062`), `dictionary`, `entry_id`, `given` (the codes it comes from); PK `(strongs, dictionary, entry_id)`. A compound name's code (`H0410+H1285`) keys nothing | its dictionary's |
+| `dictionary_meanings` | `dictionary`, `entry_id`, `position`, `meaning_id` (UBS `LEXID`), `part_of_speech`, `louw_nida` (Greek: `LEXEntryCode`), `definition` (`DefinitionShort`), `glosses` (JSON array), `comments`, `reference_count` (the references UBS lists; the references aren't imported); PK `(dictionary, entry_id, position)` | its dictionary's |
+| `dictionary_meaning_domains` | `dictionary`, `meaning_id`, `kind` (`domain`, or `subdomain` for Louw–Nida's), `position`, `code`, `source_code` (SDBH's domain the meaning is seen from) | its dictionary's |
+| `dictionary_domains` | `dictionary`, `code`, `name` (English label from the lexical-domain file), `level` | its dictionary's |
+| `pack_meta` | `pack`, `description`, `tables`, `sqlite_version`, `licences`, `built_by`, `ubs_source`, `ubs_sha256`, `versification`, `core_sha256`, `build_sha256` (`Bezalel.Data.Dictionaries.build_digest/0`) | — |
+
+**Source.** [ubsicap/ubs-open-license](https://github.com/ubsicap/ubs-open-license)
+at commit `a15a96cf` (2026-10-21; the repository has no tags and is still
+updated): `dictionaries/hebrew/JSON/UBSHebrewDic-v0.9.4-en.JSON` and
+`dictionaries/greek/JSON/UBSGreekNTDic-v1.1-en.JSON` (the newest English
+editions: the Greek XML is v1.0 only; v1.1 adds 18 senses and corrections),
+their lexical-domain files and the two READMEs, pinned by sha256 in
+[pins.json](pins.json) → `ubs_dictionaries`. The build stops unless each
+README still grants CC BY-SA 4.0 with the attribution the pack records.
+
+**What the import does** (`Bezalel.Data.Dictionaries`): one row per entry and
+meaning, the English sense only; a sense marked `AIGenerated` is not imported
+(none at this commit). Markup is rendered by rule: `{L:text<…>}` its text,
+`{D:25.43}` `LN 25.43`, `{S:…}` the verse (or verses, or range, or chapter) in
+STEP form in the packs' English numbering (Hebrew numbering mapped with the base
+core pack's `verses.reference`, the NT's `[ ]`/`{ }` alternatives dropped; Job
+41:8 → `Job.41.16`), `{A:NIV}` the abbreviation, `{N:001}` footnote markers
+dropped (the notes aren't imported), `|i…|i*` italics their text, `|` between
+comment paragraphs a space; anything else stops the build. Domain names come
+from the lexical-domain files; a domain the entry names differently (14 Hebrew
+meanings label the top-level codes 001–003 with contextual-domain names) is left
+out, as are 3 differently named domain sources; the report lists each.
+
+**Coverage** (build of 2026-10-22): Hebrew 7,943 entries, 16,619 meanings, 8,601
+Strong's keys (565 not in the core lexicon, so `word_study` can't reach them,
+e.g. H0136 אֲדֹנָי, which STEPBible folds into another number), 38 entries without
+a usable Strong's code (6 compound names); Greek 5,507 entries, 9,178 meanings,
+5,312 keys (all in the core lexicon), 110 entries without a code. References
+counted, not imported: 291,411 Hebrew, 130,923 Greek. 9.9 MB, 1.6 MB with
+`zstd -19`.
+
 ## Publish
 
 The apps read one URL, **https://bezalel.genericjam.com/packs/manifest.json**
 (schema 1, parsed by the phone app's `Bezalel.Packs.Manifest`), served from
 the Cloudflare R2 bucket `bezalel-packs`. `mix bezalel.data.publish` publishes
-the packs built here (`translations`, `scrolls`) as the next data version
+the packs built here (`translations`, `scrolls`, `dictionaries`) as the next data version
 **without uploading the base again**: the five base entries keep their v1 URLs and checksums exactly as
 `base.json` pins them, so an app that has them sees the same `raw_sha256`,
 records the new version and downloads nothing.
@@ -234,6 +283,7 @@ records the new version and downloads nothing.
 cd data
 mix bezalel.data.net                    # if out/translations.sqlite isn't built
 mix bezalel.data.scrolls                # if out/scrolls.sqlite isn't built
+mix bezalel.data.dictionaries           # if out/dictionaries.sqlite isn't built
 mix bezalel.data.publish --dry-run      # what would be uploaded; writes out/manifest.json
 mix bezalel.data.publish
 ```
@@ -253,7 +303,8 @@ What it does, in order:
 2. Checks `out/translations.sqlite` and `out/scrolls.sqlite` were built
    from `pins.json`'s NET responses and ETCBC/dss files (the scrolls pack
    also with `base.json`'s core pack and by this checkout's code, its
-   `build_sha256`), compresses each
+   `build_sha256`; `out/dictionaries.sqlite` from `pins.json`'s UBS files,
+   `base.json`'s core pack and this checkout's code), compresses each
    with `zstd -19` (as the phone app's `make_packs.py` compresses the base)
    and uploads it to `packs/v<N>/<pack>.sqlite.zst` with
    `Cache-Control: public, max-age=31536000, immutable`. An object already
@@ -269,7 +320,7 @@ Uploads use `npx -y wrangler@4 r2 object put bezalel-packs/<key> --file …
 --remote`. The manifest keeps the published fields (`schema`,
 `data_version`, `built`, `bezalel_commit` — the bezalel_mob commit that built
 the base —, `studybible_mcp`, `sources`, `packs`) and adds `bezalel_core`
-(`repo`, `commit`). Its `translations` and `scrolls` entries are
+(`repo`, `commit`). Its `translations`, `scrolls` and `dictionaries` entries are
 `required: false`. Apps
 that don't know a pack ignore its entry.
 
@@ -285,11 +336,13 @@ that don't know a pack ignore its entry.
 | `lib/bezalel/data/text_fabric.ex` | Reads Text-Fabric feature files |
 | `lib/bezalel/data/scrolls.ex` | ETCBC/dss → the scrolls pack's rows |
 | `lib/bezalel/data/scrolls_pack.ex` | The scrolls pack's schema and writer |
+| `lib/bezalel/data/dictionaries.ex` | The UBS dictionaries' JSON → the dictionaries pack's rows |
+| `lib/bezalel/data/dictionaries_pack.ex` | The dictionaries pack's schema and writer |
 | `lib/bezalel/data/report.ex` | The import reports and the verse-set comparison |
 | `lib/bezalel/data/books.ex` | The 66 books: STEP code, name, chapters |
 | `lib/bezalel/data/download.ex` | Cached, checked downloads |
 | `lib/bezalel/data/publish.ex` | Assembles the manifest (pure) |
-| `lib/mix/tasks/` | `bezalel.data.net`, `bezalel.data.scrolls`, `bezalel.data.fixtures`, `bezalel.data.publish` |
+| `lib/mix/tasks/` | `bezalel.data.net`, `bezalel.data.scrolls`, `bezalel.data.dictionaries`, `bezalel.data.fixtures`, `bezalel.data.publish` |
 
 ## Checks
 

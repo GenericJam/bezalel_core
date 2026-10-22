@@ -117,5 +117,22 @@
     "reviewed": "2026-10-18",
     "licence": "Public domain, the marked-up TEI included (the repo's README)",
     "note": "The commit the core pack's lexicon.abbott_smith_def was built from (studybible-mcp). Output: ../priv/study/abbott_smith_pages.json (mix bezalel.data.abbott_smith)."
+  },
+  "ubs_dictionaries": {
+    "name": "UBS Dictionary of Biblical Hebrew (v0.9.4) and UBS Dictionary of the Greek New Testament (v1.1), English, JSON, with their lexical semantic domains",
+    "repo": "https://github.com/ubsicap/ubs-open-license",
+    "commit": "a15a96cfaa4ca18a6c0339016645ba1e534db3c8",
+    "url": "https://raw.githubusercontent.com/ubsicap/ubs-open-license/a15a96cfaa4ca18a6c0339016645ba1e534db3c8/",
+    "reviewed": "2026-10-22",
+    "licence": "CC BY-SA 4.0 (dictionaries/hebrew/README.md and dictionaries/greek/README.md; the build checks), https://creativecommons.org/licenses/by-sa/4.0/",
+    "note": "The repository has no tags and is still updated (Hebrew v0.9.4 landed 2026-10-21 in this commit). Greek: the JSON v1.1 is the newest English edition (the XML is v1.0 only); v1.1's lexical domains file is byte-identical to v1.0's.",
+    "files": {
+      "dictionaries/hebrew/README.md": "f18eab18a4bad4a83f45981064139f89a96cb4ae97e0e72833d709ae2fb52940",
+      "dictionaries/hebrew/JSON/UBSHebrewDic-v0.9.4-en.JSON": "28d0b53a17240b6225201c4cadcb82718c2761efab309d045018f764cf618217",
+      "dictionaries/hebrew/JSON/UBSHebrewDicLexicalDomains-v0.9.4-en.JSON": "b5b4eb96bb089fb1b98108e168e37297d0f63130940880e820acdb48f1c516e6",
+      "dictionaries/greek/README.md": "29ffe0e7c9bd51b312abac5d1f68af47604e9ec24580377777afe86d035d51ed",
+      "dictionaries/greek/JSON/UBSGreekNTDic-v1.1-en.JSON": "d84bb9077a43fa4a4f7e571fe2ffa460fa655d7b78439b366281ce527fd56893",
+      "dictionaries/greek/JSON/UBSGreekNTDicLexicalDomains-v1.1-en.JSON": "a816a6bb2bdbdd7df6f46f771b5ddb1b9c019d73c3f0147e5a5cead5cfef8b4b"
+    }
   }
 }
