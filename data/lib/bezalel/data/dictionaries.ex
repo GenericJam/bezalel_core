@@ -20,8 +20,8 @@ defmodule Bezalel.Data.Dictionaries do
   labels) is left out and listed in the report, as is a domain source
   (`Stage` of `Vegetation`) named differently.
 
-  The text's markup is rendered by rule (`clean/3`); anything else in
-  `{X:…}`, `<…>` or `|` form stops the build. A sense the source marks
+  The text's markup is rendered by rule (`clean/3`); an unknown `{X:` tag,
+  a link remnant (`<SDBH:`) or a leftover `|` stops the build. A sense the source marks
   `AIGenerated` is not imported.
   """
 
@@ -37,6 +37,8 @@ defmodule Bezalel.Data.Dictionaries do
       title: "UBS Dictionary of Biblical Hebrew",
       edition: "v0.9.4, English",
       language: "hebrew",
+      # Its Scripture references use the Hebrew Bible's numbering.
+      numbering: :hebrew,
       prefixes: ~w(H A),
       entries: "dictionaries/hebrew/JSON/UBSHebrewDic-v0.9.4-en.JSON",
       domains: "dictionaries/hebrew/JSON/UBSHebrewDicLexicalDomains-v0.9.4-en.JSON",
@@ -50,6 +52,8 @@ defmodule Bezalel.Data.Dictionaries do
       title: "UBS Dictionary of the Greek New Testament",
       edition: "v1.1, English",
       language: "greek",
+      # Its references, the OT ones too (Acts 1:20's Ps 69:25), use the English numbering.
+      numbering: :english,
       prefixes: ~w(G),
       entries: "dictionaries/greek/JSON/UBSGreekNTDic-v1.1-en.JSON",
       domains: "dictionaries/greek/JSON/UBSGreekNTDicLexicalDomains-v1.1-en.JSON",
@@ -76,6 +80,7 @@ defmodule Bezalel.Data.Dictionaries do
           title: String.t(),
           edition: String.t(),
           language: String.t(),
+          numbering: :hebrew | :english,
           prefixes: [String.t()],
           entries: String.t(),
           domains: String.t(),
@@ -180,16 +185,33 @@ defmodule Bezalel.Data.Dictionaries do
   defp unreachable(lemma, codes), do: "#{lemma} (#{Enum.join(codes, " ")})"
 
   @doc """
-  `Bezalel.Data.Scrolls.english_numbering/1` over the core pack's
-  references, the NT's alternative numbers (`Php.1.16[1.17]`,
-  `2Co.1.7{1.6}`) dropped first: the packs number those verses by the
-  reference before the bracket, the numbering the UBS text's NT references
-  share (`Php.1.17` is Php 1:17).
+  The `english()` mapping for a dictionary's Scripture references, over the
+  core pack's references. `:hebrew`: `Bezalel.Data.Scrolls.english_numbering/1`,
+  the NT's alternative numbers (`Php.1.16[1.17]`, `2Co.1.7{1.6}`) dropped
+  first: the packs number those verses by the reference before the bracket,
+  the numbering UBS's NT references share (`Php.1.17` is Php 1:17).
+  `:english`: each verse as it is, if the core pack has it in its English
+  numbering (the reference before any bracket: `Psa.69.25(69.26)` is
+  Ps 69:25).
   """
-  @spec english_numbering([String.t()]) :: english()
-  def english_numbering(references) do
+  @spec english_numbering([String.t()], :hebrew | :english) :: english()
+  def english_numbering(references, :hebrew) do
     alternative = regex(~S"[\[{][0-9]+\.[0-9]+[\]}]$")
     references |> Enum.map(&Regex.replace(alternative, &1, "")) |> Scrolls.english_numbering()
+  end
+
+  def english_numbering(references, :english) do
+    pattern = regex(~S"^([^.]+)\.([0-9]+)\.([0-9]+)(?:[(\[{][0-9]+\.[0-9]+[)\]}])?$")
+
+    verses =
+      for reference <- references,
+          [_, book, chapter, verse] <- [Regex.run(pattern, reference)],
+          into: MapSet.new(),
+          do: {book, String.to_integer(chapter), String.to_integer(verse)}
+
+    fn {_book, chapter, verse} = key ->
+      if MapSet.member?(verses, key), do: {chapter, verse}
+    end
   end
 
   @doc "The domain file's codes → `%{name, level}` (English labels)."
@@ -441,7 +463,9 @@ defmodule Bezalel.Data.Dictionaries do
     * `|i…|i*`, italics (a species name): the text;
     * in comments, `|` between paragraphs: a space.
 
-  Whitespace is collapsed. Any other `{X:`, `<`, `>` or `|` raises.
+  Whitespace is collapsed. What is left must not hold an unknown `{X:` tag,
+  a link remnant (`<SDBH:`, `<BT-OT:`) or a `|`: that raises. Plain `<`
+  and `>` are text (SDBH's glosses write "father > founder").
   """
   @spec clean(String.t(), :definition | :comments | :gloss, english()) ::
           {String.t(), %{String.t() => pos_integer()}}

@@ -13,10 +13,13 @@ defmodule Mix.Tasks.Bezalel.Data.Dictionaries do
   attribution, and writes `DIR/dictionaries.sqlite` (default `out/`) and
   `DIR/dictionaries_report.txt`.
 
-  Scripture references in the text are numbered in the packs' English
-  numbering with the base core pack's `verses.reference` (`--core PATH`,
-  else downloaded as `mix bezalel.data.scrolls` does); the core lexicon's
-  keys are also used to count the Strong's numbers `word_study` can reach.
+  Scripture references in the text are given in the packs' English
+  numbering, checked against the base core pack's `verses.reference`
+  (`--core PATH`, else `Download.base_core!/1` downloads it): the Hebrew
+  dictionary's are mapped from the Hebrew numbering, the Greek
+  dictionary's (OT quotations included) are English already. The core
+  lexicon's keys are also used to count the Strong's numbers `word_study`
+  can reach.
   """
 
   use Mix.Task
@@ -50,11 +53,7 @@ defmodule Mix.Tasks.Bezalel.Data.Dictionaries do
 
     core = Download.base_core!(opts[:core])
 
-    english =
-      core
-      |> Pack.read("SELECT reference FROM verses")
-      |> List.flatten()
-      |> Dictionaries.english_numbering()
+    references = core |> Pack.read("SELECT reference FROM verses") |> List.flatten()
 
     lexicon = core |> Pack.read("SELECT strongs FROM lexicon") |> List.flatten() |> MapSet.new()
     {licence, licence_url} = Dictionaries.licence()
@@ -63,6 +62,8 @@ defmodule Mix.Tasks.Bezalel.Data.Dictionaries do
       for dictionary <- Dictionaries.dictionaries() do
         Mix.shell().info("Reading #{dictionary.entries}…")
         domains = Dictionaries.domains(Map.fetch!(files, dictionary.domains))
+
+        english = Dictionaries.english_numbering(references, dictionary.numbering)
 
         data =
           Dictionaries.load(Map.fetch!(files, dictionary.entries), domains, dictionary, english)

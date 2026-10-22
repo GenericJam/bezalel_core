@@ -252,11 +252,14 @@ README still grants CC BY-SA 4.0 with the attribution the pack records.
 meaning, the English sense only; a sense marked `AIGenerated` is not imported
 (none at this commit). Markup is rendered by rule: `{L:text<…>}` its text,
 `{D:25.43}` `LN 25.43`, `{S:…}` the verse (or verses, or range, or chapter) in
-STEP form in the packs' English numbering (Hebrew numbering mapped with the base
-core pack's `verses.reference`, the NT's `[ ]`/`{ }` alternatives dropped; Job
-41:8 → `Job.41.16`), `{A:NIV}` the abbreviation, `{N:001}` footnote markers
+STEP form in the packs' English numbering, each checked against the base core
+pack's `verses.reference`: the Hebrew dictionary's mapped from the Hebrew
+numbering (the NT's `[ ]`/`{ }` alternatives dropped; Job 41:8 → `Job.41.16`),
+the Greek dictionary's, OT quotations included, English already (Ps 69:25 stays
+`Psa.69.25`), `{A:NIV}` the abbreviation, `{N:001}` footnote markers
 dropped (the notes aren't imported), `|i…|i*` italics their text, `|` between
-comment paragraphs a space; anything else stops the build. Domain names come
+comment paragraphs a space. An unknown `{X:` tag, a link remnant (`<SDBH:`) or
+a leftover `|` stops the build; a plain `<` or `>` is text. Domain names come
 from the lexical-domain files; a domain the entry names differently (14 Hebrew
 meanings label the top-level codes 001–003 with contextual-domain names) is left
 out, as are 3 differently named domain sources; the report lists each.

@@ -33,8 +33,11 @@ path). Read [README.md](README.md) first. bezalel_core's
    `out/scrolls_report.txt`; an unknown sign type stops the build.
    Dictionaries: UBS's `{L:}`, `{D:}`, `{S:}`, `{A:}`, `{N:}` and `|i…|i*`
    markup is rendered by rule (`Bezalel.Data.Dictionaries.clean/3`) and
-   counted in `out/dictionaries_report.txt`; a domain an entry names
-   differently from the domain file is left out and listed there.
+   counted in `out/dictionaries_report.txt`; an unknown `{X:` tag, a link
+   remnant (`<SDBH:`) or a leftover `|` stops the build. A domain an entry
+   names differently from the domain file is left out and listed there.
+   SDBH's references are mapped from the Hebrew numbering; the Greek
+   dictionary's are English already (`Dictionaries.english_numbering/2`).
 4. **Nothing built is committed** except the fixtures in
    `../test/fixtures/packs/` (`mix bezalel.data.fixtures`). `out/`, `work/`,
    `_build/` and `deps/` are gitignored; the parent repo's pre-commit hook

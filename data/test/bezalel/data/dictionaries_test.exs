@@ -70,6 +70,33 @@ defmodule Bezalel.Data.DictionariesTest do
     end
   end
 
+  describe "english_numbering/2" do
+    # As the core pack writes them: English numbering, Hebrew in ( ), the NT's
+    # alternatives in [ ].
+    @core ~w"Psa.69.24(69.25) Psa.69.25(69.26) Dan.6.21(6.22) Dan.6.22(6.23) Php.1.16[1.17]
+             Php.1.17[1.16] Jhn.3.16"
+
+    test "the Hebrew dictionary's references are mapped from the Hebrew numbering" do
+      english = Dictionaries.english_numbering(@core, :hebrew)
+      assert english.({"Psa", 69, 26}) == {69, 25}
+      assert english.({"Dan", 6, 23}) == {6, 22}
+      assert english.({"Php", 1, 17}) == {1, 17}
+    end
+
+    test "the Greek dictionary's, OT quotations too, are English already, checked against the core" do
+      english = Dictionaries.english_numbering(@core, :english)
+      # Acts 1:20 quotes Ps 69:25; Heb 11:33 alludes to Dan 6:22.
+      assert english.({"Psa", 69, 25}) == {69, 25}
+      assert english.({"Dan", 6, 22}) == {6, 22}
+      assert english.({"Php", 1, 17}) == {1, 17}
+      assert english.({"Jhn", 3, 16}) == {3, 16}
+      assert english.({"Jhn", 3, 99}) == nil
+
+      assert {"a quotation of Psa.69.25", _} =
+               Dictionaries.clean("a quotation of {S:01906902500000}", :comments, english)
+    end
+  end
+
   describe "load/4" do
     @domains %{
       "001" => %{name: "Objects", level: 1},

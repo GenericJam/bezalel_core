@@ -55,13 +55,21 @@ imported (none at this commit), so machine-made English is never shown as
 UBS's.
 
 Markup is rendered by named rules (links → their text, `{D:}` → `LN n`, `{S:}`
-→ STEP references in the packs' English numbering through the base core pack,
-`{A:}` → the abbreviation, footnote markers dropped, `|i…|i*` → text, `|` in
-comments → a space), counted in the report; anything else stops the build. One
-comment has a malformed `{D:6.149)`; a rule names it. The NT's alternative
-numbers in the core pack (`Php.1.16[1.17]`) are dropped before mapping: UBS's
-NT numbering is the packs' (checked on Php 1:17, which the build otherwise
-couldn't place).
+→ STEP references in the packs' English numbering, checked against the base
+core pack, `{A:}` → the abbreviation, footnote markers dropped, `|i…|i*` →
+text, `|` in comments → a space), counted in the report; an unknown `{X:` tag,
+a link remnant (`<SDBH:`) or a leftover `|` stops the build (a plain `<` or `>`
+is text: SDBH's glosses write "father > founder"). One comment has a malformed
+`{D:6.149)`; a rule names it.
+
+The two dictionaries number their references differently: SDBH's are in the
+Hebrew Bible's numbering and are mapped to English through the core pack's
+`verses.reference`; the Greek dictionary's, its OT quotations included, are
+already English (Acts 1:20 quotes Ps 69:25, "may their camp be desolate"; the
+Hebrew map would have made it Psa.69.24), so they are only checked to exist.
+The NT's alternative numbers in the core pack (`Php.1.16[1.17]`) are dropped
+before mapping: UBS's NT numbering is the packs' (checked on Php 1:17, which
+the build otherwise couldn't place).
 
 ### Domain names: the domain file decides
 
