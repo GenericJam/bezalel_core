@@ -55,6 +55,30 @@ too unless this file says otherwise.
   speak (handshake and sealing, frames and chunks, the QR code, the claim,
   the account id), pure functions; the sockets, storage and screens are
   the apps'. Why: `decisions/2026-10-19-link-wire-protocol.md`.
+- **The translations pack** (optional, built by `data/`'s `mix
+  bezalel.data.translations`): the NET (free non-commercial use by
+  permission), the JPS 1917 (public domain) and the Literal and Simplified
+  Texts adapted from unfoldingWord's ULT and UST (CC BY-SA, a derivative: no
+  unfoldingWord® trademark in its name, its changes stated).
+  `Bezalel.Study.Translations` is the one place their names, notices and
+  attributions are written; a book the chosen translation lacks is quoted
+  from the BSB, verse by verse, with a note saying so.
+- **The fathers pack** (optional, `mix bezalel.data.fathers`): the
+  Apostolic Fathers (`Bezalel.Study.Ancient.Fathers`, the
+  `apostolic_fathers` corpus) for the ancient-source tools; Greek and Latin
+  CC BY-SA, English CAFE's machine translation (CC BY-SA), always labelled
+  so: its citations are the `:machine` kind (`Bezalel.Study.Citation`), never
+  presented as a human translation. Why:
+  `decisions/2026-10-22-apostolic-fathers-pack.md`.
+- **The dictionaries pack** (optional, `mix bezalel.data.dictionaries`): the
+  UBS Dictionaries of Biblical Hebrew and of the Greek New Testament (CC
+  BY-SA), read by `Bezalel.Study.Dictionaries` for `word_study`, after the
+  core lexicon. Why: `decisions/2026-10-22-ubs-dictionaries-pack.md`.
+- **The syntax pack** (optional, `mix bezalel.data.syntax`): MACULA's clause
+  structure (CC BY; never its UBS-permission data or SIL glosses), read by
+  `Bezalel.Study.Syntax` for `lookup_verse`'s "Clause structure" section,
+  only under the word list's gate and capped at `Syntax.max_chars/0`. Why:
+  `decisions/2026-10-22-syntax-pack.md`.
 - **The witnesses pack** (optional, built by `data/`'s `mix
   bezalel.data.witnesses`): `Bezalel.Study.Witnesses` reads it: the
   Samaritan Pentateuch (CC BY-NC), the SBLGNT and its apparatus (CC BY) and

@@ -55,14 +55,21 @@ millisecond on a Mac, beside a model round trip. A missing pack is an error resu
 names it ("The graph study pack (people, places and events) isn't downloaded on this
 device…"); a file that isn't a readable pack (a broken download) is an error too.
 
-Tools that read two packs (`graph_enriched_search`: graph then core; `compare_biblical_versions`:
-lxx then core for the Masoretic side; `lookup_verse`: core then notes for its
-textual-variant and quotation hints) make two `with_pack/2` calls rather than `ATTACH`
-the second pack: the queries never join across packs (each side is a separate lookup),
-so `ATTACH` would save nothing but a millisecond, and two calls keep each pack's
-missing-pack handling separate. `lookup_verse` without the notes pack leaves those
-hints out and answers as before; `compare_biblical_versions` without lxx still gives an
-MT-only comparison in canonical numbering, as theirs did without the LXX table.
+Tools that read several packs make one `with_pack/2` call per pack rather than `ATTACH`
+the others: the queries never join across packs (each is a separate lookup), so `ATTACH`
+would save nothing but a millisecond, and separate calls keep each pack's missing-pack
+handling separate. `lookup_verse` reads core, then the translations pack for its English,
+the notes pack for its textual-variant and quotation hints, the witnesses pack for its
+HOTTP and apparatus hints and, under the word list's gate, the syntax pack for its clause
+structure; `compare_biblical_versions` reads lxx and core (the Masoretic side), then
+scrolls for its DSS witnesses and witnesses for the Samaritan Pentateuch and the SBLGNT;
+`word_study` reads core's lexicon, then the dictionaries pack; `search_ancient_sources`
+reads every pack holding a corpus in scope (ancient, scrolls, fathers);
+`graph_enriched_search` reads graph, then core. Each pack after the first is optional:
+without it that section is left out (or noted) and the tool answers as before (a
+search whose scope only a missing pack holds is the missing-pack error);
+`compare_biblical_versions` without lxx still gives an MT-only comparison in canonical
+numbering, as theirs did without the LXX table.
 
 The tools that quote English verses read the NET (or the JPS, ULT or UST) from the
 translations pack, opened once per tool call: `Translations.with_translation/2` opens it
