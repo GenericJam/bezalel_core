@@ -195,5 +195,24 @@ defmodule Bezalel.Data.UsfmTest do
       assert %{books: ["Tit"], rows: [%{reference: "Tit.1.1"} | _]} =
                Door43.rows(%{"57-TIT.usfm" => @aligned, "LICENSE.md" => "", "A0-FRT.usfm" => ""})
     end
+
+    test "moves 2 Corinthians 13:13 (the grace) to the packs' 13:14; refuses a source that has 13:14" do
+      usfm = """
+      \\id 2CO
+      \\c 13
+      \\p
+      \\v 12 Greet each other with a holy kiss. All the saints greet you.
+      \\v 13 The grace of the Lord Jesus Christ be with you all.
+      """
+
+      assert %{rows: rows, renumbered: [{"2Co.13.13", "2Co.13.14"}]} =
+               Door43.rows(%{"48-2CO.usfm" => usfm})
+
+      assert Enum.map(rows, &{&1.reference, &1.verse}) == [{"2Co.13.12", 12}, {"2Co.13.14", 14}]
+
+      assert_raise ArgumentError, ~r/2Co.13.14 is already in the source/, fn ->
+        Door43.rows(%{"48-2CO.usfm" => usfm <> "\\v 14 Amen.\n"})
+      end
+    end
   end
 end

@@ -28,11 +28,11 @@ defmodule Bezalel.Data.Publish do
     "translations" => %{
       "description" =>
         "English Bible translations: the NET Bible, the JPS 1917 (Old Testament), and the " <>
-          "Literal and Simplified Texts adapted from unfoldingWord's ULT and UST",
+          "Literal and Simplified Texts (ULT, UST, adapted)",
       "licence" =>
         "NET Bible® copyright ©1996, 2019 Biblical Studies Press, L.L.C.: " <>
           "free non-commercial use by permission (netbible.com/copyright); JPS 1917: public " <>
-          "domain; Literal and Simplified Texts (ULT, UST adapted): CC BY-SA 4.0 " <>
+          "domain; Literal and Simplified Texts (ULT, UST, adapted): CC BY-SA 4.0 " <>
           "(https://creativecommons.org/licenses/by-sa/4.0/), the original work by " <>
           "unfoldingWord is available from unfoldingword.org/ult and unfoldingword.org/ust"
     },

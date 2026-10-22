@@ -353,6 +353,11 @@ defmodule Bezalel.Study.TranslationsCoverageTest do
     text = WordStudy.render(study)
     assert text =~ "## Example Passages (ULT)\n"
 
+    # The passage card: the ULT, with the Ezekiel example its own BSB row.
+    card = Card.from_tool("word_study", study)
+    assert card["version"] == "ULT"
+    assert %{"version" => "BSB"} = Enum.find(card["verses"], &(&1["ref"] =~ "27:26"))
+
     assert text =~
              ~r/\*\*Ezk\.27\.26\*\* \(BSB\): .*\nSource: \[Ezekiel 27:26\]\(https:\/\/biblehub\.com\/ezekiel\/27-26\.htm\)/
 

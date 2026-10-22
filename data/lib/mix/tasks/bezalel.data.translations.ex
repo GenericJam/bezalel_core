@@ -99,7 +99,7 @@ defmodule Mix.Tasks.Bezalel.Data.Translations do
         "licences" =>
           "NET Bible: free non-commercial use by permission (netbible.com/copyright); " <>
             "the acknowledgement is translations.copyright. JPS 1917: public domain. " <>
-            "ult, ust (adapted from unfoldingWord's ULT and UST): CC BY-SA 4.0, " <>
+            "Literal and Simplified Texts (ULT, UST, adapted): CC BY-SA 4.0, " <>
             "https://creativecommons.org/licenses/by-sa/4.0/; attribution and changes in " <>
             "translations.copyright. Each translation's licence is its translations.licence.",
         "net_source" => net_pin["api"],

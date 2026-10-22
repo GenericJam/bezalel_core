@@ -80,7 +80,7 @@ defmodule Bezalel.Data.PublishTest do
              "required" => false,
              "description" =>
                "English Bible translations: the NET Bible, the JPS 1917 (Old Testament), and " <>
-                 "the Literal and Simplified Texts adapted from unfoldingWord's ULT and UST",
+                 "the Literal and Simplified Texts (ULT, UST, adapted)",
              "url" => "https://bezalel.genericjam.com/packs/v2/translations.sqlite.zst",
              "compression" => "zstd",
              "size" => 3,

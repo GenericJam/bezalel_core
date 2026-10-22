@@ -77,9 +77,9 @@ defmodule Bezalel.Study.Translations do
         "Literal Text (ULT, adapted): adapted from a work copyright © 2022 by unfoldingWord, " <>
           "licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). The " <>
           "original work by unfoldingWord is available from unfoldingword.org/ult. Changes: " <>
-          "the word alignment, footnotes and headings are removed and the Psalm titles " <>
-          "numbered verse 0; the verse text is otherwise unaltered. This adaptation is " <>
-          "available under the same licence.",
+          "the word alignment, footnotes and headings are removed, the Psalm titles " <>
+          "numbered verse 0 and 2 Corinthians 13:13 numbered 13:14; the verse text is " <>
+          "otherwise unaltered. This adaptation is available under the same licence.",
       licence: "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)",
       books: :released
     },
@@ -93,9 +93,9 @@ defmodule Bezalel.Study.Translations do
           "unfoldingWord, licensed CC BY-SA 4.0 " <>
           "(https://creativecommons.org/licenses/by-sa/4.0/). The original work by " <>
           "unfoldingWord is available from unfoldingword.org/ust. Changes: the word " <>
-          "alignment, footnotes and headings are removed and the Psalm titles numbered " <>
-          "verse 0; the verse text is otherwise unaltered. This adaptation is available " <>
-          "under the same licence.",
+          "alignment, footnotes and headings are removed, the Psalm titles numbered verse 0 " <>
+          "and 2 Corinthians 13:13 numbered 13:14; the verse text is otherwise unaltered. " <>
+          "This adaptation is available under the same licence.",
       licence: "CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)",
       books: :released
     }
