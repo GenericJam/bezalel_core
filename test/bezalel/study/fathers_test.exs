@@ -22,8 +22,9 @@ defmodule Bezalel.Study.FathersTest do
     {match.work.key, match.sort_range}
   end
 
-  # The fixture packs without `pack`, or with `pack` reduced to pack_meta,
-  # for the duration of `fun`.
+  # The fixture packs without `pack` (:missing), with `pack` reduced to
+  # pack_meta (:damaged), or with its tables but no passages (:empty), for
+  # the duration of `fun`.
   defp with_packs(change, fun) do
     fixtures = Application.fetch_env!(:bezalel_core, :packs_dir)
     dir = Path.join(System.tmp_dir!(), "bezalel-fathers-#{System.unique_integer([:positive])}")
@@ -32,11 +33,18 @@ defmodule Bezalel.Study.FathersTest do
 
     for {pack, how} <- change do
       file = Path.join(dir, "#{pack}.sqlite")
-      File.rm!(file)
+      if how != :empty, do: File.rm!(file)
 
-      if how == :damaged do
+      sql =
+        case how do
+          :missing -> nil
+          :damaged -> "CREATE TABLE pack_meta (key TEXT, value TEXT)"
+          :empty -> "DELETE FROM ancient_source_passages"
+        end
+
+      if sql do
         {:ok, conn} = Exqlite.Sqlite3.open(file)
-        :ok = Exqlite.Sqlite3.execute(conn, "CREATE TABLE pack_meta (key TEXT, value TEXT)")
+        :ok = Exqlite.Sqlite3.execute(conn, sql)
         :ok = Exqlite.Sqlite3.close(conn)
       end
     end
@@ -265,6 +273,56 @@ defmodule Bezalel.Study.FathersTest do
                ) ==
                  ["Didache 14.1"]
       end)
+    end
+
+    test "an empty pack beside it is an error naming the missing ancient pack and the empty one" do
+      for empty <- [:scrolls, :fathers] do
+        with_packs([ancient: :missing] ++ [{empty, :empty}], fn ->
+          assert {:error, message} =
+                   SearchAncientSources.run(%{"query" => "Lord's day", "corpus" => "all"}, %{})
+
+          assert String.starts_with?(message, DB.missing(:ancient))
+          assert message =~ "This device's #{empty} pack has no ancient-source passages"
+        end)
+      end
+    end
+  end
+
+  describe "with the ancient pack and an empty pack beside it" do
+    test "the empty pack is searched around and noted" do
+      with_packs([scrolls: :empty], fn ->
+        text = ok(SearchAncientSources.run(%{"query" => "temple", "corpus" => "all"}, %{}))
+        assert text =~ "War 6.316"
+
+        assert text =~
+                 "The scrolls study pack (Dead Sea Scrolls) isn't downloaded on this device (or " <>
+                   "can't be read), so only CD, 1QS, 1QSa and 1QpHab of the Qumran works were searched"
+
+        refute text =~ "fathers study pack"
+      end)
+
+      with_packs([fathers: :empty], fn ->
+        assert ok(SearchAncientSources.run(%{"query" => "temple", "corpus" => "all"}, %{})) =~
+                 "The fathers study pack (Apostolic Fathers) isn't downloaded on this device"
+      end)
+    end
+  end
+
+  describe "the Moscow epilogue" do
+    test "is the copyists' note, not the church of Smyrna's" do
+      corpus = Ancient.corpus("apostolic_fathers")
+
+      assert Ancient.work(corpus, "martyrdom_of_polycarp_moscow_epilogue").author ==
+               "Anonymous (copyists' note)"
+
+      assert Ancient.work(corpus, "martyrdom_of_polycarp").author == "Church of Smyrna"
+
+      assert ok(
+               LookupAncientSource.run(
+                 %{"citation" => "Martyrdom of Polycarp, Moscow epilogue 1"},
+                 %{}
+               )
+             ) =~ "### Anonymous (copyists' note), Martyrdom of Polycarp, Moscow epilogue 1"
     end
   end
 end

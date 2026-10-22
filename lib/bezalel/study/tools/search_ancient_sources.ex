@@ -344,7 +344,7 @@ defmodule Bezalel.Study.Tools.SearchAncientSources do
         with_strict(rest, [{pack, conn} | conns], own, scope, corpus, fun)
 
       true ->
-        {:error, empty(corpus, pack)}
+        {:error, DB.missing(own) <> " " <> empty(corpus, pack)}
     end
   end
 
