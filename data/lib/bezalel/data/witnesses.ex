@@ -315,7 +315,7 @@ defmodule Bezalel.Data.Witnesses do
         root
         |> Xml.elements()
         |> Enum.reject(&match?({"book-name", _, _, _}, &1))
-        |> Enum.chunk_while(nil, &chunk_verse(&1, &2, stem), &{:cont, &1, nil})
+        |> Enum.chunk_while(nil, &chunk_verse(&1, &2, stem), &last_verse/1)
         |> Enum.flat_map(&verse_units(&1, book, names, stem))
       end)
 
@@ -324,6 +324,10 @@ defmodule Bezalel.Data.Witnesses do
       refused: for(%{parsed: false} = unit <- units, do: unit)
     }
   end
+
+  # The file's last verse, its notes (gathered last first) back in order.
+  defp last_verse(nil), do: {:cont, nil}
+  defp last_verse({verse, notes}), do: {:cont, {verse, Enum.reverse(notes)}, nil}
 
   # Groups each <verse> with the <note>s after it.
   defp chunk_verse({"verse", _, _, _} = verse, nil, _stem), do: {:cont, {verse, []}}
@@ -391,8 +395,7 @@ defmodule Bezalel.Data.Witnesses do
   One apparatus note parsed: `{:ok, %{verses, lemma, lemma_sigla,
   variants}}` (`verses` the span a note names, '22–23', else nil), or
   `{:error, reason}`. A note starts with its verse's number (the verse's
-  first unit; `1:15` at a chapter's start) or with `•` (a further unit; the
-  last verse of a book lists its `•` note first).
+  first unit; `1:15` at a chapter's start) or with `•` (a further unit).
   """
   @spec parse_note(String.t(), integer(), integer()) :: {:ok, map()} | {:error, String.t()}
   def parse_note(raw, chapter, verse) do

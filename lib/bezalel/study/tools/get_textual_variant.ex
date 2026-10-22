@@ -838,8 +838,8 @@ defmodule Bezalel.Study.Tools.GetTextualVariant do
       "*The committee's entries (UBS, 1969–1980): the forms of the text it compared, each " <>
         "with how the base translations render it; then its judgment, kept apart: the rating " <>
         "of the form it judged the earliest attested text, and some of the factors behind its " <>
-        "decision for or against a form. [ ] around Hebrew: a form reconstructed from the " <>
-        "versions, with no Hebrew witness.*",
+        "decision for or against a form. [ ] around Hebrew: a form no Hebrew manuscript " <>
+        "has (presupposed by a version or proposed as a conjecture).*",
       ""
     ] ++
       Enum.flat_map(entries, &hottp_entry_lines(&1, result)) ++

@@ -1307,12 +1307,30 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
 
       lacking ->
         "The Samaritan Pentateuch dataset has no verse numbered #{Enum.join(lacking, ", ")}: " <>
-          "it has no such text there or places it under another verse (its Exodus 26:35 " <>
-          "holds the MT's 30:1–10)."
+          "it has no such text there or places it under another verse" <>
+          sp_placement(lacking) <> "."
     end
   end
 
   defp sp_note(_result), do: ""
+
+  # Where the dataset has the passages it numbers differently.
+  defp sp_placement(lacking) do
+    exodus = Enum.any?(lacking, &(&1 in for(v <- 1..10, do: "Exo.30.#{v}")))
+    deuteronomy = Enum.any?(lacking, &(&1 in ["Deu.34.2", "Deu.34.3"]))
+
+    [
+      exodus && "its Exodus 26:35 holds the MT's 30:1–10",
+      deuteronomy &&
+        "its Deuteronomy 34:1 describes the land in its own words where the MT's 34:1–3 " <>
+          "lists the regions"
+    ]
+    |> Enum.filter(& &1)
+    |> case do
+      [] -> ""
+      places -> " (" <> Enum.join(places, "; ") <> ")"
+    end
+  end
 
   # Whether the SBLGNT is missing, or doesn't print a verse the core text has.
   defp sblgnt_note(%{sblgnt: :missing}),
@@ -1334,11 +1352,26 @@ defmodule Bezalel.Study.Tools.CompareBiblicalVersions do
 
       lacking ->
         "The SBLGNT doesn't print #{Enum.join(lacking, ", ")}: TAGNT includes the words some " <>
-          "editions have there (get_textual_variant gives the SBLGNT apparatus)."
+          "editions have there. The SBLGNT apparatus records such an addition at the verse " <>
+          "before: get_textual_variant with " <>
+          Enum.map_join(
+            Enum.uniq(Enum.map(lacking, &verse_before(&1, lacking))),
+            " or ",
+            &"reference='#{&1}'"
+          ) <>
+          "."
     end
   end
 
   defp sblgnt_note(_result), do: ""
+
+  # The verse before `reference` that the SBLGNT prints (past a run of
+  # verses it lacks: Rom 16:25–27 → Rom 16:24).
+  defp verse_before(reference, lacking) do
+    [book, chapter, verse] = String.split(reference, ".")
+    before = "#{book}.#{chapter}.#{String.to_integer(verse) - 1}"
+    if before in lacking, do: verse_before(before, lacking), else: before
+  end
 
   defp row_header(row) do
     mapping =

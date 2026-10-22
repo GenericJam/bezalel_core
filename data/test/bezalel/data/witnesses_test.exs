@@ -67,6 +67,35 @@ defmodule Bezalel.Data.WitnessesTest do
   end
 
   describe "the SBLGNT apparatus" do
+    test "every verse's units in file order, the file's last verse too" do
+      empty = "<book><book-name>x</book-name></book>"
+
+      rev = """
+      <book><book-name>ΑΠΟΚΑΛΥΨΙΣ</book-name>
+      <verse>Revelation 22:20</verse>
+      <note>20 ναί WH ] – RP</note>
+      <note>• ἔρχου WH ] + Ἰησοῦ RP</note>
+      <verse>Revelation 22:21</verse>
+      <note>21 Ἰησοῦ Treg NA28 ] + Χριστοῦ WH RP</note>
+      <note>• πάντων NA28 ] τῶν ἁγίων WH Treg</note>
+      </book>
+      """
+
+      files =
+        Witnesses.sblgnt_books()
+        |> Map.new(fn {stem, _} -> {stem, empty} end)
+        |> Map.put("Rev", rev)
+
+      %{units: units, refused: []} = Witnesses.apparatus(files)
+
+      assert Enum.map(units, &{&1.reference, &1.unit, &1.lemma}) == [
+               {"Rev.22.20", 1, "ναί"},
+               {"Rev.22.20", 2, "ἔρχου"},
+               {"Rev.22.21", 1, "Ἰησοῦ"},
+               {"Rev.22.21", 2, "πάντων"}
+             ]
+    end
+
     test "lemma and variants with their sigla; ';' after a siglum separates variants" do
       assert {:ok, %{lemma: "χριστοῦ", lemma_sigla: ["WH"], variants: variants, verses: nil}} =
                Witnesses.parse_note(

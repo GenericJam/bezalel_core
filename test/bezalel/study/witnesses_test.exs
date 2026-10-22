@@ -149,6 +149,107 @@ defmodule Bezalel.Study.WitnessesTest do
     end
   end
 
+  describe "compare_biblical_versions: notes and Greek numbering" do
+    # A row as the tool builds it, for render/1 with rows the fixtures lack.
+    defp row(version, reference) do
+      [book, chapter, verse] = String.split(reference, ".")
+
+      %{
+        version: version,
+        edition: "#{version} edition",
+        language: "Greek",
+        canonical_reference: reference,
+        canonical_book: book,
+        canonical_chapter: String.to_integer(chapter),
+        canonical_verse: String.to_integer(verse),
+        canonical_verse_suffix: "",
+        edition_reference: reference,
+        text: "text",
+        translation: nil,
+        translation_label: "none",
+        translation_note: nil,
+        license: "CC BY 4.0",
+        source_url: "https://example.org",
+        mapping_method: "identity",
+        morphology: [],
+        apocrypha: nil,
+        kjv_apocrypha: false,
+        brenton: %{status: :not_applicable, greek: nil, difference: nil}
+      }
+    end
+
+    defp comparison(rows, extra) do
+      Map.merge(
+        %{
+          reference: "x",
+          versions: [],
+          numbering: "canonical",
+          include_original: true,
+          include_morphology: false,
+          rows: rows,
+          lxx_only: [],
+          cap_note: "",
+          dss: :off,
+          dss_source_url: nil,
+          sp: :off,
+          sblgnt: :off,
+          prefs: Preferences.new([])
+        },
+        extra
+      )
+    end
+
+    test "a verse the SBLGNT doesn't print points to the verse before, past a run" do
+      rows = Enum.map(~w(Rom.16.24 Rom.16.25 Rom.16.26 Rom.16.27), &row("TAGNT", &1))
+
+      sblgnt =
+        "SBLGNT"
+        |> row("Rom.16.24")
+        |> Map.put(:sblgnt, %{
+          file: "Rom",
+          line: 431,
+          source_url: "https://github.com/x/tree/c/d",
+          attribution: "SBL"
+        })
+
+      text = CompareBiblicalVersions.render(comparison(rows ++ [sblgnt], %{sblgnt: :on}))
+
+      assert text =~
+               "The SBLGNT doesn't print Rom.16.25, Rom.16.26, Rom.16.27: TAGNT includes the " <>
+                 "words some editions have there. The SBLGNT apparatus records such an " <>
+                 "addition at the verse before: get_textual_variant with reference='Rom.16.24'."
+
+      matt =
+        CompareBiblicalVersions.render(comparison([row("TAGNT", "Mat.17.21")], %{sblgnt: :on}))
+
+      assert matt =~ "reference='Mat.17.20'"
+    end
+
+    test "the SP note names only the placement of the verses it lacks" do
+      exodus = CompareBiblicalVersions.render(comparison([row("MT", "Exo.30.1")], %{sp: :on}))
+      assert exodus =~ "(its Exodus 26:35 holds the MT's 30:1–10)."
+      refute exodus =~ "Deuteronomy 34:1"
+
+      deut = CompareBiblicalVersions.render(comparison([row("MT", "Deu.34.2")], %{sp: :on}))
+      assert deut =~ "(its Deuteronomy 34:1 describes the land in its own words"
+      refute deut =~ "Exodus 26:35"
+
+      other = CompareBiblicalVersions.render(comparison([row("MT", "Gen.1.1")], %{sp: :on}))
+      assert other =~ "places it under another verse.*"
+    end
+
+    test "Greek (lxx) numbering: each group's SP row follows its MT and LXX rows" do
+      {:ok, result} =
+        CompareBiblicalVersions.result(
+          %{"reference" => "Genesis 1:1-3", "numbering" => "lxx"},
+          Preferences.new([])
+        )
+
+      assert Enum.map(result.rows, &{&1.canonical_reference, &1.version}) ==
+               for(ref <- ~w(Gen.1.1 Gen.1.2 Gen.1.3), v <- ~w(MT LXX SP), do: {ref, v})
+    end
+  end
+
   describe "compare_biblical_versions: the New Testament" do
     test "the core Greek (TAGNT) beside the SBLGNT, each labelled and cited" do
       {text, citations} = cited(CompareBiblicalVersions.run(%{"reference" => "John 3:16"}, %{}))
@@ -180,6 +281,12 @@ defmodule Bezalel.Study.WitnessesTest do
 
       assert text =~ "## UBS Hebrew Old Testament Text Project (HOTTP) at Gen.4.8"
       assert text =~ "### HOTTP entry 00015"
+
+      assert text =~
+               "[ ] around Hebrew: a form no Hebrew manuscript has (presupposed by a version " <>
+                 "or proposed as a conjecture)."
+
+      refute text =~ "reconstructed from the versions"
 
       assert text =~
                "**The HOTTP committee's judgment** (its conclusion, not manuscript evidence):"
