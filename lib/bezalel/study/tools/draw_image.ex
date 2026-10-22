@@ -42,7 +42,11 @@ defmodule Bezalel.Study.Tools.DrawImage do
   ctx)` (the tool's ctx, or what the host passes to `model/3` and
   `automatic_model/1`), so a host with several accounts answers from the
   one `ctx.session_id` belongs to; a hook that takes one argument is
-  called with the provider alone. Default: the node's `Rho.Auth`. Tests
+  called with the provider alone. Default: the node's `Rho.Auth`. A
+  ChatGPT drawing's usage is recorded (and its plan's limits read) in the
+  ctx's `:data_dir` when it has one (the loop's: `Rho.Images.generate/2`'s
+  `:data_dir`), so each account's stays its own; else rho's node-wide
+  data dir. Tests
   also set `:generate` (`{m, f}` called as `ReqLLM.generate_image/3` is)
   and `:images` (as `Rho.Images.generate/2`).
   """
@@ -193,7 +197,7 @@ defmodule Bezalel.Study.Tools.DrawImage do
          {:ok, _store} <- store(),
          {:ok, refs} <- references(args, ctx),
          {:ok, auth} <- credential(model, why(model, requested, prefs), ctx),
-         {:ok, {mime, bytes}} <- draw(model, prompt, size, refs, auth) do
+         {:ok, {mime, bytes}} <- draw(model, prompt, size, refs, auth, ctx) do
       material =
         Materials.derive(:generated, Enum.map(refs, &elem(&1, 0)), bytes,
           mime: mime,
@@ -342,16 +346,19 @@ defmodule Bezalel.Study.Tools.DrawImage do
   end
 
   # ChatGPT: the sign-in's Codex image tool, the reference with the words.
-  defp draw(%{provider: :openai_codex}, prompt, {size, _ratio}, refs, credential) do
+  # Its usage (and any 429's limits) is the loop's `ctx.data_dir` when there
+  # is one, so a host running a loop per account keeps each account's apart.
+  defp draw(%{provider: :openai_codex}, prompt, {size, _ratio}, refs, credential, ctx) do
     {m, f} = config(:images, {Rho.Images, :generate})
 
-    opts = [
-      size: size,
-      format: "jpeg",
-      references: for({_material, picture} <- refs, do: picture),
-      credential: credential,
-      timeout: @codex_timeout
-    ]
+    opts =
+      [
+        size: size,
+        format: "jpeg",
+        references: for({_material, picture} <- refs, do: picture),
+        credential: credential,
+        timeout: @codex_timeout
+      ] ++ if(dir = ctx[:data_dir], do: [data_dir: dir], else: [])
 
     case apply(m, f, [prompt, opts]) do
       {:ok, %{mime: mime, bytes: bytes}} -> {:ok, {mime, bytes}}
@@ -359,7 +366,7 @@ defmodule Bezalel.Study.Tools.DrawImage do
     end
   end
 
-  defp draw(model, prompt, {size, ratio}, refs, key) do
+  defp draw(model, prompt, {size, ratio}, refs, key, _ctx) do
     {m, f} = config(:generate, {ReqLLM, :generate_image})
     {input, opts} = request(model.provider, prompt, size, ratio, refs, key)
 

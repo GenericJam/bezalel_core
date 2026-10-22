@@ -552,8 +552,10 @@ defmodule Bezalel.Materials do
   rho's attachment resolver (`config :rho, :resolve_attachment,
   {Bezalel.Materials, :resolve, []}`): the bytes of the material a stored
   attachment names (its `"ref"`), from the host's store with `ctx` (rho's:
-  `%{session_id: …}`), as `{mime, bytes}` for the model. The store's
-  `for_model/2` when it has one (a resized photo), else its bytes as kept.
+  `%{session_id: …}`, plus the loop's `data_dir:` when it was given one,
+  which tells a multi-account host whose conversation it is), as
+  `{mime, bytes}` for the model. The store's `for_model/2` when it has one
+  (a resized photo), else its bytes as kept.
   """
   @spec resolve(map(), map()) :: {:ok, {String.t(), binary()}} | {:error, term()}
   def resolve(%{"ref" => id}, ctx) when is_binary(id) do

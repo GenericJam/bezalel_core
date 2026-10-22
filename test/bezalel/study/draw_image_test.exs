@@ -280,6 +280,23 @@ defmodule Bezalel.Study.DrawImageTest do
       assert text =~ "with ChatGPT (your sign-in)"
     end
 
+    test "its usage is the account's: the loop's data dir goes to Rho.Images" do
+      ctx = Map.put(@ctx, :data_dir, "/data/accounts/a1/rho")
+
+      assert {:ok, _} =
+               DrawImage.run(%{"prompt" => "a menorah"}, ctx, chose("openai_codex:gpt-image"))
+
+      assert_received {:images, "a menorah", opts}
+      assert opts[:data_dir] == "/data/accounts/a1/rho"
+
+      # No data dir in the ctx: Rho.Images keeps its node-wide default.
+      assert {:ok, _} =
+               DrawImage.run(%{"prompt" => "a menorah"}, @ctx, chose("openai_codex:gpt-image"))
+
+      assert_received {:images, "a menorah", opts}
+      refute Keyword.has_key?(opts, :data_dir)
+    end
+
     test "none chosen: the ChatGPT sign-in draws when there is one, else an API key's model" do
       Process.put(:signed_in, [:openai_codex, :openai, :google])
       assert DrawImage.automatic_model().id == "openai_codex:gpt-image"
